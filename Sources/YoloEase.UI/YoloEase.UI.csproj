@@ -32,12 +32,12 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\PoeShared.Blazor.Controls\PoeShared.Blazor.Controls.csproj" />
-        <ProjectReference Include="..\..\PoeShared.Blazor.Wpf\PoeShared.Blazor.Wpf.csproj"/>
-        <ProjectReference Include="..\..\PoeShared.Blazor\PoeShared.Blazor.csproj"/>
-        <ProjectReference Include="..\..\PoeShared.Native\PoeShared.Native.csproj"/>
-        <ProjectReference Include="..\..\PoeShared.Wpf\PoeShared.Wpf.csproj"/>
-        <ProjectReference Include="..\..\PoeShared\PoeShared.csproj"/>
+        <ProjectReference Include="..\PoeShared.Blazor.Controls\PoeShared.Blazor.Controls.csproj" />
+        <ProjectReference Include="..\PoeShared.Blazor.Wpf\PoeShared.Blazor.Wpf.csproj"/>
+        <ProjectReference Include="..\PoeShared.Blazor\PoeShared.Blazor.csproj"/>
+        <ProjectReference Include="..\PoeShared.Native\PoeShared.Native.csproj"/>
+        <ProjectReference Include="..\PoeShared.Wpf\PoeShared.Wpf.csproj"/>
+        <ProjectReference Include="..\PoeShared\PoeShared.csproj"/>
         <ProjectReference Include="..\YoloEase.Cvat.Shared\YoloEase.Cvat.Shared.csproj" />
     </ItemGroup>
 

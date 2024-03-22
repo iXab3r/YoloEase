@@ -1,0 +1,21 @@
+[submodule "Submodules/maui"]
+	path = Submodules/maui
+	url = https://github.com/iXab3r/maui.git
+[submodule "Submodules/gong-wpf-dragdrop"]
+	path = Submodules/gong-wpf-dragdrop
+	url = https://github.com/iXab3r/gong-wpf-dragdrop.git
+[submodule "Submodules/PropertyBinder"]
+	path = Submodules/PropertyBinder
+	url = https://github.com/iXab3r/PropertyBinder.git
+[submodule "Submodules/PoeEye"]
+	path = Submodules/PoeEye
+	url = https://github.com/iXab3r/PoeEye.git
+[submodule "Submodules/MaterialDesignInXamlToolkit"]
+	path = Submodules/MaterialDesignInXamlToolkit
+	url = https://github.com/iXab3r/MaterialDesignInXamlToolkit.git
+[submodule "Submodules/DeploymentTools"]
+	path = Submodules/DeploymentTools
+	url = https://github.com/iXab3r/DeploymentTools.git
+[submodule "Submodules/ControlzEx"]
+	path = Submodules/ControlzEx
+	url = https://github.com/iXab3r/ControlzEx.git

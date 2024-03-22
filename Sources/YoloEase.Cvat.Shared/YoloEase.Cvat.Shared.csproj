@@ -15,7 +15,7 @@
 
 
     <ItemGroup>
-      <ProjectReference Include="..\..\PoeShared\PoeShared.csproj" />
+      <ProjectReference Include="..\PoeShared\PoeShared.csproj" />
     </ItemGroup>
 
 </Project>
