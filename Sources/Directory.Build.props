@@ -10,10 +10,6 @@
         <_EyeAurasDotNetWinRTTfm Condition="'$(_EyeAurasDotNetWinRTTfm)' == ''">net7-windows10.0.20348.0</_EyeAurasDotNetWinRTTfm>
     </PropertyGroup>
 
-    <PropertyGroup>
-        <RoslynPackageVersion>4.9.0-3.23629.3</RoslynPackageVersion>
-    </PropertyGroup>
-
     <Choose>
         <When Condition=" '$(Configuration)'=='Debug'">
             <PropertyGroup>
