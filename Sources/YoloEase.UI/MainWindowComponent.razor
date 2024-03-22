@@ -1,0 +1,102 @@
+﻿@using YoloEase.UI.Core
+@inherits YoloEaseComponent<MainWindowViewModel>
+
+@{
+    Track(x => x.YoloEaseProject);
+    Track(x => x.IsAdvancedMode);
+}
+<HeadContent>
+    <style>
+            
+        </style>
+</HeadContent>
+
+
+<div id="appContainer">
+    @if (DataContext.YoloEaseProject == null)
+    {
+        <StartingPage DataContext="@DataContext"/>
+    }
+    else
+    {
+        @if (DataContext.IsAdvancedMode)
+        {
+            <div id="sideMenu">
+                <ProjectTree DataContext="@DataContext.ProjectTree"/>
+            </div>
+        }
+
+        <div class="top-right-menu">
+            <a href="https://wiki.eyeauras.net/en/YoloEase/getting-started">
+                <i class="fa fa-external-link align-middle"></i>
+                Getting started
+            </a>
+        </div>
+        <div id="mainContent">
+            <Tabs Class="h-100"
+                  @bind-ActiveKey="@(DataContext.ActiveTabId)"
+                  TabBarClass="top-menu">
+                @foreach (var tab in DataContext.Tabs.Items)
+                {
+                    if (!tab.IsVisible)
+                    {
+                        continue;
+                    }
+
+                    <TabPane Tab="@(Track(tab, tab => tab.Title))" Key="@tab.Id">
+                        @{
+                            switch (tab.DataContext)
+                            {
+                                case MainWindowViewModel mainWindowViewModel:
+                                    <ProjectSettings DataContext="@mainWindowViewModel"/>
+                                    break;
+                                case AutomaticTrainer automaticTrainer:
+                                    <AutomaticTrainerView DataContext="@automaticTrainer"/>
+                                    break;
+                                case LocalStorageAssetsAccessor localStorageDatasetAccessor:
+                                    <FileSystemDatasetEditor DataContext="@localStorageDatasetAccessor"/>
+                                    break;
+                                case CvatProjectAccessor cvatProjectAccessor:
+                                    <CvatProjectEditor DataContext="@cvatProjectAccessor"/>
+                                    break;
+                                case TrainingBatchAccessor trainingBatchAccessor:
+                                    <TrainingBatchEditor DataContext="@trainingBatchAccessor"/>
+                                    break;
+                                case AnnotationsAccessor annotationsAccessor:
+                                    <AnnotationsEditor DataContext="@annotationsAccessor"/>
+                                    break;
+                                case Yolo8DatasetAccessor yolo8DatasetAccessor:
+                                    <TrainingDatasetEditor DataContext="@yolo8DatasetAccessor"/>
+                                    break;
+                            }
+                        }
+                    </TabPane>
+                }
+            </Tabs>
+        </div>
+    }
+</div>
+<div id="statusBar">
+    <div id="statusLeft" class="d-flex">
+        Advanced mode
+        <Switch @bind-Checked="@DataContext.IsAdvancedMode"/>
+    </div>
+    <div id="statusMiddle">
+    </div>
+    <div id="statusRight">
+        @if (DataContext.AppArguments.IsDebugMode)
+        {
+            <ReactiveButton Class="btn btn-link btn-primary" Command="@(async () => DataContext.RaiseRefresh())">Redraw UI</ReactiveButton>
+            <ReactiveButton Class="btn btn-link btn-primary" Command="@DataContext.YoloEaseProject.Refresh">Refresh</ReactiveButton>
+        }
+
+        <ReactiveButton Class="btn btn-link" Command="@DataContext.OpenAppDirectory">
+            <i class="fa fa-folder-open-o fa-fixed"></i>
+        </ReactiveButton>
+        <ReactiveButton Class="btn btn-link" Command="@DataContext.OpenAppDataDirectory">
+            <i class="fa fa-file fa-fixed"></i>
+        </ReactiveButton>
+    </div>
+</div>
+
+<ReactiveNotificationsContainer Notifications="@DataContext.WhenNotified"/>

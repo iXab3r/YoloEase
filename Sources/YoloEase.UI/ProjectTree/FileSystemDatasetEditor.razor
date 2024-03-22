@@ -1,0 +1,13 @@
+﻿@inherits PoeShared.Blazor.BlazorReactiveComponent<YoloEase.UI.Core.LocalStorageAssetsAccessor>
+
+<Table TItem="FileInfo" DataSource="@Track(x => x.Files.Collection)" HidePagination="true">
+    <PropertyColumn Property="x => x.FullName" Title="Name" Filterable="true">
+        @Track(context, x => x.Name)
+    </PropertyColumn>
+    <PropertyColumn Property="x => x.Directory" Title="Directory" Filterable="true">
+        @Track(context, x => Path.GetRelativePath(DataContext.StorageDirectory.FullName, x.DirectoryName))
+    </PropertyColumn>
+    <PropertyColumn Property="x => x.Length" Title="Size" Filterable="true">
+        @Track(context, x => ByteSize.FromBytes(x.Length).ToString())
+    </PropertyColumn>
+</Table>

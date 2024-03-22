@@ -1,0 +1,17 @@
+@inherits PoeShared.Blazor.BlazorReactiveComponent<YoloEase.UI.Core.YoloEaseProject>
+
+<div class="alert alert-success">
+    @if (Track(x => !x.RemoteProject.IsReady))
+    {
+        <Skeleton Active="true" ParagraphRows="0"></Skeleton>
+    }
+    else
+    {
+        <div class="d-flex">
+            <div class="flex-grow-1">
+                <h5>@Track(x => x.RemoteProject.ProjectName)</h5>
+            </div>
+        </div>
+        <h6>org: @Track(x => x.RemoteProject.OrganizationName)</h6>
+    }
+</div>

@@ -1,0 +1,6 @@
+opencv-python
+numpy
+matplotlib
+shapely
+
+cvat_sdk==2.8.0

@@ -1,0 +1,33 @@
+﻿@inherits PoeShared.Blazor.BlazorReactiveComponent<ProjectTreeViewModel>
+
+
+<div id="sideMenuHeader" class="p-2">
+    <ProjectTreeHeader DataContext="@DataContext.Project"/>
+</div>
+<div id="sideMenuMain">
+    <Tree TItem="ProjectTreeNode"
+          DataSource="@Track(x => x.Nodes)"
+          TitleExpression="x => x.DataItem.Name"
+          ChildrenExpression="x => Track(x, y => y.DataItem.Children)"
+          @bind-SelectedNode="@DataContext.SelectedNode"
+          @bind-SelectedData="@DataContext.SelectedItem">
+        <TitleTemplate>
+            @if (Track(context, x => !x.IsLeaf))
+            {
+                <i class="fa fa-fixed @Track(context, x => x.Expanded ? "fa-folder-open-o" : "fa-folder-o")"></i>
+            }
+            @if (context.DataItem is TaskTreeNode taskTreeNode)
+            {
+                <TaskTreeNodeView DataContext="@taskTreeNode"/>
+            }
+            else
+            {
+                <ProjectTreeNodeView DataContext="@context.DataItem"/>
+            }
+        </TitleTemplate>
+    </Tree>
+    <ProgressBar IsIndeterminate="true" Style="@(DataContext.IsBusy ? "" : "visibility:hidden;")"/>
+</div>
+<div id="sideMenuFooter">
+    
+</div>

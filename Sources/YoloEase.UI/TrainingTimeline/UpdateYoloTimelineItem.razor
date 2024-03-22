@@ -1,0 +1,21 @@
+@inherits PoeShared.Blazor.BlazorReactiveComponent<UpdateYoloTimelineEntry>
+
+<div class="d-flex">
+    <div class="vstack gap-3">
+        <div class="d-flex">
+            <div>@Track(x => x.Text)@(DataContext.IsBusy ? "..." : string.Empty)</div>
+            <ReactiveButton
+                Class="btn btn-link h-auto mx-2 p-0"
+                HideIfDisabled="true"
+                IsEnabled="@Track(x => x.CanRequestUpdate && !x.UpdateRequested)"
+                Command="@(async () => { DataContext.TimelineController.PerformUpdateOnNextCycle = true; DataContext.UpdateRequested = true; })">
+                <i class="fa fa-download fa-fixed"></i>
+                install the update before next cycle
+            </ReactiveButton>
+        </div>
+        @if (Track(x => !string.IsNullOrEmpty(x.UpdateText)))
+        {
+            <span class="alert alert-warning">@(Track(x => x.UpdateText))</span>
+        }
+    </div>
+</div>

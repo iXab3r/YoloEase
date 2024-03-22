@@ -1,0 +1,5 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <Target Name="DisplayMessages" BeforeTargets="build">
+        <Message Text="Project File Name = $(MSBuildProjectFile), Configuration = $(Configuration), RuntimeIdentifier = $(RuntimeIdentifier)" Importance="high"/>
+    </Target>
+</Project>

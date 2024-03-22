@@ -1,0 +1,160 @@
+#app {
+    height: calc(100% - 26px);
+}
+
+#appContainer {
+    display: flex;
+    height: 100%;
+}
+
+#sideMenu {
+    width: 25%;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+#sideMenuHeader, #sideMenuFooter {
+}
+
+#sideMenuMain {
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+#mainContent {
+    overflow-y: auto;
+    width: 100%;
+}
+
+#statusBar {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 2px;
+    height: 26px;
+    align-items: center;
+    background-color: var(--bs-blue);
+    color: var(--bs-emphasis-color)
+}
+
+.top-right-menu {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 10001;
+    padding: 10px;
+    margin-right: 5px;
+    background: inherit;
+    font-size: 16px;
+}
+
+.wrap-panel {
+    display: flex;
+    flex-wrap: wrap;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    margin-right: 20px;
+}
+
+.circle {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid #000;
+    margin-right: 5px;
+}
+
+.label {
+    margin-right: 5px;
+}
+
+.table td, .table th {
+    vertical-align: middle;
+}
+
+.table-nowrap td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ant-table-tbody > tr.ant-table-placeholder:hover > td {
+    background: inherit;
+}
+
+.ant-tree .ant-tree-node-content-wrapper {
+    white-space: nowrap;
+}
+
+.ant-table tfoot > tr > td, .ant-table tfoot > tr > th, .ant-table-tbody > tr > td, .ant-table-thead > tr > th {
+    padding: 2px 2px;
+    white-space: nowrap;
+}
+
+.ant-table-column-sorters {
+    padding: 2px 2px;
+    white-space: nowrap;
+}
+
+.ant-empty-normal {
+    color: inherit;
+}
+
+.ant-tabs-content-holder {
+    height: 100%;
+}
+
+.ant-tabs-content {
+    height: 100%;
+}
+
+.ant-tabs-tabpane {
+    height: 100%;
+}
+
+.ant-tree-switcher {
+    display: block;
+    width: 24px;
+}
+
+.ant-select {
+    height: 32px;
+    align-items: center;
+    border: var(--bs-border-width) solid var(--bs-border-color);
+    border-radius: 0.375rem;
+}
+
+.ant-tabs > .ant-tabs-nav, .ant-tabs > div > .ant-tabs-nav, .top-menu {
+    width: 100%;
+    position: sticky;
+    top: 0;
+    background: var(--bs-body-bg);;
+    z-index: 10000;
+    margin-bottom: 1px;
+}
+
+a {
+    text-decoration: none;
+}
+
+.btn-link {
+    text-decoration: none;
+}
+
+.ant-radio {
+    color: inherit;
+}
+
+.ant-radio-wrapper{
+    color: inherit;
+}
+
+.ant-radio-button-wrapper {
+    color: inherit;
+}

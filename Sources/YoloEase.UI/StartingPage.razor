@@ -1,0 +1,58 @@
+﻿@inherits YoloEaseComponent<MainWindowViewModel>
+
+<div class="d-grid-center w-100">
+    <div class="card  w-50">
+        <div class="card-title d-grid m-1 align-items-center" style="grid-template-columns: auto 1fr auto">
+            <h3>
+                Projects
+            </h3>
+            <div></div>
+            <div>
+                <ReactiveButton Class="btn btn-primary"
+                                ShowErrorIcon="false"
+                                CommandEx="@DataContext.NewProjectCommand">
+                    <i class="fa fa-share"></i> New...
+                </ReactiveButton>
+                <ReactiveButton Class="btn btn-primary"
+                                ShowErrorIcon="false"
+                                CommandEx="@DataContext.LoadProjectCommand">
+                    <i class="fa fa-folder-open-o"></i> Open existing...
+                </ReactiveButton>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                YoloEase is tool which automates training process of machine-learning models, more specifically
+                <a href="https://github.com/ultralytics/ultralytics">
+                    <i class="fa fa-external-link align-middle"></i>
+                    Yolo8+
+                </a>
+                
+                You can read more about how to set everything up
+                <a href="https://wiki.eyeauras.net/en/YoloEase/getting-started">
+                    <i class="fa fa-external-link align-middle"></i>
+                    here
+                </a>
+            </div>
+            <div class="d-grid-auto-flow-rows gap-2">
+                
+                @foreach (var project in DataContext.RecentProjects.Items)
+                {
+                    <div @key=@project.FilePath class="w-100 my-1">
+                        <ReactiveButton Class="btn btn-secondary w-100"
+                                        ShowErrorIcon="false"
+                                        CommandEx="@DataContext.LoadProjectCommand"
+                                        CommandParameter="@project">
+                            @(project.FilePath.TakeMidChars(64))
+                        </ReactiveButton>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@code {
+
+}

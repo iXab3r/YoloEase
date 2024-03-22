@@ -1,0 +1,35 @@
+@inherits PoeShared.Blazor.BlazorReactiveComponent<TrainingTimelineEntry>
+
+<div class="d-flex">
+    @if (Track(x => x.ProgressPercent != null))
+    {
+        <ProgressBar Value="@Track(x => x.ProgressPercent != null ? x.ProgressPercent.Value : 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+    }
+    <div>
+        @Track(x => $"{x.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
+    </div>
+    <ReactiveButton
+        Class="btn btn-link h-auto mx-2 p-0"
+        HideIfDisabled="true"
+        IsEnabled="@Track(x => x.IsBusy)"
+        Command="@(DataContext.Cancel)">
+        <i class="fa fa-stop-circle-o fa-fixed"></i>
+        stop
+    </ReactiveButton>
+    <ReactiveButton
+        Class="btn btn-link h-auto mx-2 p-0"
+        HideIfDisabled="true"
+        IsEnabled="@Track(x => x.ModelFile != null)"
+        Command="@(async () => await ProcessUtils.SelectFileOrFolder(DataContext.ModelFile))">
+        <i class="fa fa-folder-o fa-fixed"></i>
+        open...
+    </ReactiveButton>
+    <ReactiveButton
+        Class="btn btn-link h-auto mx-2 p-0"
+        HideIfDisabled="true"
+        IsEnabled="@Track(x => x.ModelFile != null)"
+        Command="@(async () => await DataContext.Predict())">
+        <i class="fa fa-folder-o fa-fixed"></i>
+        predict...
+    </ReactiveButton>
+</div>

@@ -1,0 +1,98 @@
+﻿@using CvatApi
+@using YoloEase.UI.Dto
+@using FileInfo = System.IO.FileInfo
+@inherits PoeShared.Blazor.BlazorReactiveComponent<YoloEase.UI.Core.AnnotationsAccessor>
+
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <h4>
+                Annotated tasks (@(DataContext.AnnotatedTasks.Count))
+            </h4>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-12">
+            <Table TItem="TaskRead" DataSource="@(Track( x => x.AnnotatedTasks.Collection))">
+                <PropertyColumn Property="x => x.Id"/>
+                <PropertyColumn Property="x => x.Name"/>
+                <PropertyColumn Property="x => x.Assignee"/>
+                <PropertyColumn Property="x => x.Status"/>
+                <ActionColumn Title="Action">
+                    <Space>
+                        <SpaceItem>
+                            <ReactiveButton Command="@(async () => await DataContext.Project.NavigateToTask(context.Id.Value))">
+                                Open
+                            </ReactiveButton>
+                        </SpaceItem>
+                    </Space>
+                </ActionColumn>
+            </Table>
+            <ReactiveButton Class="btn btn-primary" Command="@DataContext.DownloadAnnotations">Download annotations</ReactiveButton>
+        </div>
+    </div>
+    <Divider/>
+
+    <div class="row">
+        <div class="col-12">
+            <h4>
+                Annotations (@(DataContext.Annotations.Count))
+            </h4>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-12">
+            <Table TItem="TaskAnnotationFileInfo" DataSource="@DataContext.Annotations.Collection">
+                <PropertyColumn Property="x => x.TaskId"/>
+                <PropertyColumn Property="x => x.TaskName"/>
+                <PropertyColumn Property="x => x.FilePath">
+                    @(Track(context, x => Path.GetFileNameWithoutExtension(x.FilePath)))
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.FileSize">
+                    @Track(context, x => ByteSize.FromBytes(x.FileSize))
+                </PropertyColumn>
+                <ActionColumn Title="Action">
+                    <Space>
+                        <SpaceItem>
+                            <ReactiveButton Command="@(async () => await ProcessUtils.SelectFileOrFolder(new FileInfo(context.FilePath)))">Open</ReactiveButton>
+                        </SpaceItem>
+                        <SpaceItem>
+                            <ReactiveButton Command="@(async () => await DataContext.RemoveAnnotationsFile(context))">Remove</ReactiveButton>
+                        </SpaceItem>
+                    </Space>
+                </ActionColumn>
+            </Table>
+            <ReactiveButton Class="btn btn-primary" Command="@DataContext.CreateAnnotatedDataset">Prepare dataset</ReactiveButton>
+        </div>
+    </div>
+    <Divider/>
+
+    <div class="row">
+        <div class="col-12">
+            <h4>
+                Datasets (@Track(x => x.Training.Datasets.Count))
+            </h4>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-12">
+            <span>
+                <Table TItem="DatasetInfo" DataSource="@Track(x => x.Training.Datasets.Collection)">
+                    <PropertyColumn Property="x => x.IndexFile">
+                        @Track(context, x => Path.GetRelativePath(DataContext.Training.StorageDirectory.FullName, x.IndexFile.FullName))
+                    </PropertyColumn>
+                    <ActionColumn Title="Train/Val/Test">
+                        @Track(context, x => $"{x.ImagesTrainingCount} / {x.ImagesValidationCount} / {x.ImagesTestCount}")
+                    </ActionColumn>
+                    <ActionColumn Title="Action">
+                        <Space>
+                            <SpaceItem>
+                                <ReactiveButton Command="@(async () => await ProcessUtils.SelectFileOrFolder(new FileInfo(context.IndexFile.FullName)))">Open</ReactiveButton>
+                            </SpaceItem>
+                        </Space>
+                    </ActionColumn>
+                </Table>
+            </span>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,17 @@
+﻿<eye:ApplicationBase x:Class="YoloEase.UI.App"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:eye="http://coderush.net/poeeye/">
+    <Application.Resources>
+          <eye:SharedResourceDictionary>
+            <eye:SharedResourceDictionary.MergedDictionaries>
+                <eye:SharedResourceDictionary Source="pack://application:,,,/PoeShared.Wpf;component/Themes/Styles.mahapps.xaml" />
+                <eye:SharedResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/styles/themes/dark.blue.xaml" />
+                <eye:SharedResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml" />
+                <eye:SharedResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Primary/materialdesigncolor.bluegrey.xaml" />
+                <eye:SharedResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Accent/MaterialDesignColor.LightBlue.xaml" />
+                <eye:SharedResourceDictionary Source="pack://application:,,,/PoeShared.Wpf;component/Themes/Generic.shared.xaml" />
+            </eye:SharedResourceDictionary.MergedDictionaries>
+        </eye:SharedResourceDictionary>
+    </Application.Resources>
+</eye:ApplicationBase>

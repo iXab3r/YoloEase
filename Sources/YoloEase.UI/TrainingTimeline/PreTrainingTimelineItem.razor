@@ -1,0 +1,58 @@
+@inherits PoeShared.Blazor.BlazorReactiveComponent<PreTrainingTimelineEntry>
+
+<div class="d-flex">
+    @if (Track(x => x.ProgressPercent != null))
+    {
+        <ProgressBar Value="@Track(x => x.ProgressPercent != null ? x.ProgressPercent.Value : 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+    }
+
+    <div class="vstack gap-3">
+        @if (Track(x => x.TerminatedStaleProcessCount > 0))
+        {
+            <div class="hstack gap-2">
+                <span class="badge bg-danger">@($"Terminated {"stale process".ToQuantity(DataContext.TerminatedStaleProcessCount)}")</span>
+            </div>
+        }
+        @if (Track(x => x.ChecksResult != null))
+        {
+            var isCpu = DataContext.ChecksResult.DeviceIndex.Contains("CPU", StringComparison.OrdinalIgnoreCase);
+            <div class="hstack gap-2">
+                @if (isCpu)
+                {
+                    <span class="badge bg-danger">@(Track(x => x.ChecksResult.DeviceName))</span>
+                }
+                else
+                {
+                    <span class="badge bg-success">@(Track(x => x.ChecksResult.DeviceName))</span>
+                }
+                <span class="badge bg-secondary">@(Track(x => x.ChecksResult.DeviceType))</span>
+                <span class="badge bg-secondary">@(Track(x => x.ChecksResult.DeviceIndex))</span>
+                <span class="badge bg-secondary">@(Track(x => x.ChecksResult.PythonVersion))</span>
+                <span class="badge bg-secondary">@(Track(x => x.ChecksResult.YoloVersion))</span>
+                <span class="badge bg-secondary">@(Track(x => x.ChecksResult.TorchVersion))</span>
+            </div>
+            @if (isCpu)
+            {
+                <div class="alert alert-warning">
+                    You're training on CPU, which is much slower than on GPU. <a href="https://wiki.eyeauras.net/en/YoloEase/how-to-train-on-gpu">Read more...</a>
+                </div>
+            }
+        }
+        else
+        {
+            <div>
+                @Track(x => $"{x.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
+                <ReactiveButton
+                    Class="btn btn-link h-auto mx-2 p-0"
+                    HideIfDisabled="true"
+                    IsEnabled="@Track(x => x.IsBusy)"
+                    Command="@(DataContext.Cancel)">
+                    <i class="fa fa-stop-circle-o fa-fixed"></i>
+                    stop
+                </ReactiveButton>
+            </div>
+        }
+    </div>
+
+
+</div>

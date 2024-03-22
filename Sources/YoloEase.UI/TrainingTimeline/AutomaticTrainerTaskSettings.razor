@@ -1,0 +1,154 @@
+@inherits YoloEaseComponent<AutomaticTrainer>
+
+<div class="container  align-items-center" style="width: 500px;">
+    <div class="row">
+        <div class="col-4 text-sm-end">
+            <label for="batchInfo" class="col-form-label text-nowrap">Files</label>
+        </div>
+        <div class="col-8">
+            <label class="col-form-label text-nowrap">
+                @Track(x => $"{x.Project.Assets.Files.Count} total / {x.Project.TrainingBatch.UnannotatedFiles.Count} unannotated")
+            </label>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-4 text-sm-end">
+            <label for="batchSizePercentage" class="col-form-label text-nowrap">Batch size</label>
+        </div>
+        <div class="col-5 align-self-end">
+            <input type="range" class="form-range mx-2"
+                   id="batchSizePercentage"
+                   min="@Track(x => x.Project.TrainingBatch.MinBatchPercentage)"
+                   max="@Track(x => x.Project.TrainingBatch.MaxBatchPercentage)"
+                   value="@Track(x => x.Project.TrainingBatch.BatchPercentage)"
+                   oninput="@((ChangeEventArgs x) => DataContext.Project.TrainingBatch.BatchPercentage = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
+        </div>
+        <div class="col-3">
+            <label class="col-form-label text-nowrap">@Track(x => $"{x.Project.TrainingBatch.BatchPercentage}%/{"file".ToQuantity(x.Project.TrainingBatch.BatchSize, ShowQuantityAs.Numeric)}")</label>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-4  text-sm-end">
+            <label class="col-form-label text-nowrap">Batching Strategy</label>
+        </div>
+        <div class="col-8 align-self-center">
+            <RadioGroup @bind-Value="DataContext.PickStrategy" Size="large">
+                <Radio Value="@(AutomaticTrainerPickStrategy.Random)">
+                    Random
+                </Radio>
+                <Radio Value="@(AutomaticTrainerPickStrategy.ActiveLearning)">
+                    Active learning
+                </Radio>
+            </RadioGroup>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-4 text-sm-end">
+            <label for="batchSizePercentage" class="col-form-label text-nowrap">Auto-annotation</label>
+        </div>
+        <div class="col-5 align-self-center">
+            <Switch Size="small" @bind-Checked="@DataContext.AutoAnnotate"/>
+        </div>
+    </div>
+
+    @if (Track(x => x.AutoAnnotate))
+    {
+        <div class="row">
+            <div class="col-4 text-sm-end">
+                <label for="batchSizePercentage" class="col-form-label text-nowrap">Model Strategy</label>
+            </div>
+            <div class="col-8 align-self-center">
+                <RadioGroup @bind-Value="DataContext.ModelStrategy" Size="large">
+                    <Radio Value="@(AutomaticTrainerModelStrategy.Latest)">
+                        Use Latest Model
+                    </Radio>
+                    <Radio Value="@(AutomaticTrainerModelStrategy.Custom)">
+                        Custom
+                    </Radio>
+                </RadioGroup>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-4 text-sm-end">
+                <label for="modelFile" class="col-form-label text-nowrap">Model</label>
+            </div>
+            <div class="col-8 align-self-center">
+                <div class="input-group">
+                    @{
+                        TrackState(x => x.Project.Predictions.PredictionModel);
+                    }
+                    <div class="form-control" id="modelFile">@(DataContext.Project.Predictions.PredictionModel?.ModelFile?.Name ?? "<null>")</div>
+
+                    <ReactiveButton Class="btn btn-outline-secondary" MinExecutionTime="TimeSpan.Zero" Command="@(DataContext.Project.Predictions.SelectModel)"
+                                    IsEnabled="@(Track(x => x.ModelStrategy == AutomaticTrainerModelStrategy.Custom))">
+                        <i class="fa fa-folder-open fa-fixed"></i>
+                    </ReactiveButton>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-4 text-sm-end">
+                <label for="batchPredictions" class="col-form-label text-nowrap">Predictions</label>
+            </div>
+            <div class="col-8 align-self-center">
+                @{
+                    var predictions = Track(x => x.Project.Predictions.LatestPredictions);
+                }
+                @if (predictions == null || predictions.Predictions.IsEmpty())
+                {
+                    <div class="badge bg-warning">No predictions yet, Start training</div>
+                }
+                else
+                {
+                    var labels = predictions.Predictions.SelectMany(x => x.Labels).Select(x => x.Confidence ?? 0).ToArray();
+                    <div class="d-flex gap-1">
+                        <div class="badge bg-success">
+                            @($"prediction".ToQuantity(predictions.Predictions.Length))
+                        </div>
+                        <div class="badge bg-secondary">
+                            @($"label".ToQuantity(labels.Length))
+                        </div>
+                        @if (labels.Any())
+                        {
+                            <div class="badge bg-secondary">
+                                @($"AvgConf: {labels.Average() * 100:F1}%")
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-4 text-sm-end">
+                <label for="batchSizePercentage" class="col-form-label text-nowrap">Confidence Threshold</label>
+            </div>
+            <div class="col-5 align-self-end">
+                <input type="range" class="form-range mx-2"
+                       id="batchSizePercentage"
+                       min="0"
+                       max="100"
+                       value="@Track(x => x.AutoAnnotateConfidenceThresholdPercentage)"
+                       oninput="@((ChangeEventArgs x) => DataContext.AutoAnnotateConfidenceThresholdPercentage = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
+            </div>
+            <div class="col-3 d-flex align-items-center gap-1">
+                <label class="col-form-label text-nowrap">@Track(x => $"{x.AutoAnnotateConfidenceThresholdPercentage:F0}%")</label>
+                @if (Track(x => x.AutoAnnotateUnannotatedFilesCount > 0))
+                {
+                    <div class="badge bg-success">
+                        @($"file".ToQuantity(Track(x => x.AutoAnnotateUnannotatedFilesCount)))
+                    </div>
+                }
+                else
+                {
+                    <div class="badge bg-warning">
+                        @("No files")
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+
+}

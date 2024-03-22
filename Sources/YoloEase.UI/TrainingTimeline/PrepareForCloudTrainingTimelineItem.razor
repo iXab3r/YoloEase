@@ -1,0 +1,50 @@
+@inherits PoeShared.Blazor.BlazorReactiveComponent<PrepareForCloudTrainingTimelineEntry>
+
+<div class="d-flex">
+    @if (Track(x => x.ProgressPercent != null))
+    {
+        <ProgressBar Value="@Track(x => x.ProgressPercent != null ? x.ProgressPercent.Value : 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+    }
+
+    <div class="vstack gap-3">
+        <div class="d-flex">
+            <div>
+                @Track(x => $"{x.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
+            </div>
+            <ReactiveButton
+                Class="btn btn-link h-auto mx-2 p-0"
+                HideIfDisabled="true"
+                IsEnabled="@Track(x => x.IsBusy)"
+                Command="@(DataContext.Cancel)">
+                <i class="fa fa-stop-circle-o fa-fixed"></i>
+                stop
+            </ReactiveButton>
+
+        </div>
+        @if (Track(x => x.DataArchiveFile != null))
+        {
+            <div class="alert alert-success">
+                <ol>
+                    <li>Go to <a href="https://colab.research.google.com/drive/15rofeDJtaRe4avg6We_JiVd-P4qQHDYj?usp=sharing">
+                        <i class="fa fa-external-link align-middle"></i>
+                        Google Collab
+                    </a></li>
+                    <li>
+                        Upload ZIP with training data
+                        <ReactiveButton
+                            Class="btn btn-link h-auto mx-2 p-0"
+                            HideIfDisabled="true"
+                            IsEnabled="@Track(x => x.DataArchiveFile != null)"
+                            Command="@(async () => await ProcessUtils.SelectFileOrFolder(DataContext.DataArchiveFile))">
+                            <i class="fa fa-folder-o fa-fixed"></i>
+                            open...
+                        </ReactiveButton>
+                    </li>
+                    <li>Run all steps 1-by-1</li>
+                </ol>
+
+            </div>
+        }
+    </div>
+
+</div>

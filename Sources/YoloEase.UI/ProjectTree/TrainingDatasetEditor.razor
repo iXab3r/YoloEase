@@ -1,0 +1,76 @@
+﻿@using YoloEase.UI.Dto
+@inherits PoeShared.Blazor.BlazorReactiveComponent<YoloEase.UI.Core.Yolo8DatasetAccessor>
+
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <h4>
+                Datasets (@Track(x => x.Datasets.Count))
+            </h4>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-12">
+            <Table TItem="DatasetInfo" DataSource="@Track(x => x.Datasets.Collection)">
+                <PropertyColumn Property="x => x.IndexFile">
+                    @Track(context, x => Path.GetRelativePath(DataContext.StorageDirectory.FullName, x.IndexFile.FullName))
+                </PropertyColumn>
+                <ActionColumn Title="Train/Val/Test">
+                    @Track(context, x => $"{x.ImagesTrainingCount} / {x.ImagesValidationCount} / {x.ImagesTestCount}")
+                </ActionColumn>
+                <ActionColumn Title="Action">
+                    <Space>
+                        <SpaceItem>
+                            <ReactiveButton Command="@(async () => await ProcessUtils.SelectFileOrFolder(new FileInfo(context.IndexFile.FullName)))">Open</ReactiveButton>
+                        </SpaceItem>
+                        @if (!context.IsStorage)
+                        {
+                            <SpaceItem>
+                                <ReactiveButton Command="@(async () => await DataContext.RemoveNonStorageDataset(context))">Unlink</ReactiveButton>
+                            </SpaceItem>
+                        }
+                        else
+                        {
+                            <SpaceItem>
+                                <ReactiveButton Command="@(async () => await DataContext.RemoveStorageDataset(context))">Remove</ReactiveButton>
+                            </SpaceItem>
+                        }
+                        <SpaceItem>
+                            <ReactiveButton Class="btn btn-primary" Command="@(async () => await DataContext.TrainModel(context))">Train</ReactiveButton>
+                        </SpaceItem>
+                    </Space>
+                </ActionColumn>
+            </Table>
+            <ReactiveButton Command="@DataContext.AddDataset">Link dataset</ReactiveButton>
+        </div>
+    </div>
+
+    <Divider/>
+
+    <div class="row">
+        <div class="col-12">
+            <h4>
+                Trained Models (@Track(x => x.TrainedModels.Count))
+            </h4>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-12">
+            <Table TItem="TrainedModelFileInfo" DataSource="@Track(x => x.TrainedModels.Collection)">
+                <PropertyColumn Property="x => x.ModelFile">
+                    @Track(context, x => Path.GetRelativePath(DataContext.StorageDirectory.FullName, x.ModelFile.FullName))
+                </PropertyColumn>
+                <PropertyColumn Property="x => x.ModelFile.Length">
+                    @Track( context, x => ByteSize.FromBytes(x.ModelFile.Length))
+                </PropertyColumn>
+                <ActionColumn Title="Action">
+                    <Space>
+                        <SpaceItem>
+                            <ReactiveButton Command="@(async () => await ProcessUtils.SelectFileOrFolder(new FileInfo(context.ModelFile.FullName)))">Open</ReactiveButton>
+                        </SpaceItem>
+                    </Space>
+                </ActionColumn>
+            </Table>
+        </div>
+    </div>
+</div>

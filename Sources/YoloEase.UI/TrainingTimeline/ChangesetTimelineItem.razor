@@ -1,0 +1,38 @@
+@inherits PoeShared.Blazor.BlazorReactiveComponent<ChangesetTimelineEntry>
+
+@if (Track(x => x.NewTasks.Count <= 0))
+{
+    @Track(x => $"{x.Text}{(x.IsBusy ? "..." : string.Empty)}")
+}
+else
+{
+    <details>
+        <summary>
+            @Track(x => $"{x.Text}{(x.IsBusy ? "..." : string.Empty)}")
+        </summary>
+        @{
+            const int MaxItemsToShow = 10;
+        }
+
+        @{
+            var totalItems = Track(x => x.NewTasks.Count);
+        }
+
+        @{
+            var itemsToShow = Math.Min(MaxItemsToShow, totalItems);
+        }
+
+        @{
+            var itemsHidden = totalItems - itemsToShow;
+            foreach (var fileName in Track(x => x.NewTasks.Collection.Take(itemsToShow)))
+            {
+                <div>@($"{fileName}")</div>
+            }
+            if (itemsHidden > 0)
+            {
+                <div>@($"{("item".ToQuantity(itemsHidden))} hidden...")</div>
+            }
+        }
+        }
+    </details>
+}

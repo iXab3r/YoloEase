@@ -1,0 +1,8 @@
+@inherits PoeShared.Blazor.BlazorReactiveComponent<ErrorTimelineEntry>
+
+<div class="d-flex">
+    <div class="vstack gap-3">
+        <span class="badge bg-danger text-sm-start"><i class="fa fa-exclamation-circle fa-fixed"></i> @DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</span>
+        <span class="alert alert-danger">@(DataContext.Exception.Message)</span>
+    </div>
+</div>
