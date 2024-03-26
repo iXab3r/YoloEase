@@ -6,6 +6,7 @@ using CvatApi;
 using Humanizer;
 using YoloEase.UI.Core;
 using YoloEase.UI.Dto;
+using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.TrainingTimeline;
 
@@ -72,7 +73,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         var predictions = this.DatasetPredictions.Predictions
             .Select(x => x with
             {
-                Labels = x.Labels.EmptyIfNull().Where(y => y.Confidence >= AutoAnnotateConfidenceThreshold).ToArray()
+                Labels = x.Labels.EmptyIfNull().Where(y => y.Score >= AutoAnnotateConfidenceThreshold).ToArray()
             })
             .Where(x => x.Labels.Any())
             .ToDictionary(x => x.File.Name);
@@ -81,7 +82,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             .Select(x =>
             {
                 var predictionsForFile = predictions.GetValueOrDefault(x.Name);
-                return new { File = x, Labels = predictionsForFile?.Labels ?? Array.Empty<YoloLabel>(), Score = predictionsForFile?.Labels.Max(y => y.Confidence)};
+                return new { File = x, Labels = predictionsForFile?.Labels ?? Array.Empty<YoloPrediction>(), Score = predictionsForFile?.Labels.Max(y => y.Score)};
             })
             .OrderByDescending(x => x.Score)
             .ToArray();
@@ -111,41 +112,30 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
 
         var projectLabelsByName = cvatProjectAccessor.Labels.Items
             .ToDictionary(x => x.Name, x => x);
-        
-        var yoloLabelsById = projectLabelsByName
-            .OrderBy(x => x.Value.Id)
-            .Select(x => x.Value.Name)
-            .Select((labelName, idx) => new {x = labelName, idx})
-            .ToDictionary(x => x.idx, x => x.x);
 
         var labels = files
             .Select(x => predictions.GetValueOrDefault(x.Name))
             .Where(x => x != null)
             .Select(x => x with
             {
-                Labels = x.Labels.EmptyIfNull().Where(y => y.Confidence >= AutoAnnotateConfidenceThreshold).ToArray()
+                Labels = x.Labels.EmptyIfNull().Where(y => y.Score >= AutoAnnotateConfidenceThreshold).ToArray()
             })
             .Where(x => x.Labels.Any())
-            .Select(x => x.Labels.Select(label =>
+            .Select(x => x.Labels.Select(prediction =>
             {
                 if (!taskFramesByFileName.TryGetValue(x.File.Name, out var taskFrame))
                 {
                     throw new InvalidStateException($"Failed to resolve frame using name {x.File.Name}");
                 }
 
-                if (!yoloLabelsById.TryGetValue(label.Id, out var labelName))
+                if (!projectLabelsByName.TryGetValue(prediction.Label.Name, out var cvatLabel))
                 {
-                    throw new InvalidStateException($"Failed to resolve Yolo label using Id {label.Id}, known labels: {yoloLabelsById.DumpToString()}");
-                }
-
-                if (!projectLabelsByName.TryGetValue(labelName, out var cvatLabel))
-                {
-                    throw new InvalidStateException($"Failed to resolve CVAT label using Name {labelName}, known labels: {projectLabelsByName.DumpToString()}");
+                    throw new InvalidStateException($"Failed to resolve CVAT label using Name {prediction.Label.Name}, known labels: {projectLabelsByName.DumpToString()}");
                 }
 
                 return new CvatRectangleAnnotation()
                 {
-                    BoundingBox = label.BoundingBox,
+                    BoundingBox = prediction.BoundingBox,
                     LabelId = cvatLabel.Id.Value,
                     FrameIndex = taskFrame.FrameIdx
                 };

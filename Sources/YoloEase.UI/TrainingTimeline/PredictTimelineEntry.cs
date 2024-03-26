@@ -51,8 +51,8 @@ public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
             var labelsById = predictionResults.Predictions
                 .Select(x => x.Labels)
                 .SelectMany(x => x)
-                .GroupBy(x => x.Id)
-                .Select(x => new { Id = x.Key, Count = x.Count(), AvgConfidence = x.Average(y => y.Confidence) })
+                .GroupBy(x => x.Label.Name)
+                .Select(x => new { Id = x.Key, Count = x.Count(), AvgConfidence = x.Average(y => y.Score) })
                 .ToArray();
             
             Text = $"Prediction completed in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}, images: {predictionResults.Predictions.Length}, labels: {labelsById.Select(x => $"Id: {x.Id}, Count: {x.Count}, AvgConf: {x.AvgConfidence}").DumpToString()}";

@@ -100,7 +100,7 @@
                 }
                 else
                 {
-                    var labels = predictions.Predictions.SelectMany(x => x.Labels).Select(x => x.Confidence ?? 0).ToArray();
+                    var labels = predictions.Predictions.SelectMany(x => x.Labels).Select(x => x.Score).ToArray();
                     <div class="d-flex gap-1">
                         <div class="badge bg-success">
                             @($"prediction".ToQuantity(predictions.Predictions.Length))

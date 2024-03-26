@@ -2,13 +2,15 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using JetBrains.Annotations;
+using Microsoft.ML.OnnxRuntime;
 using PoeShared.Dialogs.Services;
-using PoeShared.Services;
 using YoloEase.UI.Dto;
 using YoloEase.UI.Scaffolding;
 using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.Core;
+
+
 
 public class Yolo8PredictAccessor : RefreshableReactiveObject
 {
@@ -19,18 +21,15 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
     }
 
     private readonly Yolo8CliWrapper cliWrapper;
-    private readonly IUniqueIdGenerator idGenerator;
     private readonly IOpenFileDialog openFileDialog;
     private readonly IScheduler uiScheduler;
 
     public Yolo8PredictAccessor(
         Yolo8CliWrapper cliWrapper,
-        IUniqueIdGenerator idGenerator,
         IOpenFileDialog openFileDialog,
         [Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler)
     {
         this.cliWrapper = cliWrapper;
-        this.idGenerator = idGenerator;
         this.openFileDialog = openFileDialog;
         this.uiScheduler = uiScheduler;
 
@@ -75,7 +74,7 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
         };
     }
 
-    private async Task<DatasetPredictInfo> GetPredictionsOrDefault(TrainedModelFileInfo modelFileInfo, DirectoryInfo predictionsDir)
+    private async Task<DatasetPredictInfo> GetPredictionsOrDefault(TrainedModelFileInfo modelFileInfo, DirectoryInfo predictionsDir, YoloModelDescription yoloModelDescription)
     {
         var modelDirectory = GetModelPredictionsFolder(modelFileInfo);
         if (!modelDirectory.Exists)
@@ -87,7 +86,7 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
         {
             return null;
         }
-        var predictions = ParsePredictions(predictionsDir).ToArray();
+        var predictions = ParsePredictions(predictionsDir, yoloModelDescription).ToArray();
         return new DatasetPredictInfo()
         {
             OutputDirectory = modelDirectory,
@@ -108,6 +107,12 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
             throw new DirectoryNotFoundException($"Model file not found @ {modelFile.FullName}");
         }
 
+        Log.Info($"Loading model from file {modelFile.FullName}");
+        var modelData = await File.ReadAllBytesAsync(modelFile.FullName, cancellationToken);
+        var modelOptions = new SessionOptions();
+        using var yoloModel = new YoloModel(modelData, modelOptions);
+        Log.Info($"Loaded model from file {modelFile.FullName}: {yoloModel.Description.Dump()}");
+        
         var modelDirectory = GetModelPredictionsFolder(modelFileInfo);
         if (modelDirectory.Exists)
         {
@@ -115,7 +120,7 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
         }
 
         modelDirectory.Create();
-
+        
         var predictDirectory = await cliWrapper.Predict(new Yolo8PredictArguments()
         {
             Model = modelFileInfo.ModelFile.FullName,
@@ -123,14 +128,16 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
             Source = inputDirectory.FullName,
             Confidence = ConfidenceThresholdPercentage / 100,
             IoU = IoUThresholdPercentage / 100,
+            ImageSize = yoloModel.Description.Size.Width.ToString(),
             AdditionalArguments = PredictAdditionalArguments,
         }, updateHandler: updateHandler, cancellationToken: cancellationToken);
 
-        return await GetPredictionsOrDefault(modelFileInfo, predictDirectory);
+        return await GetPredictionsOrDefault(modelFileInfo, predictDirectory, yoloModel.Description);
     }
 
     private static IEnumerable<PredictInfo> ParsePredictions(
-        DirectoryInfo predictDirectory)
+        DirectoryInfo predictDirectory,
+        YoloModelDescription modelDescription)
     {
         var result = new List<PredictInfo>();
         var labelsDirectory = new DirectoryInfo(Path.Combine(predictDirectory.FullName, "labels"));
@@ -138,12 +145,18 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
         {
             return Array.Empty<PredictInfo>();
         }
+        
+        if (modelDescription.Labels.IsEmpty())
+        {
+            throw new ArgumentException($"Model does not contain valid labels");
+        }
+        var labelsByClassIdx = modelDescription.Labels.ToDictionary(x => x.Id, x => x);
 
         var predictImages = predictDirectory.GetFiles("*.*", SearchOption.TopDirectoryOnly);
         foreach (var predictImage in predictImages)
         {
             var imageSize = ImageUtils.GetImageSize(predictImage);
-            var labels = new List<YoloLabel>();
+            var labels = new List<YoloPredictionInfo>();
             var labelFileName = new FileInfo(Path.Combine(labelsDirectory.FullName, Path.ChangeExtension(predictImage.Name, "txt")));
             if (labelFileName.Exists)
             {
@@ -162,7 +175,20 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
             var prediction = new PredictInfo()
             {
                 File = predictImage,
-                Labels = labels.ToArray()
+                Labels = labels.Select(x =>
+                {
+                    if (!labelsByClassIdx.TryGetValue(x.ClassIdx, out var label))
+                    {
+                        throw new ArgumentException($"Failed to map class Idx {x.ClassIdx}, to label, known labels: {labelsByClassIdx.DumpToString()}");
+                    }
+
+                    return new YoloPrediction()
+                    {
+                        BoundingBox = x.BoundingBox,
+                        Score = x.Score,
+                        Label = label
+                    };
+                }).ToArray()
             };
             result.Add(prediction);
         }
@@ -170,7 +196,7 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
         return result;
     }
 
-    private static IEnumerable<YoloLabel> ParseYoloLabels(FileInfo file)
+    private static IEnumerable<YoloPredictionInfo> ParseYoloLabels(FileInfo file)
     {
         using var reader = file.OpenText();
 
@@ -191,11 +217,11 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
             var height = float.Parse(parts[4], CultureInfo.InvariantCulture);
             var confidence = float.Parse(parts[5], CultureInfo.InvariantCulture);
 
-            yield return new YoloLabel
+            yield return new YoloPredictionInfo
             {
-                Id = id,
+                ClassIdx = id,
                 BoundingBox = RectangleD.FromYolo(centerX, centerY, width, height),
-                Confidence = confidence
+                Score = confidence
             };
         }
     }

@@ -15,3 +15,12 @@ global using System;
 
 global using FileInfo = System.IO.FileInfo;
 global using Type = System.Type;
+global using WinSize = System.Drawing.Size;
+global using WinSizeF = System.Drawing.SizeF;
+global using WinPoint = System.Drawing.Point;
+global using WinPointF = System.Drawing.PointF;
+global using WinRect = System.Drawing.Rectangle;
+global using WinRectangle = System.Drawing.Rectangle;
+global using WinRectangleF = System.Drawing.RectangleF;
+global using WpfColor = System.Windows.Media.Color;
+global using WinColor = System.Drawing.Color;

@@ -6,6 +6,7 @@ using PoeShared;
 using PoeShared.Common;
 using YoloEase.UI.Core;
 using YoloEase.UI.Dto;
+using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.TrainingTimeline;
 
@@ -19,7 +20,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     private readonly IFactory<PreTrainingTimelineEntry, TimelineController, DatasetInfo, Yolo8DatasetAccessor> preTrainingEntryFactory;
     private readonly IFactory<TrainingTimelineEntry, TimelineController, DatasetInfo, Yolo8DatasetAccessor, Yolo8PredictAccessor> trainingEntryFactory;
     private readonly IFactory<PredictTimelineEntry, TimelineController, TrainedModelFileInfo, DirectoryInfo, Yolo8DatasetAccessor, Yolo8PredictAccessor> predictEntryFactory;
-    private readonly CircularSourceList<TimelineEntry> timelineSource = new(200);
+    private readonly CircularSourceList<TimelineEntry> timelineSource = new(100);
     private readonly TimelineController timelineController;
     private CancellationTokenSource activeTrainingCancellationTokenSource;
 
@@ -112,7 +113,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         var predictions = datasetPredictions.Predictions
             .Select(x => x with
             {
-                Labels = x.Labels.EmptyIfNull().Where(y => y.Confidence >= confidence).ToArray()
+                Labels = x.Labels.EmptyIfNull().Where(y => y.Score >= confidence).ToArray()
             })
             .Where(x => x.Labels.Any())
             .ToDictionary(x => x.File.Name);
@@ -121,7 +122,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             .Select(x =>
             {
                 var predictionsForFile = predictions.GetValueOrDefault(x.Name);
-                return new {File = x, Labels = predictionsForFile?.Labels ?? Array.Empty<YoloLabel>(), Score = predictionsForFile?.Labels.Max(y => y.Confidence)};
+                return new {File = x, Labels = predictionsForFile?.Labels ?? Array.Empty<YoloPrediction>(), Score = predictionsForFile?.Labels.Max(y => y.Score)};
             })
             .OrderByDescending(x => x.Score)
             .ToArray();
