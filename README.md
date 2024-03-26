@@ -13,13 +13,13 @@ Wiki is located here - https://wiki.eyeauras.net/en/YoloEase/getting-started
 5. Deploy and utilize your trained model!
 
 First you setup CVAT/Dataset/model settings
-![Main window](https://i.imgur.com/Mm7J8nc.png =x400)
+![Main window](https://i.imgur.com/Mm7J8nc.png)
 
 Then you can start creating annotation tasks. When new task is created you can pick an option to pre-annotate the batch and/or pick only those images which will benefit model the most
-![Task Settings](https://i.imgur.com/a9owC7c.png =x400)
+![Task Settings](https://i.imgur.com/a9owC7c.png)
 
 As soon as the program will detect that something has changed - settings, annotations, images - it will re-train the model right away. As soon as the model will be ready you can use it to pre-annotate next batch
-![Training process](https://i.imgur.com/gunKrAJ.png =x500)
+![Training process](https://i.imgur.com/gunKrAJ.png)
 
 
 ## How it streamlines the process
