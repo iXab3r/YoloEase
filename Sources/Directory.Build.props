@@ -5,9 +5,9 @@
         <NoWarn>CA1416;NU1701;CS0649;CS0414;CS1998;UA306_A;UA306_A4;NU5125;CS1591;CS1570;</NoWarn>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <PlatformTarget>x64</PlatformTarget>
-        <_EyeAurasDotNetTfm Condition="'$(_EyeAurasDotNetTfm)' == ''">net7</_EyeAurasDotNetTfm>
-        <_EyeAurasDotNetWinTfm Condition="'$(_EyeAurasDotNetWinTfm)' == ''">net7-windows</_EyeAurasDotNetWinTfm>
-        <_EyeAurasDotNetWinRTTfm Condition="'$(_EyeAurasDotNetWinRTTfm)' == ''">net7-windows10.0.20348.0</_EyeAurasDotNetWinRTTfm>
+        <_EyeAurasDotNetTfm Condition="'$(_EyeAurasDotNetTfm)' == ''">net8</_EyeAurasDotNetTfm>
+        <_EyeAurasDotNetWinTfm Condition="'$(_EyeAurasDotNetWinTfm)' == ''">net8-windows</_EyeAurasDotNetWinTfm>
+        <_EyeAurasDotNetWinRTTfm Condition="'$(_EyeAurasDotNetWinRTTfm)' == ''">net8-windows10.0.20348.0</_EyeAurasDotNetWinRTTfm>
     </PropertyGroup>
 
     <Choose>
