@@ -107,6 +107,10 @@
             else
             {
                 <div class="input-group">
+                    <ReactiveButton Class="btn btn-outline-secondary"
+                                    Command="@(async () => await ProcessUtils.OpenFolder(DataContext.YoloEaseProject.StorageDirectory))">
+                        <i class="fa fa-folder-open"></i>
+                    </ReactiveButton>
                     <Select TItem="ProjectRead"
                             TItemValue="int"
                             Class="form-control w-auto"

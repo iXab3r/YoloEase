@@ -34,17 +34,19 @@ public class YoloModelCachingService : DisposableReactiveObjectWithLogger, IYolo
     public async Task<FileInfo> ResolveModelByName(string modelName)
     {
         var log = Log.WithSuffix(modelName);
-        log.Debug($"Resolving model {modelName}");
+        var cacheDirectory = CacheDirectory;
+        
+        log.Debug($"Resolving model {modelName} from cache, directory: {cacheDirectory}");
         await mutex.WaitAsync();
 
-        if (CacheDirectory == null)
+        if (cacheDirectory == null)
         {
             throw new InvalidOperationException("Cache directory is not set");
         }
 
         try
         {
-            var localModelPath = Path.Combine(CacheDirectory.FullName, modelName);
+            var localModelPath = Path.Combine(cacheDirectory.FullName, modelName);
             var localModel = new FileInfo(localModelPath);
             log.Debug($"Cached model path: {localModel.FullName} (exists: {localModel.Exists})");
 
@@ -52,7 +54,7 @@ public class YoloModelCachingService : DisposableReactiveObjectWithLogger, IYolo
             {
                 return localModel;
             }
-
+            log.Debug($"Model {modelName} does not in the cache yet, downloading it");
             await DownloadModel(log, modelName, localModel);
             log.Debug($"Model '{modelName}' size: {ByteSize.FromBytes(localModel.Length)}");
             return localModel;
@@ -72,6 +74,7 @@ public class YoloModelCachingService : DisposableReactiveObjectWithLogger, IYolo
         
         try
         {
+            log.Debug($"Downloading the model {modelName} from {modelUri} to temp file {tmpFilePath}");
             await fileDownloader.DownloadFile(modelUri.ToString(), tmpFilePath, progressPercent => { log.Debug($"Download progress: {progressPercent}%"); });
             var tmpFile = new FileInfo(tmpFilePath);
             log.Debug($"Download completed into {tmpFile.FullName}, exists: {tmpFile.Exists}");
