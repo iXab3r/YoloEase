@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Reactive.Disposables;
+using System.Text;
 using System.Threading;
 using Humanizer;
 using YoloEase.UI.Core;
@@ -9,22 +10,26 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+public sealed record PredictArgs
+{
+    public required TrainedModelFileInfo Model { get; init; } 
+    
+    public required FileInfo[] Files { get; init; }
+}
+
 public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
 {
     private readonly TrainedModelFileInfo trainedModelFileInfo;
+    private readonly PredictArgs predictArgs;
     private readonly Yolo8PredictAccessor predictAccessor;
 
     public PredictTimelineEntry(
-        TrainedModelFileInfo trainedModelFileInfo, 
-        DirectoryInfo inputDirectory,
+        PredictArgs predictArgs,
         Yolo8PredictAccessor predictAccessor)
     {
-        InputDirectory = inputDirectory;
-        this.trainedModelFileInfo = trainedModelFileInfo;
+        this.predictArgs = predictArgs;
         this.predictAccessor = predictAccessor;
     }
-    
-    public DirectoryInfo InputDirectory { get; }
     
     public DatasetPredictInfo DatasetPredictions { get; private set; }
 
@@ -37,8 +42,7 @@ public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
 
         try
         {
-            var predictionResults = await predictAccessor.Predict(trainedModelFileInfo,
-                InputDirectory,
+            var predictionResults = await predictAccessor.Predict(predictArgs, 
                 update =>
             {
                 ProgressPercent = (int) update.ProgressPercentage;
@@ -54,8 +58,14 @@ public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
                 .GroupBy(x => x.Label.Name)
                 .Select(x => new { Id = x.Key, Count = x.Count(), AvgConfidence = x.Average(y => y.Score) })
                 .ToArray();
-            
-            Text = $"Prediction completed in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}, images: {predictionResults.Predictions.Length}, labels: {labelsById.Select(x => $"Id: {x.Id}, Count: {x.Count}, AvgConf: {x.AvgConfidence}").DumpToString()}";
+
+            var text = new StringBuilder($"Prediction completed in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}\n");
+            text.AppendLine($"Images: {predictionResults.Predictions.Length}, Labels: {labelsById.Select(x => x.Count).Sum()}");
+            foreach (var label in labelsById)
+            {
+                text.AppendLine($"Id: {label.Id}, Count: {label.Count}, AvgConf: {label.AvgConfidence}");
+            }
+            Text = text.ToString();
 
             return predictionResults;
         }

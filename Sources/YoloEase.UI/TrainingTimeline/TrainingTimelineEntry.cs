@@ -50,7 +50,13 @@ public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
             var inputDirectory = folderBrowserDialog.ShowDialog();
             if (inputDirectory != null)
             {
-                var predictEntry = new PredictTimelineEntry(TrainedModelFile, inputDirectory, predictAccessor);
+                var files = inputDirectory.GetFiles();
+                
+                var predictEntry = new PredictTimelineEntry(new PredictArgs()
+                {
+                    Model = TrainedModelFile,
+                    Files = files
+                }, predictAccessor);
                 timelineController.Add(predictEntry);
                 try
                 {

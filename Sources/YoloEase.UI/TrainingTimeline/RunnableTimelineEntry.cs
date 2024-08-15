@@ -1,9 +1,10 @@
 using System.Threading;
+using PoeShared.Blazor.Controls;
 using PoeShared.Services;
 
 namespace YoloEase.UI.TrainingTimeline;
 
-public abstract class RunnableTimelineEntry : TrainerTimelineEntryBase
+public abstract class RunnableTimelineEntry : TimelineEntry
 {
     private static readonly Binder<RunnableTimelineEntry> Binder = new();
 
@@ -39,7 +40,7 @@ public abstract class RunnableTimelineEntry : TrainerTimelineEntryBase
     protected abstract Task RunInternal(CancellationToken cancellationToken);
 }
 
-public abstract class RunnableTimelineEntry<T> : TrainerTimelineEntryBase
+public abstract class RunnableTimelineEntry<T> : TimelineEntry
 {
     private static readonly Binder<RunnableTimelineEntry<T>> Binder = new();
 

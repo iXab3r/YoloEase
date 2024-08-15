@@ -10,7 +10,7 @@
                 IsEnabled="@Track(x => x.CanRequestUpdate && !x.UpdateRequested)"
                 Command="@(async () => { DataContext.TimelineController.PerformUpdateOnNextCycle = true; DataContext.UpdateRequested = true; })">
                 <i class="fa fa-download fa-fixed"></i>
-                install the update before next cycle
+                install the update
             </ReactiveButton>
         </div>
         @if (Track(x => !string.IsNullOrEmpty(x.UpdateText)))

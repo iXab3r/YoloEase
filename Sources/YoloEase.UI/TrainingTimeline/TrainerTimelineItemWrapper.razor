@@ -1,15 +1,14 @@
 @using System.Globalization
-@using Microsoft.AspNetCore.Components.Rendering
 @using PoeShared.Blazor.Scaffolding
 @using PoeShared.Blazor.Wpf.Scaffolding
-@inherits PoeShared.Blazor.BlazorReactiveComponent<TrainerTimelineEntryBase>
+@inherits PoeShared.Blazor.BlazorReactiveComponent<TimelineEntry>
 
 <TimelineItem Class="@Track(x => x.IsBusy ? "ant-timeline-item-pending" : "")"
               Label="@Track(x => x.Timestamp == null ? "" : x.Timestamp.Value.ToString("HH:mm:ss", CultureInfo.InvariantCulture))">
-    <div class="d-flex ">
+    <div class="d-flex align-items-center">
         @if (!string.IsNullOrEmpty(DataContext.PrefixIcon))
         {
-            <i class="@($"me-2 align-self-center fa a-fixed {DataContext.PrefixIcon}")" style="font-size:20px;"></i>
+            <i class="@($"me-2 align-self-center fa {DataContext.PrefixIcon}")"></i>
         }
         <BlazorContentPresenter Content="@DataContext"/>
         

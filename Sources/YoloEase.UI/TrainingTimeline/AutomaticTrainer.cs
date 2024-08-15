@@ -20,7 +20,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     private readonly IFactory<PrepareForCloudTrainingTimelineEntry, TimelineController, DatasetInfo> prepareForCloudTrainingTimelineEntryFactory;
     private readonly IFactory<PreTrainingTimelineEntry, TimelineController, DatasetInfo, Yolo8DatasetAccessor> preTrainingEntryFactory;
     private readonly IFactory<TrainingTimelineEntry, TimelineController, DatasetInfo, Yolo8DatasetAccessor, Yolo8PredictAccessor> trainingEntryFactory;
-    private readonly IFactory<PredictTimelineEntry, TimelineController, TrainedModelFileInfo, DirectoryInfo, Yolo8DatasetAccessor, Yolo8PredictAccessor> predictEntryFactory;
+    private readonly IFactory<PredictTimelineEntry, TimelineController, PredictArgs, Yolo8DatasetAccessor, Yolo8PredictAccessor> predictEntryFactory;
     private readonly CircularSourceList<TimelineEntry> timelineSource = new(100);
     private readonly TimelineController timelineController;
     private CancellationTokenSource activeTrainingCancellationTokenSource;
@@ -36,7 +36,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         IFactory<PrepareForCloudTrainingTimelineEntry, TimelineController, DatasetInfo> prepareForCloudTrainingTimelineEntryFactory,
         IFactory<PreTrainingTimelineEntry, TimelineController, DatasetInfo, Yolo8DatasetAccessor> preTrainingEntryFactory,
         IFactory<TrainingTimelineEntry, TimelineController, DatasetInfo, Yolo8DatasetAccessor, Yolo8PredictAccessor> trainingEntryFactory,
-        IFactory<PredictTimelineEntry, TimelineController, TrainedModelFileInfo, DirectoryInfo, Yolo8DatasetAccessor, Yolo8PredictAccessor> predictEntryFactory)
+        IFactory<PredictTimelineEntry, TimelineController, PredictArgs, Yolo8DatasetAccessor, Yolo8PredictAccessor> predictEntryFactory)
     {
         timelineController = new TimelineController(timelineSource);
         this.clock = clock;
@@ -85,12 +85,16 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     public TimeSpan CycleTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     public bool IsSelected { get; set; }
+    
+    public bool ShowSettings { get; set; }
 
     public bool AutoAnnotate { get; set; }
 
     public AutomaticTrainerModelStrategy ModelStrategy { get; set; }
     
-    public AutomaticTrainerPickStrategy PickStrategy { get; set; }
+    public AutomaticTrainerPredictionStrategy PredictionStrategy { get; set; }
+    
+    public AutomaticTrainerFilePickStrategy PickStrategy { get; set; }
 
     public AutomaticTrainerMode TrainingMode { get; set; }
 
@@ -201,7 +205,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     private async Task HandleTraining(CancellationToken cancellationToken)
     {
         Project.Predictions.LatestPredictions = null;
-
+        
         var cycleIdx = 1;
         DatasetInfo lastTrainedDataset = default;
         ModelTrainingSettings lastTrainingSettings = default;
@@ -213,6 +217,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                 new BasicTimelineEntry
                 {
                     Text = $"Cycle #{cycleIdx} started",
+                    PrefixIcon = " fa-arrow-circle-right",
                     Timestamp = clock.Now
                 }.AddTo(timelineSource);
 
@@ -242,10 +247,47 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     break;
                 }
 
-                if (AutoAnnotate)
+                if (Project.Predictions.PredictionModel == null && ModelStrategy == AutomaticTrainerModelStrategy.Latest)
                 {
-                    await AddPredictionsIfNeeded(cancellationToken);
+                    if (Project.TrainingDataset.TrainedModels.Count <= 0)
+                    {
+                        new BasicTimelineEntry()
+                        {
+                            Text = $"Model is not set, refreshing trained models list",
+                            Timestamp = clock.Now
+                        }.AddTo(timelineSource);
+                        await Project.TrainingDataset.Refresh();
+                    }
+                    
+                    if (Project.TrainingDataset.TrainedModels.Count > 0)
+                    {
+                        var modelToPick = Project.TrainingDataset.TrainedModels.Items
+                            .OrderByDescending(x => x.ModelFile.LastWriteTime)
+                            .First();
+                        Project.Predictions.PredictionModel = modelToPick;
+                        new BasicTimelineEntry
+                        {
+                            Text = $"Latest model: {modelToPick}",
+                            Timestamp = clock.Now
+                        }.AddTo(timelineSource);
+                    }
+                    else
+                    {
+                        new BasicTimelineEntry
+                        {
+                            Text = $"Latest model: could not find any models at all",
+                            Timestamp = clock.Now
+                        }.AddTo(timelineSource);
+                    }
                 }
+                
+                await Project.TrainingDataset.Refresh();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                
+                await AddPredictionsIfNeeded(cancellationToken);
 
                 var trainingSettings = Project.TrainingDataset.TrainingSettings;
                 if (lastTrainedDataset is {ProjectInfo: not null})
@@ -309,12 +351,6 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                         {
                             break;
                         }
-
-                        if (ModelStrategy == AutomaticTrainerModelStrategy.Latest)
-                        {
-                            Project.Predictions.PredictionModel = modelFile;
-                            await AddPredictionsIfNeeded(cancellationToken);
-                        }
                     }
                     catch (Exception e)
                     {
@@ -343,6 +379,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                 new BasicTimelineEntry
                 {
                     Text = $"Cycle #{cycleIdx} completed",
+                    PrefixIcon = " fa-arrow-circle-left",
                     Timestamp = clock.Now
                 }.AddTo(timelineSource);
                 cycleIdx++;
@@ -357,7 +394,9 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     private async Task AddPredictionsIfNeeded(CancellationToken cancellationToken)
     {
-        if (Project.Predictions.PredictionModel == null)
+        var predictions = Project.Predictions;
+        var predictionModel = predictions.PredictionModel;
+        if (predictionModel == null)
         {
             return;
         }
@@ -370,17 +409,56 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
         var inputDirectory = directories[0];
 
-        var noPredictions = Project.Predictions.LatestPredictions == null;
-        var isAnotherModel = Project.Predictions.LatestPredictions?.ModelFile != Project.Predictions.PredictionModel;
-        var storageHasChanged = Project.Predictions.LatestPredictions != null && !Yolo8PredictAccessor.HasAllPredictions(inputDirectory, Project.Predictions.LatestPredictions);
+        var latestPredictions = predictions.LatestPredictions;
+
+
+        FileInfo[] filesToRunPredictOn;
+        switch (PredictionStrategy)
+        {
+            case AutomaticTrainerPredictionStrategy.AllFiles:
+            {
+                filesToRunPredictOn = inputDirectory.GetFiles();
+                break;
+            }
+            case AutomaticTrainerPredictionStrategy.Disabled:
+            {
+                filesToRunPredictOn = [];
+                break;
+            }
+            case AutomaticTrainerPredictionStrategy.Unlabeled:
+            {
+                filesToRunPredictOn = Project.TrainingBatch.UnannotatedFiles.Items.ToArray();
+                break;
+            }
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
+
+        if (filesToRunPredictOn.IsEmpty())
+        {
+            return;
+        }
+        
+        var noPredictions = latestPredictions == null;
+        var isAnotherModel = latestPredictions?.ModelFile != predictions.PredictionModel;
+        var storageHasChanged = latestPredictions != null && !Yolo8PredictAccessor.HasAllPredictions(filesToRunPredictOn, latestPredictions);
+        
         var haveToPredict = noPredictions || isAnotherModel || storageHasChanged;
         if (!haveToPredict)
         {
             return;
         }
 
-        var predictEntry = predictEntryFactory.Create(timelineController, Project.Predictions.PredictionModel, inputDirectory, Project.TrainingDataset, Project.Predictions).AddTo(timelineSource);
-        var predictions = await predictEntry.Run(cancellationToken);
-        Project.Predictions.LatestPredictions = predictions;
+        var predictEntry = predictEntryFactory.Create(
+            timelineController, 
+            new PredictArgs()
+            {
+                Files = filesToRunPredictOn,
+                Model = predictionModel
+            },
+            Project.TrainingDataset, 
+            Project.Predictions).AddTo(timelineSource);
+        var actualPredictions = await predictEntry.Run(cancellationToken);
+        Project.Predictions.LatestPredictions = actualPredictions;
     }
 }

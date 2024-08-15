@@ -5,7 +5,7 @@
     {
         <ProgressBar Value="@Track(x => x.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
     }
-    <div>@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</div>
+    <pre class="p-0 m-0" style="font-family: inherit; font-size: 1em;">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>
     <ReactiveButton
         Class="btn btn-link h-auto mx-2 p-0"
         HideIfDisabled="true"

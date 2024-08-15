@@ -146,15 +146,3 @@ a {
 .btn-link {
     text-decoration: none;
 }
-
-.ant-radio {
-    color: inherit;
-}
-
-.ant-radio-wrapper{
-    color: inherit;
-}
-
-.ant-radio-button-wrapper {
-    color: inherit;
-}

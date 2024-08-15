@@ -30,7 +30,7 @@ public class UpdateYoloTimelineEntry : RunnableTimelineEntry
         using var progressAnchor = Disposable.Create(() => ProgressPercent = null);
         if (!TimelineController.PerformUpdateOnNextCycle)
         {
-            Text = "Installed version of Yolo is obsolete, you have to update it";
+            Text = "Installed version of Yolo is obsolete";
         }
         else
         {

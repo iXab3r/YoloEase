@@ -262,10 +262,15 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         additionalFilesSource.Add(new RefFileInfo(@"_content/AntDesign/js/ant-design-blazor.js"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/AntDesign/css/ant-design-blazor.css"));
         additionalFilesSource.Add(new RefFileInfo(@"css/bootstrap.css"));
+        additionalFilesSource.Add(new RefFileInfo(@"css/app.css"));
+        
+        additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/PoeShared.Blazor.Controls.bundle.scp.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-colors.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-style.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-ant-blazor.css"));
+        
         additionalFilesSource.Add(new RefFileInfo(@"assets/css/yoloease.css"));
+        
         additionalFilesSource.Add(new RefFileInfo(@"assets/js/split.min.js"));
         additionalFilesSource.Add(new RefFileInfo(@"assets/js/main.js"));
 

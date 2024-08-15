@@ -1,0 +1,14 @@
+# TODO
+- MAJOR! Use Channel<T> instead of the current system
+- remove advanced mode
+- ~~predict only NON labeled items~~
+- ~~add an option to predict the whole pack (e.g. for testing)~~
+- preserve prediction results between sessions to avoid running expensive predictions again
+- for sources:
+  - make it possible to disable source. NON-labeled files from disabled sources are not counted in overall calculations
+  - print labeled/total files from the source
+  - print prediction stats by label?
+- for auto-annotation, make it possible to select confidence for different labels
+- for packs generation add another strategies:
+  - pick specific number of files instead of percentage
+  - pick percentage of TOTAL files (e.g. no matter how many files, 5% = 20 packs)

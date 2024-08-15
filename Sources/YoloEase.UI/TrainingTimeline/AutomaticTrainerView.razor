@@ -3,178 +3,179 @@
 @inherits YoloEaseComponent<AutomaticTrainer>
 
 <div class="d-flex flex-column h-100">
-<div class="d-flex p-0 m-1">
-    <div>
-        @if (Track(x => x.IsBusy))
-        {
-            <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-link" Command="@DataContext.Stop">
-                <i class="fa fa-fixed fa-stop-circle"></i>
-                Stop automatic training
+    <div class="d-flex p-0 m-1">
+        <div>
+            @if (Track(x => x.IsBusy))
+            {
+                <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-link" Command="@DataContext.Stop">
+                    <i class="fa fa-stop-circle"></i>
+                    Stop automatic training
+                </ReactiveButton>
+                <div class="spinner-border align-middle"></div>
+            }
+            else
+            {
+                <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-primary" Command="@DataContext.Start">
+                    <i class="fa fa-play-circle"></i>
+                    Start automatic training
+                </ReactiveButton>
+            }
+            <a href="https://wiki.eyeauras.net/en/YoloEase/how-to-use-automatic-trainer">
+                <i class="fa fa-external-link align-middle m-2"></i>
+            </a>
+        </div>
+        <div class="flex-grow-1"></div>
+        <div class="d-flex">
+            <div class="align-self-center">
+                <RadioGroup @bind-Value="DataContext.TrainingMode" Size="large">
+                    <Radio Value="@(AutomaticTrainerMode.Local)" Class="text-body">
+                        <img src="/assets/images/desktop-computer-svgrepo-com.svg" alt="Google Colab Logo" width="16" height="16"/>
+                        Local Training
+                    </Radio>
+                    <Radio Value="@(AutomaticTrainerMode.GoogleColab)" Class="text-body">
+                        <img src="/assets/images/Google_Colaboratory_SVG_Logo.svg" alt="Google Colab Logo" width="16" height="16"/>
+                        Google Colab
+                    </Radio>
+                </RadioGroup>
+            </div>
+            <ReactiveButton MinExecutionTime="TimeSpan.Zero" Command="@DataContext.ClearTimeline">
+                <i class="fa fa-refresh"></i>
+                Clear
             </ReactiveButton>
-            <div class="spinner-border align-middle"></div>
-        }
-        else
-        {
-            <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-primary" Command="@DataContext.Start">
-                <i class="fa fa-fixed fa-play-circle"></i>
-                Start automatic training
+        </div>
+    </div>
+
+    <div class="flex-grow-1 d-grid p-2 overflow-hidden" style="grid-template-columns: 1fr auto auto">
+        <div class="scroller overflow-x-hidden overflow-y-auto">
+            @if (Track(x => x.Timeline.Count > 0))
+            {
+                <Timeline Mode="TimelineMode.Left" Style="margin-left: -80%">
+                    <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Timeline)})">
+                        @foreach (var entry in DataContext.Timeline.Items)
+                        {
+                            <TrainerTimelineItemWrapper DataContext="@entry"/>
+                        }
+                    </ReactiveSection>
+                </Timeline>
+            }
+            else
+            {
+                <div class="alert alert-secondary">
+                    Timeline of events will be displayed here. Click "Start" to kick-off training process
+                </div>
+            }
+            <div class="scroller-anchor"></div>
+        </div>
+
+        <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.ShowSettings)})">
+            @if (DataContext.ShowSettings)
+            {
+                <span class="vr mx-1"></span>
+
+                <div class="overflow-x-hidden overflow-y-auto ps-1 pe-2">
+                    <AutomaticTrainerTaskSettings DataContext="@DataContext"/>
+                </div>
+            }
+        </ReactiveSection>
+    </div>
+
+    <div class="alert alert-info p-1 m-1">
+        <div class="d-flex align-items-center gap-2">
+            <div class="d-flex gap-2">
+                <ReactiveButton
+                    Class="@Track(x => x.Project.TrainingBatch.UnannotatedFiles.Count > 0 ? "btn btn-primary" : "btn btn-secondary")" Command="@(async () => await (DataContext.CreateNextTask()))">
+                    <i class="fa fa-file"></i>
+                    Create Task
+                </ReactiveButton>
+            </div>
+
+            <div class="w-25 mx-2">
+                <ProgressBar
+                    Maximum="@Track(x => x.Project.Assets.Files.Count)"
+                    Value="@Track(x => x.Project.Assets.Files.Count - x.Project.TrainingBatch.UnannotatedFiles.Count)">
+                    <div class="mx-2">
+                        @Track(x => $"{x.Project.Assets.Files.Count - x.Project.TrainingBatch.UnannotatedFiles.Count} / {x.Project.Assets.Files.Count}")
+                    </div>
+                </ProgressBar>
+            </div>
+            <div class="flex-grow-1 text-center">
+                <ReactiveButton Class="btn btn-link"
+                                Command="@DataContext.Project.Refresh">
+                    <i class="fa fa-refresh"></i>
+                    Refresh
+                </ReactiveButton>
+            </div>
+
+            <div class="w-25 mx-2">
+                <ProgressBar
+                    Maximum="@Track(x => x.Project.RemoteProject.Tasks.Count)"
+                    Value="@(Track(x => x.Project.RemoteProject.Tasks.Count - x.Project.TrainingBatch.UnannotatedTasks.Count))">
+                    <div class="mx-2">
+                        @Track(x => $"{x.Project.RemoteProject.Tasks.Count - x.Project.TrainingBatch.UnannotatedTasks.Count} / {x.Project.RemoteProject.Tasks.Count}")
+                    </div>
+                </ProgressBar>
+            </div>
+            <Modal Title="@("Unannotated Tasks")"
+                   Centered="true"
+                   Visible="taskListIsVisible"
+                   OnOk="@(() => taskListIsVisible = false)"
+                   OnCancel="@(() => taskListIsVisible = false)">
+                <div class="flex">
+                    <div class="align-self-center">
+                        <RadioGroup @bind-Value="DataContext.TaskFilter" Size="large">
+                            <Radio Value="@(AutomaticTrainerTaskFilter.All)" Class="text-body">
+                                All tasks
+                            </Radio>
+                            <Radio Value="@(AutomaticTrainerTaskFilter.Unannotated)" Class="text-body">
+                                Only Unannotated
+                            </Radio>
+                        </RadioGroup>
+                    </div>
+
+                    <div class="flex-grow-1">
+                        <Table TItem="TaskRead" DataSource="@(Track(x => (x.TaskFilter == AutomaticTrainerTaskFilter.All ? x.Project.TrainingBatch.Tasks : x.Project.TrainingBatch.UnannotatedTasks).Collection))">
+                            <PropertyColumn Property="x => x.Name" Title="Name">
+                                @Track(context, x => x.Name)
+                            </PropertyColumn>
+                            <ActionColumn>
+                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id.Value))">
+                                    <i class="fa fa-play-circle-o"></i>
+                                </ReactiveButton>
+                            </ActionColumn>
+                            <ActionColumn>
+                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id.Value))">
+                                    <i class="fa fa-link"></i>
+                                </ReactiveButton>
+                            </ActionColumn>
+                            <ActionColumn Width="60" Class="text-sm-center">
+                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.DeleteTask(context.Id.Value))">
+                                    <i class="fa fa-remove"></i>
+                                </ReactiveButton>
+                            </ActionColumn>
+                        </Table>
+                    </div>
+                </div>
+            </Modal>
+            <ReactiveButton
+                IsEnabled="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0))"
+                Class="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0 ? "btn btn-primary" : "btn btn-secondary"))"
+                Command="@DataContext.NavigateToNextUnannotatedTask">
+                <i class="fa fa-link"></i>
+                Annotate Task
             </ReactiveButton>
-        }
-        <a href="https://wiki.eyeauras.net/en/YoloEase/how-to-use-automatic-trainer">
-            <i class="fa fa-external-link align-middle m-2"></i>
-        </a>
-    </div>
-    <div class="flex-grow-1"></div>
-    <div class="d-flex">
-        <div class="align-self-center">
-            <RadioGroup @bind-Value="DataContext.TrainingMode" Size="large">
-                <Radio Value="@(AutomaticTrainerMode.Local)" Class="text-body">
-                    <img src="/assets/images/desktop-computer-svgrepo-com.svg" alt="Google Colab Logo" width="16" height="16"/>
-                    Local Training
-                </Radio>
-                <Radio Value="@(AutomaticTrainerMode.GoogleColab)" Class="text-body">
-                    <img src="/assets/images/Google_Colaboratory_SVG_Logo.svg" alt="Google Colab Logo" width="16" height="16"/>
-                    Google Colab
-                </Radio>
-            </RadioGroup>
-        </div>
-        <ReactiveButton MinExecutionTime="TimeSpan.Zero" Command="@DataContext.ClearTimeline">
-            <i class="fa fa-fixed fa-refresh"></i>
-            Clear
-        </ReactiveButton>
-    </div>
-</div>
-
-
-<div class="scroller p-2 flex-grow-1 overflow-x-hidden overflow-y-auto">
-    @if (Track(x => x.Timeline.Count > 0))
-    {
-        <Timeline Mode="TimelineMode.Left" Style="margin-left: -80%">
-            <ReactiveSection Trackers="@(new(){ this.WhenAnyValue(x => x.DataContext.Timeline) })">
-                @foreach (var entry in DataContext.Timeline.Items)
-                {
-                  <TrainerTimelineItemWrapper DataContext="@entry"/>
-                }
-            </ReactiveSection>
-        </Timeline>
-    }
-    else
-    {
-        <div class="alert alert-secondary">
-            Timeline of events will be displayed here. Click "Start" to kick-off training process
-        </div>
-    }
-    <div class="scroller-anchor"></div>
-</div>
-
-<div class="alert alert-info p-1 m-1">
-<div class="d-flex align-items-center gap-2">
-<div class="d-flex gap-2">
-    <ReactiveButton
-        Class="@Track(x => x.Project.TrainingBatch.UnannotatedFiles.Count > 0 ? "btn btn-primary" : "btn btn-secondary")" Command="@(async () => await (DataContext.CreateNextTask()))">
-        <i class="fa fa-fixed fa-file"></i>
-        Create Task
-    </ReactiveButton>
-    <ReactiveButton
-        Class="btn btn-secondary"
-        MinExecutionTime="TimeSpan.Zero"
-        Command="@(async () => { taskConfigIsVisible = true; StateHasChanged(); })">
-        <i class="fa fa-cog"></i>
-    </ReactiveButton>
-    <Modal Title="@("Settings")"
-           Centered="true"
-           Visible="taskConfigIsVisible"
-           OnOk="@(() => taskConfigIsVisible = false)"
-           OnCancel="@(() => taskConfigIsVisible = false)">
-        <AutomaticTrainerTaskSettings DataContext="@DataContext"/>
-    </Modal>
-</div>
-
-<div class="w-25 mx-2">
-    <ProgressBar
-        Maximum="@Track(x => x.Project.Assets.Files.Count)"
-        Value="@Track(x => x.Project.Assets.Files.Count - x.Project.TrainingBatch.UnannotatedFiles.Count)">
-        <div class="mx-2">
-            @Track(x => $"{x.Project.Assets.Files.Count - x.Project.TrainingBatch.UnannotatedFiles.Count} / {x.Project.Assets.Files.Count}")
-        </div>
-    </ProgressBar>
-</div>
-<div class="flex-grow-1 text-center">
-    <ReactiveButton Class="btn btn-link"
-                    Command="@DataContext.Project.Refresh">
-        <i class="fa fa-fixed fa-refresh"></i>
-        Refresh
-    </ReactiveButton>
-</div>
-
-<div class="w-25 mx-2">
-    <ProgressBar
-        Maximum="@Track(x => x.Project.RemoteProject.Tasks.Count)"
-        Value="@(Track(x => x.Project.RemoteProject.Tasks.Count - x.Project.TrainingBatch.UnannotatedTasks.Count))">
-        <div class="mx-2">
-            @Track(x => $"{x.Project.RemoteProject.Tasks.Count - x.Project.TrainingBatch.UnannotatedTasks.Count} / {x.Project.RemoteProject.Tasks.Count}")
-        </div>
-    </ProgressBar>
-</div>
-<Modal Title="@("Unannotated Tasks")"
-       Centered="true"
-       Visible="taskListIsVisible"
-       OnOk="@(() => taskListIsVisible = false)"
-       OnCancel="@(() => taskListIsVisible = false)">
-    <div class="flex">
-        <div class="align-self-center">
-            <RadioGroup @bind-Value="DataContext.TaskFilter" Size="large">
-                <Radio Value="@(AutomaticTrainerTaskFilter.All)" Class="text-body">
-                    All tasks
-                </Radio>
-                <Radio Value="@(AutomaticTrainerTaskFilter.Unannotated)" Class="text-body">
-                    Only Unannotated
-                </Radio>
-            </RadioGroup>
-        </div>
-
-        <div class="flex-grow-1">
-            <Table TItem="TaskRead" DataSource="@(Track(x => (x.TaskFilter == AutomaticTrainerTaskFilter.All ? x.Project.TrainingBatch.Tasks : x.Project.TrainingBatch.UnannotatedTasks).Collection))">
-                <PropertyColumn Property="x => x.Name" Title="Name">
-                    @Track(context, x => x.Name)
-                </PropertyColumn>
-                <ActionColumn>
-                    <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id.Value))">
-                        <i class="fa fa-fixed fa-play-circle-o"></i>
-                    </ReactiveButton>
-                </ActionColumn>
-                <ActionColumn>
-                    <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id.Value))">
-                        <i class="fa fa-fixed fa-link"></i>
-                    </ReactiveButton>
-                </ActionColumn>
-                <ActionColumn Width="60" Class="text-sm-center">
-                    <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.DeleteTask(context.Id.Value))">
-                        <i class="fa fa-fixed fa-remove"></i>
-                    </ReactiveButton>
-                </ActionColumn>
-            </Table>
+            <ReactiveButton
+                Class="btn btn-secondary"
+                MinExecutionTime="TimeSpan.Zero"
+                Command="@(async () => { taskListIsVisible = true; StateHasChanged(); })">
+                <i class="fa fa-list"></i>
+            </ReactiveButton>
+            <ToggleButton @bind-IsChecked="@DataContext.ShowSettings">
+                <i class="fa fa-cog"></i>
+            </ToggleButton>
         </div>
     </div>
-</Modal>
-<ReactiveButton
-    IsEnabled="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0))"
-    Class="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0 ? "btn btn-primary" : "btn btn-secondary"))"
-    Command="@DataContext.NavigateToNextUnannotatedTask">
-    <i class="fa fa-fixed fa-link"></i>
-    Annotate Task
-</ReactiveButton>
-<ReactiveButton
-    Class="btn btn-secondary"
-    MinExecutionTime="TimeSpan.Zero"
-    Command="@(async () => { taskListIsVisible = true; StateHasChanged(); })">
-    <i class="fa fa-list"></i>
-</ReactiveButton>
-</div>
-</div>
 </div>
 
 @code {
-    bool taskConfigIsVisible;
     bool taskListIsVisible;
 }

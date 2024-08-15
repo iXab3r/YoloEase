@@ -14,7 +14,7 @@
         <TitleTemplate>
             @if (Track(context, x => !x.IsLeaf))
             {
-                <i class="fa fa-fixed @Track(context, x => x.Expanded ? "fa-folder-open-o" : "fa-folder-o")"></i>
+                <i class="fa @Track(context, x => x.Expanded ? "fa-folder-open" : "fa-folder")"></i>
             }
             @if (context.DataItem is TaskTreeNode taskTreeNode)
             {

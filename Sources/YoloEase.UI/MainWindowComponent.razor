@@ -74,8 +74,6 @@
 </div>
 <div id="statusBar">
     <div id="statusLeft" class="d-flex">
-        Advanced mode
-        <Switch @bind-Checked="@DataContext.IsAdvancedMode"/>
     </div>
     <div id="statusMiddle">
     </div>
@@ -87,10 +85,10 @@
         }
 
         <ReactiveButton Class="btn btn-link" Command="@DataContext.OpenAppDirectory">
-            <i class="fa fa-folder-open-o fa-fixed"></i>
+            <i class="fa fa-folder-open"></i>
         </ReactiveButton>
         <ReactiveButton Class="btn btn-link" Command="@DataContext.OpenAppDataDirectory">
-            <i class="fa fa-file fa-fixed"></i>
+            <i class="fa fa-file"></i>
         </ReactiveButton>
     </div>
 </div>

@@ -6,6 +6,7 @@ using Microsoft.ML.OnnxRuntime;
 using PoeShared.Dialogs.Services;
 using YoloEase.UI.Dto;
 using YoloEase.UI.Scaffolding;
+using YoloEase.UI.TrainingTimeline;
 using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.Core;
@@ -23,6 +24,7 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
     private readonly Yolo8CliWrapper cliWrapper;
     private readonly IOpenFileDialog openFileDialog;
     private readonly IScheduler uiScheduler;
+    private static readonly string[] ImageFilesExtensions = new[] {"*.png", "*.jpg", "*.bmp"};
 
     public Yolo8PredictAccessor(
         Yolo8CliWrapper cliWrapper,
@@ -96,12 +98,11 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
     }
 
     public async Task<DatasetPredictInfo> Predict(
-        TrainedModelFileInfo modelFileInfo,
-        DirectoryInfo inputDirectory,
+        PredictArgs args,
         Action<Yolo8PredictProgressUpdate> updateHandler = null,
         CancellationToken cancellationToken = default)
     {
-        var modelFile = modelFileInfo.ModelFile;
+        var modelFile = args.Model.ModelFile;
         if (!modelFile.Exists)
         {
             throw new DirectoryNotFoundException($"Model file not found @ {modelFile.FullName}");
@@ -113,26 +114,39 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
         using var yoloModel = new YoloModel(modelData, modelOptions);
         Log.Info($"Loaded model from file {modelFile.FullName}: {yoloModel.Description.Dump()}");
         
-        var modelDirectory = GetModelPredictionsFolder(modelFileInfo);
+        var modelDirectory = GetModelPredictionsFolder(args.Model);
         if (modelDirectory.Exists)
         {
             modelDirectory.Delete(recursive: true);
         }
 
         modelDirectory.Create();
+
+        var tmpInputDirectoryPath = modelDirectory.FullName + ".tmp";
+        if (Directory.Exists(tmpInputDirectoryPath))
+        {
+            Directory.Delete(tmpInputDirectoryPath, recursive: true);
+        }
+        Directory.CreateDirectory(tmpInputDirectoryPath);
+
+        foreach (var file in args.Files)
+        {
+            var linkFilePath = Path.Combine(tmpInputDirectoryPath, file.Name);
+            File.CreateSymbolicLink(linkFilePath, file.FullName);
+        }
         
         var predictDirectory = await cliWrapper.Predict(new Yolo8PredictArguments()
         {
-            Model = modelFileInfo.ModelFile.FullName,
+            Model = modelFile.FullName,
             WorkingDirectory = modelDirectory,
-            Source = inputDirectory.FullName,
+            Source = tmpInputDirectoryPath,
             Confidence = ConfidenceThresholdPercentage / 100,
             IoU = IoUThresholdPercentage / 100,
             ImageSize = yoloModel.Description.Size.Width.ToString(),
             AdditionalArguments = PredictAdditionalArguments,
         }, updateHandler: updateHandler, cancellationToken: cancellationToken);
 
-        return await GetPredictionsOrDefault(modelFileInfo, predictDirectory, yoloModel.Description);
+        return await GetPredictionsOrDefault(args.Model, predictDirectory, yoloModel.Description);
     }
 
     private static IEnumerable<PredictInfo> ParsePredictions(
@@ -227,16 +241,14 @@ public class Yolo8PredictAccessor : RefreshableReactiveObject
     }
 
     public static bool HasAllPredictions(
-        DirectoryInfo inputDirectory,
+        IReadOnlyList<FileInfo> filesInInput,
         DatasetPredictInfo predictions)
     {
-        var filters = new[] {"*.png", "*.jpg", "*.bmp"};
-        var filesInInput = filters
-            .SelectMany(x => inputDirectory.GetFiles(x, SearchOption.AllDirectories)).ToDictionary(x => x.Name);
-        var filesInPredictions = filters
+        var filesInInputByName = filesInInput.ToDictionary(x => x.Name);
+        var filesInPredictions = ImageFilesExtensions
             .SelectMany(x => predictions.OutputDirectory.GetFiles(x, SearchOption.AllDirectories)).ToDictionary(x => x.Name);
 
-        var additionalFiles = filesInInput.Where(x => !filesInPredictions.ContainsKey(x.Key)).ToArray();
+        var additionalFiles = filesInInputByName.Where(x => !filesInPredictions.ContainsKey(x.Key)).ToArray();
         if (additionalFiles.Any())
         {
             return false;
