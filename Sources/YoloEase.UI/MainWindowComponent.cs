@@ -12,5 +12,7 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
 {
     public MainWindowComponent()
     {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.YoloEaseProject));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsAdvancedMode));
     }
 }

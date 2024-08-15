@@ -74,15 +74,14 @@
             </div>
             <div class="col-8 align-self-center">
                 <div class="input-group">
-                    @{
-                        TrackState(x => x.Project.Predictions.PredictionModel);
-                    }
-                    <div class="form-control" id="modelFile">@(DataContext.Project.Predictions.PredictionModel?.ModelFile?.Name ?? "<null>")</div>
+                    <ReactiveSection Trackers="@(new(){ this.WhenAnyValue(x => x.DataContext.Project.Predictions.PredictionModel) })">
+                        <div class="form-control" id="modelFile">@(DataContext.Project.Predictions.PredictionModel?.ModelFile?.Name ?? "<null>")</div>
 
-                    <ReactiveButton Class="btn btn-outline-secondary" MinExecutionTime="TimeSpan.Zero" Command="@(DataContext.Project.Predictions.SelectModel)"
-                                    IsEnabled="@(Track(x => x.ModelStrategy == AutomaticTrainerModelStrategy.Custom))">
-                        <i class="fa fa-folder-open fa-fixed"></i>
-                    </ReactiveButton>
+                        <ReactiveButton Class="btn btn-outline-secondary" MinExecutionTime="TimeSpan.Zero" Command="@(DataContext.Project.Predictions.SelectModel)"
+                                        IsEnabled="@(Track(x => x.ModelStrategy == AutomaticTrainerModelStrategy.Custom))">
+                            <i class="fa fa-folder-open fa-fixed"></i>
+                        </ReactiveButton>
+                    </ReactiveSection>
                 </div>
             </div>
         </div>

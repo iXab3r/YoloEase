@@ -50,10 +50,12 @@
     @if (Track(x => x.Timeline.Count > 0))
     {
         <Timeline Mode="TimelineMode.Left" Style="margin-left: -80%">
-            @foreach (var entry in Track(x => x.Timeline.Collection))
-            {
-                <ReactiveTimelineItemWrapper DataContext="@entry"/>
-            }
+            <ReactiveSection Trackers="@(new(){ this.WhenAnyValue(x => x.DataContext.Timeline) })">
+                @foreach (var entry in DataContext.Timeline.Items)
+                {
+                  <TrainerTimelineItemWrapper DataContext="@entry"/>
+                }
+            </ReactiveSection>
         </Timeline>
     }
     else

@@ -1,3 +1,5 @@
+using PoeShared.Blazor.Controls;
+
 namespace YoloEase.UI.TrainingTimeline;
 
 public sealed class TimelineController 

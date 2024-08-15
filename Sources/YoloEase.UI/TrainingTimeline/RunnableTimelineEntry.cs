@@ -3,7 +3,7 @@ using PoeShared.Services;
 
 namespace YoloEase.UI.TrainingTimeline;
 
-public abstract class RunnableTimelineEntry : TimelineEntry
+public abstract class RunnableTimelineEntry : TrainerTimelineEntryBase
 {
     private static readonly Binder<RunnableTimelineEntry> Binder = new();
 
@@ -39,7 +39,7 @@ public abstract class RunnableTimelineEntry : TimelineEntry
     protected abstract Task RunInternal(CancellationToken cancellationToken);
 }
 
-public abstract class RunnableTimelineEntry<T> : TimelineEntry
+public abstract class RunnableTimelineEntry<T> : TrainerTimelineEntryBase
 {
     private static readonly Binder<RunnableTimelineEntry<T>> Binder = new();
 

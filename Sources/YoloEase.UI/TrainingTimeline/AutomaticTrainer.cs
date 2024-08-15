@@ -3,6 +3,7 @@ using System.Reactive.Disposables;
 using System.Threading;
 using AntDesign;
 using PoeShared;
+using PoeShared.Blazor.Controls;
 using PoeShared.Common;
 using YoloEase.UI.Core;
 using YoloEase.UI.Dto;
@@ -212,7 +213,6 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                 new BasicTimelineEntry
                 {
                     Text = $"Cycle #{cycleIdx} started",
-                    PrefixIcon = " fa-arrow-circle-o-right",
                     Timestamp = clock.Now
                 }.AddTo(timelineSource);
 
@@ -343,7 +343,6 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                 new BasicTimelineEntry
                 {
                     Text = $"Cycle #{cycleIdx} completed",
-                    PrefixIcon = " fa-arrow-circle-o-left",
                     Timestamp = clock.Now
                 }.AddTo(timelineSource);
                 cycleIdx++;

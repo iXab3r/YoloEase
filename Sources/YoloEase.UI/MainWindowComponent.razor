@@ -1,10 +1,6 @@
 ﻿@using YoloEase.UI.Core
 @inherits YoloEaseComponent<MainWindowViewModel>
 
-@{
-    Track(x => x.YoloEaseProject);
-    Track(x => x.IsAdvancedMode);
-}
 <HeadContent>
     <style>
             
@@ -100,3 +96,4 @@
 </div>
 
 <ReactiveNotificationsContainer Notifications="@DataContext.WhenNotified"/>
+

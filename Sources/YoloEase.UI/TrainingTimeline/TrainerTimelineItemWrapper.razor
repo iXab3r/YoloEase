@@ -1,7 +1,8 @@
 @using System.Globalization
 @using Microsoft.AspNetCore.Components.Rendering
+@using PoeShared.Blazor.Scaffolding
 @using PoeShared.Blazor.Wpf.Scaffolding
-@inherits PoeShared.Blazor.BlazorReactiveComponent<TimelineEntry>
+@inherits PoeShared.Blazor.BlazorReactiveComponent<TrainerTimelineEntryBase>
 
 <TimelineItem Class="@Track(x => x.IsBusy ? "ant-timeline-item-pending" : "")"
               Label="@Track(x => x.Timestamp == null ? "" : x.Timestamp.Value.ToString("HH:mm:ss", CultureInfo.InvariantCulture))">

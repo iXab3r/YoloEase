@@ -13,21 +13,23 @@
     </div>
     <div class="row">
         <div class="col-12">
-            <Table TItem="TaskRead" DataSource="@(Track( x => x.AnnotatedTasks.Collection))">
-                <PropertyColumn Property="x => x.Id"/>
-                <PropertyColumn Property="x => x.Name"/>
-                <PropertyColumn Property="x => x.Assignee"/>
-                <PropertyColumn Property="x => x.Status"/>
-                <ActionColumn Title="Action">
-                    <Space>
-                        <SpaceItem>
-                            <ReactiveButton Command="@(async () => await DataContext.Project.NavigateToTask(context.Id.Value))">
-                                Open
-                            </ReactiveButton>
-                        </SpaceItem>
-                    </Space>
-                </ActionColumn>
-            </Table>
+            <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.AnnotatedTasks)})">
+                <Table TItem="TaskRead" DataSource="@(DataContext.AnnotatedTasks.Items)">
+                    <PropertyColumn Property="x => x.Id"/>
+                    <PropertyColumn Property="x => x.Name"/>
+                    <PropertyColumn Property="x => x.Assignee"/>
+                    <PropertyColumn Property="x => x.Status"/>
+                    <ActionColumn Title="Action">
+                        <Space>
+                            <SpaceItem>
+                                <ReactiveButton Command="@(async () => await DataContext.Project.NavigateToTask(context.Id.Value))">
+                                    Open
+                                </ReactiveButton>
+                            </SpaceItem>
+                        </Space>
+                    </ActionColumn>
+                </Table>
+            </ReactiveSection>
             <ReactiveButton Class="btn btn-primary" Command="@DataContext.DownloadAnnotations">Download annotations</ReactiveButton>
         </div>
     </div>
@@ -70,28 +72,37 @@
     <div class="row">
         <div class="col-12">
             <h4>
-                Datasets (@Track(x => x.Training.Datasets.Count))
+                <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Training.Datasets)})">
+                    Datasets (@DataContext.Training.Datasets.Count))
+                </ReactiveSection>
             </h4>
         </div>
     </div>
     <div class="row">
         <div class="col-12">
             <span>
-                <Table TItem="DatasetInfo" DataSource="@Track(x => x.Training.Datasets.Collection)">
-                    <PropertyColumn Property="x => x.IndexFile">
-                        @Track(context, x => Path.GetRelativePath(DataContext.Training.StorageDirectory.FullName, x.IndexFile.FullName))
-                    </PropertyColumn>
-                    <ActionColumn Title="Train/Val/Test">
-                        @Track(context, x => $"{x.ImagesTrainingCount} / {x.ImagesValidationCount} / {x.ImagesTestCount}")
-                    </ActionColumn>
-                    <ActionColumn Title="Action">
-                        <Space>
-                            <SpaceItem>
-                                <ReactiveButton Command="@(async () => await ProcessUtils.SelectFileOrFolder(new FileInfo(context.IndexFile.FullName)))">Open</ReactiveButton>
-                            </SpaceItem>
-                        </Space>
-                    </ActionColumn>
-                </Table>
+                <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Training.Datasets)})">
+                    <Table TItem="DatasetInfo" DataSource="@(DataContext.Training.Datasets.Items)">
+                        <PropertyColumn Property="x => x.IndexFile">
+                            <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Training.StorageDirectory)})">
+                                @(Path.GetRelativePath(DataContext.Training.StorageDirectory.FullName, context.IndexFile.FullName))
+                            </ReactiveSection>
+                        </PropertyColumn>
+                        <ActionColumn Title="Train/Val/Test">
+                            <ReactiveSection Trackers="@(new() {context.WhenAnyValue(x => x.ImagesTestCount, x => x.ImagesValidationCount, x => x.ImagesTestCount)})">
+                                @($"{context.ImagesTrainingCount} / {context.ImagesValidationCount} / {context.ImagesTestCount}")
+                            </ReactiveSection>
+                        </ActionColumn>
+                        <ActionColumn Title="Action">
+                            <Space>
+                                <SpaceItem>
+                                    <ReactiveButton Command="@(async () => await ProcessUtils.SelectFileOrFolder(new FileInfo(context.IndexFile.FullName)))">Open</ReactiveButton>
+                                </SpaceItem>
+                            </Space>
+                        </ActionColumn>
+                    </Table>
+                </ReactiveSection>
+
             </span>
         </div>
     </div>
