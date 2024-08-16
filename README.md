@@ -16,8 +16,8 @@ First you setup CVAT/Dataset/model settings
 ![Main window](https://i.imgur.com/Mm7J8nc.png)
 
 Then you can start creating annotation tasks. When new task is created you can pick an option to pre-annotate the batch and/or pick only those images which will benefit model the most
-![Task Settings](https://i.imgur.com/a9owC7c.png)
-
+![Task Settings](https://s3.eyeauras.net/media/2024/08/3wrHqj5DqgvkmzX3.png)
+ 
 As soon as the program will detect that something has changed - settings, annotations, images - it will re-train the model right away. As soon as the model will be ready you can use it to pre-annotate next batch
 ![Training process](https://i.imgur.com/gunKrAJ.png)
 
