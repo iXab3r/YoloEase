@@ -22,7 +22,7 @@
                     <ActionColumn Title="Action">
                         <Space>
                             <SpaceItem>
-                                <ReactiveButton Command="@(async () => await DataContext.Project.NavigateToTask(context.Id.Value))">
+                                <ReactiveButton Command="@(async () => await DataContext.RemoteProject.NavigateToTask(context.Id.Value))">
                                     Open
                                 </ReactiveButton>
                             </SpaceItem>

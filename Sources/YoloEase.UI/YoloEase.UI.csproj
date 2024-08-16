@@ -4,6 +4,7 @@
         <OutputType>WinExe</OutputType>
         <TargetFramework>$(_EyeAurasDotNetWinRTTfm)</TargetFramework>
         <UseWPF>true</UseWPF>
+        <Nullable>enable</Nullable>
         <ApplicationIcon>Resources\MainIcon.ico</ApplicationIcon>
         <AssemblyName>YoloEase</AssemblyName>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>

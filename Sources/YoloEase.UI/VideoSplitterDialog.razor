@@ -216,11 +216,12 @@
             {
                 NotificationType = NotificationType.Success,
                 Duration = 3,
-                Message = "Processed and added folder with extracted frames"
+                Message = $"Processed and added {"frame".ToQuantity(filesLeft.Count())}"
             }).AndForget();
+            
+            await Hide();
         }
 
-        await Hide();
     }
 
     public async Task AddVideo()

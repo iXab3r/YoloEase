@@ -54,9 +54,9 @@ public sealed class PredictLabelItem : DisposableReactiveObject
     {
         Labels = labels;
         
-        ScoreMin = labels.Select(x => x.Label.Score).Min();
-        ScoreAvg = labels.Select(x => x.Label.Score).Average();
-        ScoreMax = labels.Select(x => x.Label.Score).Max();
+        ScoreMin = labels.Any() ? labels.Select(x => x.Label.Score).Min() : 0;
+        ScoreAvg = labels.Any() ? labels.Select(x => x.Label.Score).Average() : 0;
+        ScoreMax = labels.Any() ? labels.Select(x => x.Label.Score).Max() : 0;
     }
 
     public IEnumerable<FileLabel> EnumerateLabels(float scoreThreshold)

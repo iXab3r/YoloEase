@@ -15,13 +15,13 @@ public class AnnotationsAccessor : RefreshableReactiveObject
     private readonly SourceCache<TaskAnnotationFileInfo, int> annotationsSource = new(x => x.TaskId);
 
     public AnnotationsAccessor(
-        CvatProjectAccessor project,
+        CvatProjectAccessor remoteProject,
         Yolo8DatasetAccessor training,
         AnnotationsCache annotationsCache,
         IConfigSerializer configSerializer,
         IFileAssetsAccessor assets)
     {
-        Project = project;
+        RemoteProject = remoteProject;
         Training = training;
         Assets = assets;
         this.annotationsCache = annotationsCache;
@@ -35,7 +35,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
 
     public IObservableListEx<TaskRead> AnnotatedTasks { get; }
 
-    public CvatProjectAccessor Project { get; }
+    public CvatProjectAccessor RemoteProject { get; }
 
     public Yolo8DatasetAccessor Training { get; }
 
@@ -43,7 +43,13 @@ public class AnnotationsAccessor : RefreshableReactiveObject
 
     public async Task RemoveAnnotationsFile(TaskAnnotationFileInfo annotationFileInfo)
     {
-        File.Delete(annotationFileInfo.FilePath);
+        if (!string.IsNullOrEmpty(annotationFileInfo.FilePath))
+        {
+            Log.Info($"Removing linked annotations file: {annotationFileInfo}");
+            File.Delete(annotationFileInfo.FilePath);
+        }
+        
+        Log.Info($"Removing annotation record from the list: {annotationFileInfo}");
         annotationsSource.Remove(annotationFileInfo);
     }
 
@@ -53,7 +59,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
         {
             throw new InvalidOperationException("Another refresh is already in progress");
         }
-        var annotatedTasks = Project.Tasks.Items.Where(x => x.Status == JobStatus.Completed).ToArray();
+        var annotatedTasks = RemoteProject.Tasks.Items.Where(x => x.Status == JobStatus.Completed).ToArray();
         annotatedTaskSource.EditDiff(annotatedTasks);
 
         await RefreshAnnotations(downloadIfMissing: false);
@@ -66,7 +72,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
 
     public async Task<AnnotationsRead> UploadAnnotations(int taskId, CvatRectangleAnnotation[] labels)
     {
-        return await Project.Client.Api.RunAuthenticated(async httpClient =>
+        return await RemoteProject.Client.Api.RunAuthenticated(async httpClient =>
         {
             var annotationsClient = new CvatTasksClient(httpClient);
 
@@ -108,7 +114,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
             throw new InvalidOperationException("Local files list is empty");
         }
 
-        var projectId = Project.ProjectId;
+        var projectId = RemoteProject.ProjectId;
         var annotations = new ConcurrentBag<TaskAnnotationFileInfo>();
         await Parallel.ForEachAsync(tasks, new ParallelOptions()
         {
@@ -120,7 +126,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
             log.Step("Analyzing the task");
 
             log.Step("Extracting task files");
-            var taskFiles = Project.ProjectFiles.Items.Where(x => x.TaskId == task.Id).ToArray();
+            var taskFiles = RemoteProject.ProjectFiles.Items.Where(x => x.TaskId == task.Id).ToArray();
 
             if (!taskFiles.Any())
             {
@@ -159,6 +165,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
             if (directories.Length <= 0)
             {
                 log.Step($"Task {task} is not linked to any input directory");
+                annotations.Add(CreateEmpty(task)); //create empty task which will be showing that we've done everything we could
                 return;
             }
 
@@ -168,7 +175,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
             if (!outputFile.Exists && downloadIfMissing)
             {
                 log.Step($"Downloading annotations file to {outputFile.FullName}");
-                await Project.Client.Cli.DownloadAnnotations(
+                await RemoteProject.Client.Cli.DownloadAnnotations(
                     task.Id.Value,
                     outputFile: outputFile);
                 log.Step($"Downloaded annotations file to {outputFile.FullName}");
@@ -187,7 +194,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
                 TaskId = task.Id.Value,
                 FilePath = outputFile.FullName,
                 FileSize = outputFile.Length,
-                TaskName = task.Name
+                TaskName = task.Name ?? $"Task #{task.Id}"
             });
         });
 
@@ -197,14 +204,39 @@ public class AnnotationsAccessor : RefreshableReactiveObject
     public async Task<DatasetInfo> CreateAnnotatedDataset()
     {
         var annotations = Annotations.Items.ToArray();
-        var annotationFiles = annotations.Select(x => new FileInfo(x.FilePath)).ToArray();
-        var datasetInfo = await Training.CreateAnnotatedDataset(annotationFiles, Project);
+        var annotationFiles = annotations
+            .Select(x =>
+            {
+                if (string.IsNullOrEmpty(x.FilePath))
+                {
+                    return null;
+                }
+
+                return new FileInfo(x.FilePath);
+            })
+            .Where(x => x != null)
+            .ToArray();
+        
+        var datasetInfo = await Training.CreateAnnotatedDataset(annotationFiles, RemoteProject);
         return datasetInfo with
         {
             ProjectInfo = datasetInfo.ProjectInfo with
             {
                 Tasks = annotations.Select(x => x.TaskId).ToArray(),
             }
+        };
+    }
+
+    private static TaskAnnotationFileInfo CreateEmpty(TaskRead task)
+    {
+        if (task.Id == null)
+        {
+            throw new ArgumentException($"Task Id must be set but was not for {task}");
+        }
+        return new TaskAnnotationFileInfo()
+        {
+            TaskId = task.Id.Value,
+            TaskName = task.Name ?? $"Task #{task.Id}"
         };
     }
 }
