@@ -576,34 +576,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         });
     }
 
-    public async Task AddVideo()
-    {
-        var inputFilePath = await Observable.Start(() =>
-        {
-            openFileDialog.InitialFileName = YoloEaseProject.TrainingDataset.BaseModelPath;
-            if (openFileDialog.ShowDialog() != null)
-            {
-                return openFileDialog.LastFile.FullName;
-            }
-
-            return default;
-        }, uiScheduler);
-        if (string.IsNullOrEmpty(inputFilePath))
-        {
-            return;
-        }
-
-        var outputDirectory = await Task.Run(async () =>
-        {
-            var inputFile = new FileInfo(inputFilePath);
-            var videoProcessor = new VideoToFramesSplitter();
-            return await videoProcessor.Process(inputFile, CancellationToken.None);
-        });
-
-        await ProcessUtils.OpenFolder(outputDirectory);
-        YoloEaseProject.FileSystemAssets.InputDirectories.AddOrUpdate(outputDirectory);
-    }
-
+   
     private void LoadProjectConfig(FileInfo file)
     {
         var configJson = File.ReadAllText(file.FullName);

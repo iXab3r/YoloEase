@@ -1,0 +1,252 @@
+﻿@using System.Globalization
+@using System.Threading
+@using PoeShared.Dialogs.Services
+@using PoeShared.Services
+@using YoloEase.Cvat.Shared.Services
+@using AntDesign
+@inherits YoloEaseComponent<MainWindowViewModel>
+
+@{
+    var fileToShow = VideoFile;
+}
+
+<Modal @ref="@modalRef" Title="@("Extract frames from the video")"
+       Centered="true"
+       Visible="@IsVisible"
+       OnOk="@(() => SplitVideo())"
+       OnCancel="@(() => Hide())">
+    <div class="flex">
+        <ReactiveSection Trackers="@(new() {progressTracker.WhenAnyValue(x => x.ProgressPercent), this.WhenAnyValue(x => x.IsBusy)})">
+
+            @if (fileToShow != null && FrameCount > 0)
+            {
+                <div class="align-self-center">
+                    <small>@fileToShow.Name</small>
+
+                    <div class="alert bg-secondary">
+                        <h6>Range of frames to extract</h6>
+                        <Slider TValue="@(double)"
+                                DefaultValue="@(FrameNth)"
+                                Disabled="@IsBusy"
+                                Marks="@MarksFormFrameNth"
+                                Min="@(MarksFormFrameNth[0].Key)"
+                                Max="@(MarksFormFrameNth[1].Key)"
+                                OnChange="@(e => { FrameNth = (int) e; })"/>
+
+                        <h6>Range of frames to extract</h6>
+                        <Slider TValue="@((double, double))"
+                                DefaultValue="@((StartFrameIdx, EndFrameIdx))"
+                                Disabled="@IsBusy"
+                                Marks="@Marks"
+                                Min="@(Marks[0].Key)"
+                                Max="@(Marks[1].Key)"
+                                OnChange="@(e => { StartFrameIdx = (int) e.Item1; EndFrameIdx = (int) e.Item2; })"/>
+
+                        <h6>@($"You are going to get ~{ExpectedFrameCount} frames using these settings")</h6>
+                    </div>
+
+                    <ProgressBar Value="@progressTracker.ProgressPercent"></ProgressBar>
+                </div>
+            }
+        </ReactiveSection>
+    </div>
+</Modal>
+
+@code {
+    private static readonly Binder<VideoSplitterDialog> Binder = new();
+
+    private readonly IOpenFileDialog openFileDialog;
+    private readonly IScheduler uiScheduler;
+    private readonly ComplexProgressTracker progressTracker = new ComplexProgressTracker();
+    private Modal modalRef;
+    private CancellationTokenSource taskTokenSource = new CancellationTokenSource();
+    private readonly SharedResourceLatch isBusyLatch = new SharedResourceLatch();
+    private static int FrameDivider = 60;
+
+    static VideoSplitterDialog()
+    {
+        Binder.Bind(x => ((double) (x.EndFrameIdx - x.StartFrameIdx) / (x.FrameNth > 0 ? x.FrameNth : 1)))
+            .To(x => x.ExpectedFrameCount);
+
+        Binder.Bind(x => x.isBusyLatch.IsBusy).To(x => x.IsBusy);
+
+        Binder.Bind(x => new SliderMark[] {new(0, "0"), new(x.FrameCount, $"{x.FrameCount}")})
+            .To(x => x.Marks);
+
+        Binder.Bind(x => new SliderMark[] {new(1, "1"), new(x.FrameCount / FrameDivider, $"{x.FrameCount / FrameDivider}")})
+            .To(x => x.MarksFormFrameNth);
+    }
+
+    public VideoSplitterDialog(
+        IOpenFileDialog openFileDialog,
+        [Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler
+    )
+    {
+        this.openFileDialog = openFileDialog;
+        this.uiScheduler = uiScheduler;
+
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.IsVisible));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.Marks));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.IsBusy));
+
+        Binder.Attach(this).AddTo(Anchors);
+    }
+
+    public bool IsVisible { get; private set; }
+
+    public FileInfo VideoFile { get; private set; }
+
+    public int FrameCount { get; private set; }
+
+    public int StartFrameIdx { get; private set; }
+
+    public int EndFrameIdx { get; private set; }
+
+    public int FrameNth { get; private set; } = 5;
+
+    public int ExpectedFrameCount { get; private set; }
+
+    public bool IsBusy { get; private set; }
+
+    public SliderMark[] Marks { get; private set; }
+    public SliderMark[] MarksFormFrameNth { get; private set; }
+
+    [Inject] public INotificationService NotificationService { get; init; }
+
+    protected override async Task OnAfterFirstRenderAsync()
+    {
+        await base.OnAfterFirstRenderAsync();
+
+        modalRef.OkButtonProps = new ButtonProps()
+        {
+        };
+    }
+
+    private async Task Show()
+    {
+        IsVisible = true;
+    }
+
+    private async Task Hide()
+    {
+        IsVisible = false;
+        VideoFile = default;
+        taskTokenSource.Cancel(false);
+    }
+
+    private async Task SplitVideo()
+    {
+        using var isBusy = isBusyLatch.Rent();
+
+        modalRef.OkButtonProps.Disabled = true;
+        modalRef.OkButtonProps.Loading = true;
+        using var enabledOkButton = Disposable.Create(() =>
+        {
+            modalRef.OkButtonProps.Disabled = false;
+            modalRef.OkButtonProps.Loading = false;
+        });
+        StateHasChanged();
+
+        var inputFilePath = VideoFile.FullName;
+
+        taskTokenSource = new CancellationTokenSource();
+        progressTracker.Reset();
+
+        Log.Debug($"Splitting video file to frames @ {inputFilePath}");
+        using var progressAnchors = progressTracker.WhenAnyValue(x => x.ProgressPercent)
+            .Subscribe(progress => { Log.Debug($"Decoding video file, {progress}%"); });
+
+        var inputFile = new FileInfo(inputFilePath);
+        
+        var storageDirectory = DataContext.YoloEaseProject.Assets.StorageDirectory;
+        var videoFileName = Path.GetFileNameWithoutExtension(inputFile.FullName);
+        var localSources = new DirectoryInfo(Path.Combine(storageDirectory.FullName, "local-sources"));
+        var outputDirectory = new DirectoryInfo(Path.Combine(localSources.FullName, videoFileName, $"{StartFrameIdx}-{EndFrameIdx} x{FrameNth}"));
+        
+       await Task.Run(async () =>
+        {
+            await VideoToFramesSplitter.Process(
+                inputFile,
+                outputDirectory,
+                (mat, frameIdx) => frameIdx % FrameNth == 0,
+                progressTracker.GetOrAdd("Decoding"),
+                taskTokenSource.Token);
+        });
+
+        var files = outputDirectory.GetFiles();
+
+        var alreadyAddedFiles = DataContext.YoloEaseProject
+            .FileSystemAssets
+            .Files
+            .Items
+            .Select(x => x.Name)
+            .ToHashSet();
+
+        var filesToRemove = files
+            .Where(x => alreadyAddedFiles.Contains(x.Name))
+            .ToArray();
+
+        foreach (var file in filesToRemove)
+        {
+            Log.Info($"Removing file that is already added: {file.FullName}");
+            file.Delete();
+        }
+
+        var filesLeft = outputDirectory.GetFiles();
+        if (filesLeft.IsEmpty())
+        {
+            NotificationService.Open(new NotificationConfig()
+            {
+                NotificationType = NotificationType.Warning,
+                Duration = 10,
+                Message = "Seems that all possible frames are already extracted from this video file, try to change settings, e.g. frame range"
+            }).AndForget();
+        }
+        else
+        {
+            await ProcessUtils.OpenFolder(outputDirectory);
+
+            DataContext
+                .YoloEaseProject
+                .FileSystemAssets
+                .InputDirectories
+                .AddOrUpdate(outputDirectory);
+
+            NotificationService.Open(new NotificationConfig()
+            {
+                NotificationType = NotificationType.Success,
+                Duration = 3,
+                Message = "Processed and added folder with extracted frames"
+            }).AndForget();
+        }
+
+        await Hide();
+    }
+
+    public async Task AddVideo()
+    {
+        using var isBusy = isBusyLatch.Rent();
+
+        var inputFilePath = await Observable.Start(() =>
+        {
+            openFileDialog.InitialFileName = DataContext.YoloEaseProject.TrainingDataset.BaseModelPath;
+            if (openFileDialog.ShowDialog() != null)
+            {
+                return openFileDialog.LastFile.FullName;
+            }
+
+            return default;
+        }, uiScheduler);
+        if (string.IsNullOrEmpty(inputFilePath))
+        {
+            return;
+        }
+
+        VideoFile = new FileInfo(inputFilePath);
+        FrameCount = VideoToFramesSplitter.GetFrameCount(VideoFile);
+        StartFrameIdx = 0;
+        EndFrameIdx = FrameCount;
+        await Show();
+    }
+
+}

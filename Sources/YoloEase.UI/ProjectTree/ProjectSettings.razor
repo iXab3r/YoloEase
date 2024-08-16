@@ -205,7 +205,7 @@
         <h4>Data sources (directories, files, etc)<span class="text-danger">*</span> (@Track(x => x.YoloEaseProject.FileSystemAssets.InputDirectories.Count))</h4>
     </div>
     <div class="col-4 text-sm-end flex">
-        <ReactiveButton Class="btn btn-primary my-1" Command="@DataContext.AddVideo">Add Video...</ReactiveButton>
+        <ReactiveButton Class="btn btn-primary my-1" Command="@(async () => await videoSplitterDialog.AddVideo())">Add Video...</ReactiveButton>
         <ReactiveButton Class="btn btn-primary my-1" Command="@DataContext.AddDataFolderDirectory">Add Folder...</ReactiveButton>
     </div>
 </div>
@@ -218,8 +218,20 @@
             {
                 <Table TItem="DirectoryInfo" DataSource="@(DataContext.YoloEaseProject.FileSystemAssets.InputDirectories.Items)"
                        HidePagination="true">
+                    <ActionColumn Title="" Class="text-end">
+                        <ReactiveButton Class="btn btn-outline-secondary" Command="@(async () => await PoeShared.Scaffolding.ProcessUtils.OpenFolder(context))">
+                            <i class="fa fa-folder-open"></i>
+                        </ReactiveButton>
+                    </ActionColumn>
                     <PropertyColumn Property="x => x.FullName" Title="Source name">
-                        @(context.FullName)
+                        @if (PathUtils.IsParentDir(DataContext.YoloEaseProject.StorageDirectory.FullName, context.FullName))
+                        {
+                            @(Path.GetRelativePath(DataContext.YoloEaseProject.StorageDirectory.FullName, context.FullName).Take(64))
+                        }
+                        else
+                        {
+                            @(context.FullName.TakeMidChars(96))
+                        }
                     </PropertyColumn>
                     <ActionColumn Title="" Class="text-end">
                         <ReactiveButton Command="@(async () => await DataContext.RemoveDataFolderDirectory(context))">
@@ -377,4 +389,13 @@
 </div>
 <Divider/>
 
+
 </div>
+
+<VideoSplitterDialog @ref="@videoSplitterDialog" DataContext="@DataContext"></VideoSplitterDialog>
+
+@code {
+
+    private VideoSplitterDialog videoSplitterDialog;
+
+}

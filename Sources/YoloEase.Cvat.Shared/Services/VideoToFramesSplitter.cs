@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Emgu.CV;
+using Emgu.CV.CvEnum;
 using PoeShared.Logging;
 using PoeShared.Scaffolding;
 
@@ -13,23 +14,38 @@ public sealed class VideoToFramesSplitter : IVideoToFramesSplitter
     {
     }
 
-    public async Task<DirectoryInfo> Process(FileInfo inputFile, CancellationToken cancellationToken)
+    public async Task<DirectoryInfo> Process(
+        FileInfo inputFile, 
+        Func<Mat, int, bool> predicate,
+        IProgressReporter progressReporter = default,
+        CancellationToken cancellationToken = default)
     {
         var videoFileName = Path.GetFileNameWithoutExtension(inputFile.FullName);
         var outputFolder = new DirectoryInfo(Path.Combine(inputFile.Directory!.FullName, videoFileName));
-        await Process(inputFile, outputFolder, cancellationToken);
+        await Process(inputFile, outputFolder, predicate, progressReporter, cancellationToken);
         return outputFolder;
+    }
+
+    public static int GetFrameCount(FileInfo inputFile)
+    {
+        using var videoCapture = new VideoCapture(inputFile.FullName);
+        var totalFrames = (int)videoCapture.Get(CapProp.FrameCount);
+        return totalFrames;
     }
 
     public static async Task Process(
         FileInfo inputFile, 
         DirectoryInfo outputFolder, 
-        CancellationToken cancellationToken)
+        Func<Mat, int, bool> predicate,
+        IProgressReporter progressReporter = default,
+        CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(outputFolder.FullName);
         var inputFileName = Path.GetFileNameWithoutExtension(inputFile.FullName);
 
-        EnumerateVideoFrames(inputFile, (frame, frameIdx) =>
+        EnumerateVideoFrames(inputFile, 
+            predicate,
+            (frame, frameIdx) =>
         {
             var frameFilePath = Path.Combine(outputFolder.FullName, $"{inputFileName} #{frameIdx}.png");
             if (File.Exists(frameFilePath))
@@ -38,12 +54,14 @@ public sealed class VideoToFramesSplitter : IVideoToFramesSplitter
             }
             frame.Save(frameFilePath);
             Log.Debug($"Saved frame {frameIdx} into {frameFilePath}");
-        }, cancellationToken);
+        }, progressReporter, cancellationToken);
     }
 
     private static void EnumerateVideoFrames(
         FileInfo videoFilePath,
+        Func<Mat, int, bool> predicate,
         Action<Mat, int> processFrame,
+        IProgressReporter progressReporter,
         CancellationToken cancellationToken)
     {
         // Load the video file
@@ -54,7 +72,10 @@ public sealed class VideoToFramesSplitter : IVideoToFramesSplitter
         {
             throw new ArgumentException($"Failed to open the video file {videoFilePath}");
         }
-
+        
+        // Get the total number of frames in the video
+        var totalFrames = GetFrameCount(videoFilePath);
+        
         var tasks = new ConcurrentBag<Task>();
 
         var framePool = new BlockingCollection<Mat>();
@@ -67,6 +88,9 @@ public sealed class VideoToFramesSplitter : IVideoToFramesSplitter
         var frameIdx = -1;
         while (true)
         {
+            var progressPercent = (double)frameIdx / totalFrames * 100d;
+            progressReporter?.Update(progressPercent);
+            
             frameIdx++;
 
             var frame = framePool.Take(cancellationToken);
@@ -77,7 +101,7 @@ public sealed class VideoToFramesSplitter : IVideoToFramesSplitter
                 break;
             }
 
-            var saveFrame = frameIdx % 5 == 0; // replace with similarity comparison
+            var saveFrame = predicate(frame, frameIdx); // replace with similarity comparison
             if (!saveFrame)
             {
                 framePool.Add(frame, cancellationToken);
