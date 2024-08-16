@@ -5,9 +5,9 @@ using AntDesign;
 using PoeShared;
 using PoeShared.Blazor.Controls;
 using PoeShared.Common;
+using PoeShared.UI;
 using YoloEase.UI.Core;
 using YoloEase.UI.Dto;
-using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.TrainingTimeline;
 
@@ -23,11 +23,11 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     private readonly IFactory<PredictTimelineEntry, TimelineController, PredictArgs, Yolo8DatasetAccessor, Yolo8PredictAccessor> predictEntryFactory;
     private readonly CircularSourceList<TimelineEntry> timelineSource = new(100);
     private readonly TimelineController timelineController;
-    private CancellationTokenSource activeTrainingCancellationTokenSource;
+
+    private CancellationTokenSource activeTrainingCancellationTokenSource = new();
 
     static AutomaticTrainer()
     {
-        Binder.BindAction(x => x.RecalculateAutoAnnotationStats(x.AutoAnnotateConfidenceThresholdPercentage / 100f, x.Project != null ? x.Project.Predictions.LatestPredictions : null));
     }
 
     public AutomaticTrainer(
@@ -46,33 +46,25 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         this.trainingEntryFactory = trainingEntryFactory;
         this.predictEntryFactory = predictEntryFactory;
 
-        this.WhenAnyValue(x => x.IsSelected)
-            .Where(x => x)
-            .Take(1)
-            .SubscribeAsync(async () =>
-            {
-                try
-                {
-                    if (Project == null)
-                    {
-                        return;
-                    }
-                    await Project.Refresh();
-                }
-                catch (Exception e)
-                {
-                    WhenNotified.OnNext(new NotificationConfig()
-                    {
-                        NotificationType = NotificationType.Error,
-                        Message = $"Error: {e.Message}",
-                        Placement = NotificationPlacement.TopRight,
-                    });
-                }
-            })
+        this.WhenAnyValue(x => x.Project)
+            .SubscribeAsync(x => Stop(), Log.HandleUiException)
             .AddTo(Anchors);
 
-        this.WhenAnyValue(x => x.Project)
-            .SubscribeAsync(x => Stop())
+        Observable.CombineLatest(
+                this.WhenAnyValue(x => x.PredictIncludeAnnotated),
+                this.WhenAnyValue(x => x.Project.Predictions.LatestPredictions),
+                this.WhenAnyValue(x => x.Project.RemoteProject.ProjectFiles).Switch().Select(x =>
+                {
+                    var project = Project;
+                    if (project == null)
+                    {
+                        return new string[0];
+                    }
+                    return project.RemoteProject.ProjectFiles.Items.Select(y => y.FileName).ToArray();
+                }),
+                (includeAnnotated, predictions, projectFileNames) => new { includeAnnotated, predictions, projectFileNames })
+            .Throttle(UiConstants.UiThrottlingDelay)
+            .Subscribe(x => RecalculatePredictItems(x.predictions, x.includeAnnotated ? new string[0] : x.projectFileNames), Log.HandleUiException)
             .AddTo(Anchors);
 
         Binder.Attach(this).AddTo(Anchors);
@@ -85,54 +77,80 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     public TimeSpan CycleTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     public bool IsSelected { get; set; }
-    
-    public bool ShowSettings { get; set; }
+
+    public bool ShowSettings { get; set; } = true;
 
     public bool AutoAnnotate { get; set; }
+    
+    public bool PredictIncludeAnnotated { get; set; }
 
     public AutomaticTrainerModelStrategy ModelStrategy { get; set; }
     
     public AutomaticTrainerPredictionStrategy PredictionStrategy { get; set; }
     
     public AutomaticTrainerFilePickStrategy PickStrategy { get; set; }
+    
+    public AutomaticTrainerAutoAnnotateThresholdStrategy AutoAnnotateThresholdStrategy { get; set; }
 
     public AutomaticTrainerMode TrainingMode { get; set; }
 
-    public float AutoAnnotateConfidenceThresholdPercentage { get; set; }
-
-    public float AutoAnnotateUnannotatedFilesCount { get; private set; }
-
-    public float AutoAnnotateTotalFilesCount { get; private set; }
-
+    public float PredictBatchPercentage { get; set; } = 100;
+    
     public AutomaticTrainerTaskFilter TaskFilter { get; set; } = AutomaticTrainerTaskFilter.Unannotated;
 
-    private void RecalculateAutoAnnotationStats(float confidence, DatasetPredictInfo datasetPredictions)
-    {
-        if (datasetPredictions == null)
-        {
-            AutoAnnotateTotalFilesCount = 0;
-            AutoAnnotateUnannotatedFilesCount = 0;
-            return;
-        }
+    public ISourceList<PredictLabelItem> PredictItems { get; } = new SourceList<PredictLabelItem>();
+    
+    public float AutoAnnotateConfidenceThresholdPercentage { get; set; }
 
-        var predictions = datasetPredictions.Predictions
-            .Select(x => x with
-            {
-                Labels = x.Labels.EmptyIfNull().Where(y => y.Score >= confidence).ToArray()
-            })
-            .Where(x => x.Labels.Any())
-            .ToDictionary(x => x.File.Name);
-        var unannotatedFiles = this.Project.TrainingBatch.UnannotatedFiles.Items.ToArray();
-        var files = unannotatedFiles
-            .Select(x =>
-            {
-                var predictionsForFile = predictions.GetValueOrDefault(x.Name);
-                return new {File = x, Labels = predictionsForFile?.Labels ?? Array.Empty<YoloPrediction>(), Score = predictionsForFile?.Labels.Max(y => y.Score)};
-            })
-            .OrderByDescending(x => x.Score)
+    private void RecalculatePredictItems(
+        DatasetPredictInfo datasetPredict, 
+        IEnumerable<string> blacklistedFileNames)
+    {
+        var predictions = datasetPredict != null && datasetPredict.Predictions != null
+            ? datasetPredict.Predictions
+            : new PredictInfo[0];
+
+        var blacklistByFileName = blacklistedFileNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var filteredPredictions = predictions
+            .Where(x => !blacklistByFileName.Contains(x.File.Name))
             .ToArray();
-        AutoAnnotateTotalFilesCount = files.Count();
-        AutoAnnotateUnannotatedFilesCount = files.Count(x => x.Score != null);
+        
+        var blacklistedPrediction = predictions
+            .Where(x => blacklistByFileName.Contains(x.File.Name))
+            .ToArray();
+        
+        var labelTypes = filteredPredictions
+            .SelectMany(x => x.Labels)
+            .Select(x => x.Label)
+            .Distinct()
+            .ToArray();
+        
+        var labelsToShow = labelTypes
+            .Select(x => PredictLabelItem.FromPredicts(x.Id, filteredPredictions))
+            .ToDictionary(x => x.Label);
+        
+        var labelsToProcess = PredictItems
+            .Items.Select(x => x.Label)
+            .Concat(labelsToShow.Values.Select(x => x.Label))
+            .DistinctBy(x => x.Id)
+            .ToArray();
+
+
+        foreach (var label in labelsToProcess)
+        {
+            var labels = labelsToShow.GetOrDefault(label)?.Labels ?? new FileLabel[0];
+            
+            var existingLabelItem = PredictItems.Items.FirstOrDefault(x => x.Label.Id == label.Id);
+            if (existingLabelItem == null)
+            {
+                PredictItems.Add(new PredictLabelItem(labels));
+            }
+            else
+            {
+                existingLabelItem.UpdateLabels(labels);
+            }
+        }
     }
 
     public async Task ClearTimeline()
@@ -142,15 +160,21 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     public async Task CreateNextTask()
     {
+        var labeledFiles = AutoAnnotateThresholdStrategy switch
+        {
+            AutomaticTrainerAutoAnnotateThresholdStrategy.Global => PredictItems.Items.SelectMany(x => x.EnumerateLabels(AutoAnnotateConfidenceThresholdPercentage / 100)).ToArray(),
+            AutomaticTrainerAutoAnnotateThresholdStrategy.PerLabel => PredictItems.Items.SelectMany(x => x.EnumerateLabels(x.ScoreThreshold)).ToArray(),
+            _ => throw new ArgumentOutOfRangeException()
+        };
+        
         var batchEntry = new CreateTaskTimelineEntry(
             Project.RemoteProject,
             Project.Annotations,
             Project.TrainingBatch,
-            Project.Predictions.LatestPredictions)
+            labeledFiles)
         {
             Text = "Preparing next batch...",
             AutoAnnotate = AutoAnnotate,
-            AutoAnnotateConfidenceThreshold = AutoAnnotateConfidenceThresholdPercentage / 100,
         }.AddTo(timelineSource);
         
         var taskId = await batchEntry.Run(CancellationToken.None);
@@ -412,12 +436,12 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         var latestPredictions = predictions.LatestPredictions;
 
 
-        FileInfo[] filesToRunPredictOn;
+        IReadOnlyList<FileInfo> filesToRunPredictOn;
         switch (PredictionStrategy)
         {
             case AutomaticTrainerPredictionStrategy.AllFiles:
             {
-                filesToRunPredictOn = inputDirectory.GetFiles();
+                filesToRunPredictOn = inputDirectory.GetFiles().PickPercentage(PredictBatchPercentage);
                 break;
             }
             case AutomaticTrainerPredictionStrategy.Disabled:
@@ -427,7 +451,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             }
             case AutomaticTrainerPredictionStrategy.Unlabeled:
             {
-                filesToRunPredictOn = Project.TrainingBatch.UnannotatedFiles.Items.ToArray();
+                filesToRunPredictOn = Project.TrainingBatch.UnannotatedFiles.Items.ToArray().PickPercentage(PredictBatchPercentage);;
                 break;
             }
             default:
@@ -453,7 +477,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             timelineController, 
             new PredictArgs()
             {
-                Files = filesToRunPredictOn,
+                Files = filesToRunPredictOn.ToArray(),
                 Model = predictionModel
             },
             Project.TrainingDataset, 

@@ -264,6 +264,13 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         additionalFilesSource.Add(new RefFileInfo(@"css/bootstrap.css"));
         additionalFilesSource.Add(new RefFileInfo(@"css/app.css"));
         
+        additionalFilesSource.Add(new RefFileInfo(@"https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"));
+        additionalFilesSource.Add(new RefFileInfo(@"_content/Blazor.Bootstrap/blazor.bootstrap.css"));
+        additionalFilesSource.Add(new RefFileInfo(@"https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.0.1/chart.umd.js"));
+        additionalFilesSource.Add(new RefFileInfo(@"https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"));
+        additionalFilesSource.Add(new RefFileInfo(@"https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"));
+        additionalFilesSource.Add(new RefFileInfo(@"_content/Blazor.Bootstrap/blazor.bootstrap.js"));
+        
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/PoeShared.Blazor.Controls.bundle.scp.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-colors.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-style.css"));

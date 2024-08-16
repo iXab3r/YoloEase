@@ -36,6 +36,7 @@ namespace YoloEase.UI
             
             var serviceCollection = Container.Resolve<IServiceCollection>();
             serviceCollection.AddAntDesign();
+            serviceCollection.AddBlazorBootstrap();
 
             var window = Container.Resolve<MainWindow>();
             Container.RegisterOverlayController();

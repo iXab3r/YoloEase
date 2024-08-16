@@ -6,7 +6,6 @@ using CvatApi;
 using Humanizer;
 using YoloEase.UI.Core;
 using YoloEase.UI.Dto;
-using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.TrainingTimeline;
 
@@ -20,34 +19,32 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         CvatProjectAccessor cvatProjectAccessor,
         AnnotationsAccessor annotationsAccessor,
         TrainingBatchAccessor trainingBatchAccessor,
-        DatasetPredictInfo datasetPredictions)
+        IReadOnlyList<FileLabel> labeledFiles)
     {
+        LabeledFiles = labeledFiles;
         this.cvatProjectAccessor = cvatProjectAccessor;
         this.annotationsAccessor = annotationsAccessor;
         this.trainingBatchAccessor = trainingBatchAccessor;
-        DatasetPredictions = datasetPredictions;
     }
 
-    public DatasetPredictInfo DatasetPredictions { get; }
-
     public TaskRead Task { get; private set; }
-    
+
     public AnnotationsRead Annotations { get; private set; }
+
+    public IReadOnlyList<FileLabel> LabeledFiles { get; init; }
+
+    public bool AutoAnnotate { get; init; }
 
     public FileInfo[] TaskFiles { get; private set; }
 
     public CvatProjectAccessor CvatProjectAccessor => cvatProjectAccessor;
-
-    public bool AutoAnnotate { get; set; }
-
-    public float AutoAnnotateConfidenceThreshold { get; set; }
 
     protected override async Task<TaskRead> RunInternal(CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         await trainingBatchAccessor.Refresh();
 
-        var files = AutoAnnotate && DatasetPredictions != null
+        var files = AutoAnnotate && LabeledFiles != null && LabeledFiles.Any()
             ? await PickAnnotated()
             : await PickRandom();
 
@@ -55,7 +52,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         var task = await trainingBatchAccessor.CreateNextTask();
         Text = $"Created new task #{task} with {"file".ToQuantity(files.Length)} in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}";
 
-        if (AutoAnnotate && DatasetPredictions != null)
+        if (AutoAnnotate && LabeledFiles != null)
         {
             Annotations = await UploadAnnotations(files, task, sw);
         }
@@ -70,35 +67,54 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         var unannotatedFiles = trainingBatchAccessor.UnannotatedFiles.Items.ToArray();
         Text = $"Picking best files for the next batch";
 
-        var predictions = this.DatasetPredictions.Predictions
-            .Select(x => x with
+        var filesToPick = new List<FileInfo>();
+        var alreadyUsed = new HashSet<string>();
+
+        var unannotatedByFileName = unannotatedFiles
+            .ToDictionary(x => x.Name, x => x);
+        
+        foreach (var labeledFile in LabeledFiles)
+        {
+            if (!unannotatedByFileName.TryGetValue(labeledFile.File.Name, out var file))
             {
-                Labels = x.Labels.EmptyIfNull().Where(y => y.Score >= AutoAnnotateConfidenceThreshold).ToArray()
-            })
-            .Where(x => x.Labels.Any())
-            .ToDictionary(x => x.File.Name);
-
-        var files = unannotatedFiles
-            .Select(x =>
+                //file is not in unannotated files list - already completed?
+                continue;
+            }
+            
+            if (alreadyUsed.Contains(file.FullName))
             {
-                var predictionsForFile = predictions.GetValueOrDefault(x.Name);
-                return new { File = x, Labels = predictionsForFile?.Labels ?? Array.Empty<YoloPrediction>(), Score = predictionsForFile?.Labels.Max(y => y.Score)};
-            })
-            .OrderByDescending(x => x.Score)
-            .ToArray();
+                continue;
+            }
 
-        var batchFiles = files.Take(trainingBatchAccessor.BatchSize).ToArray();
+            filesToPick.Add(file);
+            alreadyUsed.Add(file.FullName);
+        }
 
-        return await trainingBatchAccessor.PrepareNextBatchFiles(batchFiles.Select(x => x.File).ToArray());
+        foreach (var file in unannotatedFiles.Randomize())
+        {
+            if (alreadyUsed.Contains(file.FullName))
+            {
+                continue;
+            }
+
+            filesToPick.Add(file);
+            alreadyUsed.Add(file.FullName);
+        }
+
+        var batchFiles = filesToPick.Take(trainingBatchAccessor.BatchSize).ToArray();
+        return await trainingBatchAccessor.PrepareNextBatchFiles(batchFiles);
     }
 
     private async Task<FileInfo[]> PickRandom()
     {
         var files = await trainingBatchAccessor.PrepareNextBatchFiles();
-        return files;
+        return files.Randomize().ToArray();
     }
 
-    private async Task<AnnotationsRead> UploadAnnotations(FileInfo[] files, TaskRead task, Stopwatch sw)
+    private async Task<AnnotationsRead> UploadAnnotations(
+        FileInfo[] files,
+        TaskRead task,
+        Stopwatch sw)
     {
         var taskMetadata = await cvatProjectAccessor.RetrieveMetadata(task.Id.Value);
 
@@ -108,7 +124,10 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             .ToDictionary(x => x.Frame.Name, StringComparer.OrdinalIgnoreCase);
 
         Text = $"Annotating the task #{task.Id}";
-        var predictions = this.DatasetPredictions.Predictions.ToDictionary(x => x.File.Name);
+        var predictions = LabeledFiles
+            .GroupBy(x => x.File)
+            .Select(x => new PredictInfo() {File = x.Key, Labels = x.Select(y => y.Label).ToArray()})
+            .ToDictionary(x => x.File.Name, x => x);
 
         var projectLabelsByName = cvatProjectAccessor.Labels.Items
             .ToDictionary(x => x.Name, x => x);
@@ -116,11 +135,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         var labels = files
             .Select(x => predictions.GetValueOrDefault(x.Name))
             .Where(x => x != null)
-            .Select(x => x with
-            {
-                Labels = x.Labels.EmptyIfNull().Where(y => y.Score >= AutoAnnotateConfidenceThreshold).ToArray()
-            })
-            .Where(x => x.Labels.Any())
+            .Where(x => x.Labels.Length != 0)
             .Select(x => x.Labels.Select(prediction =>
             {
                 if (!taskFramesByFileName.TryGetValue(x.File.Name, out var taskFrame))

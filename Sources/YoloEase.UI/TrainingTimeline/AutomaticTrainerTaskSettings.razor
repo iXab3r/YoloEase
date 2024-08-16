@@ -1,56 +1,99 @@
+@using PoeShared.Blazor.Scaffolding
+@using PoeShared.UI
+@using Switch = AntDesign.Switch
 @inherits YoloEaseComponent<AutomaticTrainer>
 
-<div class="d-grid-auto-flow-row gap-3" style="width: 300px;">
+<div class="d-grid-auto-flow-row gap-4" style="width: 330px;">
+
+@{
+    var headerTrackers = new ReactiveTrackerList()
+    {
+        this.WhenAnyValue(x => x.DataContext.Project.Assets.Files),
+        this.WhenAnyValue(x => x.DataContext.Project.TrainingBatch.UnannotatedFiles),
+    };
+}
+<ReactiveSection Trackers="@headerTrackers">
     <div class="d-flex gap-1 align-items-center">
         <label class="text-nowrap">
-            @Track(x => $"{x.Project.Assets.Files.Count} total / {x.Project.TrainingBatch.UnannotatedFiles.Count} unannotated")
+            @($"{DataContext.Project.Assets.Files.Count} total / {DataContext.Project.TrainingBatch.UnannotatedFiles.Count} unannotated")
         </label>
     </div>
+</ReactiveSection>
 
-    <div>
-        <div>Batch size</div>
+<div>
+    <h6>Batch size</h6>
+    @{
+        var batchTrackers = new ReactiveTrackerList()
+        {
+            this.WhenAnyValue(x => x.DataContext.Project.TrainingBatch.MinBatchPercentage),
+            this.WhenAnyValue(x => x.DataContext.Project.TrainingBatch.MaxBatchPercentage),
+            this.WhenAnyValue(x => x.DataContext.Project.TrainingBatch.BatchPercentage),
+        };
+    }
+    <ReactiveSection Trackers="@batchTrackers">
         <div class="d-flex gap-1 align-items-center">
             <input type="range" class="flex-grow-1"
-                   id="batchSizePercentage"
-                   min="@Track(x => x.Project.TrainingBatch.MinBatchPercentage)"
-                   max="@Track(x => x.Project.TrainingBatch.MaxBatchPercentage)"
-                   value="@Track(x => x.Project.TrainingBatch.BatchPercentage)"
+                   min="@(DataContext.Project.TrainingBatch.MinBatchPercentage)"
+                   max="@(DataContext.Project.TrainingBatch.MaxBatchPercentage)"
+                   value="@(DataContext.Project.TrainingBatch.BatchPercentage)"
                    oninput="@((ChangeEventArgs x) => DataContext.Project.TrainingBatch.BatchPercentage = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
-            <label class="text-nowrap">@Track(x => $"{x.Project.TrainingBatch.BatchPercentage}%/{"file".ToQuantity(x.Project.TrainingBatch.BatchSize, ShowQuantityAs.Numeric)}")</label>
+            <label class="text-nowrap">@($"{DataContext.Project.TrainingBatch.BatchPercentage}%/{"file".ToQuantity(DataContext.Project.TrainingBatch.BatchSize)}")</label>
         </div>
-    </div>
+    </ReactiveSection>
 
-    <div>
-        <div>File pick strategy</div>
-        <div class="d-flex gap-1 align-items-center">
-            <RadioGroup @bind-Value="DataContext.PickStrategy" Size="@(AntSizeLDSType.Small)">
-                <Radio Value="@(AutomaticTrainerFilePickStrategy.Random)">
-                    Random
-                </Radio>
-                <Radio Value="@(AutomaticTrainerFilePickStrategy.ActiveLearning)">
-                    Active learning
-                </Radio>
-            </RadioGroup>
-        </div>
-    </div>
+</div>
 
+<div>
+    <h6>File pick strategy</h6>
+    <div class="d-flex gap-1 align-items-center">
+        <RadioGroup @bind-Value="DataContext.PickStrategy" Size="@(AntSizeLDSType.Small)">
+            <Radio Value="@(AutomaticTrainerFilePickStrategy.AnnotatedFirst)">
+                Annotated-first
+            </Radio>
+            <Radio Value="@(AutomaticTrainerFilePickStrategy.Random)">
+                Random
+            </Radio>
+        </RadioGroup>
+    </div>
+</div>
+
+<div>
+    <h6>Prediction strategy</h6>
+    <div class="d-flex gap-1 align-items-center">
+        <RadioGroup @bind-Value="DataContext.PredictionStrategy" Size="@(AntSizeLDSType.Small)">
+            <Radio Value="@(AutomaticTrainerPredictionStrategy.Unlabeled)">
+                <BootstrapTooltip Title="If set, will run prediction step only on those files which are not labeled yet">
+                    Unannotated
+                </BootstrapTooltip>
+            </Radio>
+
+            <Radio Value="@(AutomaticTrainerPredictionStrategy.AllFiles)">
+                <BootstrapTooltip Title="If set, will run prediction on all available files every time">
+                    All files
+                </BootstrapTooltip>
+            </Radio>
+            <Radio Value="@(AutomaticTrainerPredictionStrategy.Disabled)">
+                <BootstrapTooltip Title="If set, won't run predictions at all - will use latest available results">
+                    Disabled
+                </BootstrapTooltip>
+            </Radio>
+        </RadioGroup>
+    </div>
+</div>
+
+@if (DataContext.PredictionStrategy is not AutomaticTrainerPredictionStrategy.Disabled)
+{
     <div>
-        <div>Prediction strategy</div>
+        <h6>Auto-annotation</h6>
         <div class="d-flex gap-1 align-items-center">
-            <RadioGroup @bind-Value="DataContext.PredictionStrategy" Size="@(AntSizeLDSType.Small)">
-                <Radio Value="@(AutomaticTrainerPredictionStrategy.Unlabeled)">
-                    <BootstrapTooltip Title="If set, will run prediction step only on those files which are not labeled yet">
-                        Unlabeled
+            <RadioGroup @bind-Value="DataContext.AutoAnnotate" Size="@(AntSizeLDSType.Small)">
+                <Radio Value="@(true)">
+                    <BootstrapTooltip Title="If set, will pre-annotate using predictions from the previous cycle">
+                        Enabled
                     </BootstrapTooltip>
                 </Radio>
-
-                <Radio Value="@(AutomaticTrainerPredictionStrategy.AllFiles)">
-                    <BootstrapTooltip Title="If set, will run prediction on all available files every time">
-                        All files
-                    </BootstrapTooltip>
-                </Radio>
-                <Radio Value="@(AutomaticTrainerPredictionStrategy.Disabled)">
-                    <BootstrapTooltip Title="If set, won't run predictions at all - will use latest available results">
+                <Radio Value="@(false)">
+                    <BootstrapTooltip Title="If set, will not use predictions to pre-annotate the data">
                         Disabled
                     </BootstrapTooltip>
                 </Radio>
@@ -59,7 +102,20 @@
     </div>
 
     <div>
-        <div>Prediction model</div>
+        <h6>Prediction file portion size</h6>
+        <div class="d-flex gap-1 align-items-center">
+            <input type="range" class="flex-grow-1"
+                   min="0"
+                   max="100"
+                   disabled="@(DataContext.PredictionStrategy is AutomaticTrainerPredictionStrategy.Disabled)"
+                   value="@(DataContext.PredictBatchPercentage)"
+                   oninput="@((ChangeEventArgs x) => DataContext.PredictBatchPercentage = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
+            <label class="text-nowrap">@($"{DataContext.PredictBatchPercentage:F0}%")</label>
+        </div>
+    </div>
+
+    <div>
+        <h6>Prediction model</h6>
         <div class="d-flex gap-1 align-items-center">
             <RadioGroup @bind-Value="DataContext.ModelStrategy" Size="@(AntSizeLDSType.Small)">
                 <Radio Value="@(AutomaticTrainerModelStrategy.Latest)">
@@ -73,7 +129,7 @@
     </div>
 
     <div>
-        <div>Prediction model path</div>
+        <h6>Prediction model path</h6>
         <div class="d-flex align-items-center input-group">
             <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Project.Predictions.PredictionModel)})">
                 <ReactiveButton Class="btn btn-outline-secondary"
@@ -81,84 +137,280 @@
                                 Command="@(async () => await ProcessUtils.SelectFileOrFolder(DataContext.Project.Predictions.PredictionModel.ModelFile))">
                     <i class="fa fa-folder-open"></i>
                 </ReactiveButton>
-                
+
                 <div class="form-control input-group-text" id="modelFile">@((DataContext.Project.Predictions.PredictionModel?.ModelFile?.Name ?? "<null>").TakeMidChars(32))</div>
                 <ReactiveButton Class="btn btn-outline-secondary" MinExecutionTime="TimeSpan.Zero" Command="@(DataContext.Project.Predictions.SelectModel)"
-                                IsEnabled="@(Track(x => x.ModelStrategy == AutomaticTrainerModelStrategy.Custom))">
+                                IsEnabled="@(DataContext.ModelStrategy == AutomaticTrainerModelStrategy.Custom)">
                     <span>...</span>
                 </ReactiveButton>
             </ReactiveSection>
         </div>
     </div>
 
-    <div>
-        <div>Auto-annotate</div>
-        <div class="d-flex gap-1 align-items-center">
-            <Switch Size="small" @bind-Checked="@DataContext.AutoAnnotate"/>
-        </div>
-    </div>
-
-
-    @if (Track(x => x.AutoAnnotate))
+    var predictionTrackers = new ReactiveTrackerList()
     {
+        this.WhenAnyValue(x => x.DataContext.PredictItems),
+        this.WhenAnyValue(x => x.DataContext.AutoAnnotateThresholdStrategy),
+        this.WhenAnyValue(x => x.DataContext.AutoAnnotate),
+        this.WhenAnyValue(x => x.DataContext.PredictItems).Switch().WhenPropertyChanged(x => x.ScoreThreshold),
+        this.WhenAnyValue(x => x.DataContext.PredictItems).Switch().WhenPropertyChanged(x => x.Labels),
+    };
+
+    <ReactiveSection DebounceTime="@(UiConstants.UiThrottlingDelay)" Trackers="@(predictionTrackers)">
         <div>
-            <div>Prediction results</div>
-            <div class="d-flex gap-1 align-items-center">
-                @{
-                    var predictions = Track(x => x.Project.Predictions.LatestPredictions);
-                }
-                @if (predictions == null || predictions.Predictions.IsEmpty())
+            <h5>Prediction results</h5>
+            <h6>Annotated files</h6>
+            <div class="w-100 d-flex gap-1">
+                <RadioGroup @bind-Value="DataContext.PredictIncludeAnnotated" Size="@(AntSizeLDSType.Small)">
+                    <Radio Value="@(false)">
+                        <BootstrapTooltip Title="If set, already annotated files will be excluded from prediction stats">
+                            Exclude
+                        </BootstrapTooltip>
+                    </Radio>
+                    <Radio Value="@(true)">
+                        <BootstrapTooltip Title="If set, already annotated files will be included to prediction stats">
+                            Include
+                        </BootstrapTooltip>
+                    </Radio>
+                </RadioGroup>
+            </div>
+        </div>
+
+        <div>
+            <div class="d-grid-auto-flow-row gap-2">
+                @if (DataContext.PredictItems.Items.IsEmpty())
                 {
                     <div class="badge bg-warning">No predictions yet, Start training</div>
                 }
                 else
                 {
-                    var labels = predictions.Predictions.SelectMany(x => x.Labels).Select(x => x.Score).ToArray();
-                    <div class="d-flex gap-1">
-                        <div class="badge bg-success">
-                            @($"prediction".ToQuantity(predictions.Predictions.Length))
-                        </div>
-                        <div class="badge bg-secondary">
-                            @($"label".ToQuantity(labels.Length))
-                        </div>
-                        @if (labels.Any())
+                    var labelsByLabel = DataContext.PredictItems
+                        .Items
+                        .Select(x =>
                         {
+                            var scoreThreshold = DataContext.AutoAnnotateThresholdStrategy switch
+                            {
+                                AutomaticTrainerAutoAnnotateThresholdStrategy.Global => DataContext.AutoAnnotateConfidenceThresholdPercentage / 100,
+                                AutomaticTrainerAutoAnnotateThresholdStrategy.PerLabel => x.ScoreThreshold,
+                                _ => throw new ArgumentOutOfRangeException()
+                            };
+
+                            return (Predicts: x, Labels: x.EnumerateLabels(scoreThreshold).ToArray());
+                        }).ToDictionary(x => x.Predicts.Label, x => x.Labels);
+
+                    var totalMatchingFiles = labelsByLabel
+                        .SelectMany(x => x.Value)
+                        .Select(x => x.File)
+                        .Distinct()
+                        .Count();
+
+                    var totalFiles = DataContext.PredictItems.Items
+                        .SelectMany(x => x.Labels)
+                        .Select(x => x.File)
+                        .Distinct()
+                        .Count();
+
+                    var totalLabels = DataContext.PredictItems.Items
+                        .Select(x => x.Labels.Length)
+                        .Sum();
+
+                    <div class="d-flex gap-1">
+                        @if (totalFiles > 0)
+                        {
+                            <div class="badge bg-success">
+                                @($"file".ToQuantity(totalFiles))
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="badge bg-warning">
+                                @("No files")
+                            </div>
+                        }
+
+                        @if (totalLabels > 0)
+                        {
+                            <div class="badge bg-success">
+                                @($"label".ToQuantity(totalLabels))
+                            </div>
+
                             <div class="badge bg-secondary">
-                                @($"AvgConf: {labels.Average() * 100:F1}%")
+                                @($"AvgConf: {(DataContext.PredictItems.Items.Select(x => x.ScoreAvg).Average() * 100):F1}%")
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="badge bg-warning">
+                                @("No labels")
                             </div>
                         }
                     </div>
-                }
-            </div>
-        </div>
 
-        <div>
-            <div>Confidence threshold</div>
-            <div class="d-flex gap-1 align-items-center">
-                <input type="range" class="flex-grow-1"
-                       id="batchSizePercentage"
-                       min="0"
-                       max="100"
-                       value="@Track(x => x.AutoAnnotateConfidenceThresholdPercentage)"
-                       oninput="@((ChangeEventArgs x) => DataContext.AutoAnnotateConfidenceThresholdPercentage = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
-                <label class="text-nowrap">@Track(x => $"{x.AutoAnnotateConfidenceThresholdPercentage:F0}%")</label>
-                @if (Track(x => x.AutoAnnotateUnannotatedFilesCount > 0))
-                {
-                    <div class="badge bg-success">
-                        @($"file".ToQuantity(Track(x => x.AutoAnnotateUnannotatedFilesCount)))
+                    <div class="w-100">
+                        <div class="d-flex gap-1 align-items-center">
+                            <span>Threshold</span>
+                            <span class="flex-grow-1 text-center">
+                                <RadioGroup @bind-Value="DataContext.AutoAnnotateThresholdStrategy" Size="@(AntSizeLDSType.Small)">
+                                    <Radio Value="@(AutomaticTrainerAutoAnnotateThresholdStrategy.Global)">
+                                        <BootstrapTooltip Title="If set, threshold will affect all labels">
+                                            Global
+                                        </BootstrapTooltip>
+                                    </Radio>
+                                    <Radio Value="@(AutomaticTrainerAutoAnnotateThresholdStrategy.PerLabel)">
+                                        <BootstrapTooltip Title="If set, each label will have its own score threshold">
+                                            Per Label
+                                        </BootstrapTooltip>
+                                    </Radio>
+                                </RadioGroup>
+                            </span>
+
+                            @if (totalMatchingFiles > 0)
+                            {
+                                <div class="badge bg-success">
+                                    @($"file".ToQuantity(totalMatchingFiles))
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="badge bg-warning">
+                                    @("No files")
+                                </div>
+                            }
+                        </div>
+
+                        @if (DataContext.AutoAnnotateThresholdStrategy == AutomaticTrainerAutoAnnotateThresholdStrategy.Global)
+                        {
+                            <div class="d-flex gap-1 align-items-center">
+                                <input type="range" class="flex-grow-1"
+                                       id="batchSizePercentage"
+                                       min="0"
+                                       max="100"
+                                       value="@(DataContext.AutoAnnotateConfidenceThresholdPercentage)"
+                                       oninput="@((ChangeEventArgs x) => DataContext.AutoAnnotateConfidenceThresholdPercentage = x.Value is not string valueAsString ? 0 : Convert.ToSingle(valueAsString))">
+                                <label class="text-nowrap">@($"{DataContext.AutoAnnotateConfidenceThresholdPercentage:F0}%")</label>
+                            </div>
+                        }
+                        else
+                        {
+                            <div></div>
+                        }
                     </div>
-                }
-                else
-                {
-                    <div class="badge bg-warning">
-                        @("No files")
-                    </div>
+
+                    <BlazorBootstrap.SortableList
+                        TItem="PredictLabelItem"
+                        class="w-100 my-1"
+                        Handle=".bb-sortable-list-handle"
+                        OnUpdate="@(OnPredictItemsReorder)"
+                        Data="@(DataContext.PredictItems.Items.ToList())">
+                        <ItemTemplate>
+                            @{
+                                var matchingLabelCount = labelsByLabel
+                                    .GetOrDefault(context.Label)
+                                    .Count();
+
+                                var matchingFilesCount = labelsByLabel
+                                    .GetOrDefault(context.Label)
+                                    .Select(x => x.File)
+                                    .Distinct()
+                                    .Count();
+                            }
+
+                            <div class="d-grid gap-1"
+                                 style="grid-template-columns: auto auto 1fr auto; grid-template-rows: auto auto">
+                                <div class="bb-sortable-list-handle pe-1 align-self-center" style="grid-row: 1 / span 2">
+                                    <BlazorBootstrap.Icon Name="BlazorBootstrap.IconName.GripVertical"/>
+                                </div>
+
+                                <span>
+                                    <b>@context.Label.Name</b>
+                                </span>
+
+                                <span class="flex-grow-1 d-flex gap-1 align-items-center" style="place-content: center;">
+                                    <small>@($"{context.ScoreMin * 100:F0}%")</small>
+                                    <span class="badge bg-secondary">@($"Avg. {context.ScoreAvg * 100:F1}%")</span>
+                                    <small>@($"{context.ScoreMax * 100:F0}%")</small>
+                                </span>
+
+                                <small>@($"Total: {context.Labels.Count()}")</small>
+
+                                @if (matchingLabelCount > 0)
+                                {
+                                    <div class="badge bg-success">
+                                        @($"label".ToQuantity(matchingLabelCount))
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="badge bg-warning">
+                                        @("No labels")
+                                    </div>
+                                }
+
+                                @if (DataContext.AutoAnnotate && DataContext.AutoAnnotateThresholdStrategy == AutomaticTrainerAutoAnnotateThresholdStrategy.PerLabel)
+                                {
+                                    <span class="d-flex">
+                                        <input type="range" class="flex-grow-1"
+                                               id="batchSizePercentage"
+                                               min="0"
+                                               max="100"
+                                               value="@(context.ScoreThreshold * 100)"
+                                               oninput="@((ChangeEventArgs x) => context.ScoreThreshold = x.Value is not string valueAsString ? 0 : Convert.ToSingle(valueAsString) / 100)">
+                                        <label style="min-width: 30px;" class="text-nowrap">
+                                            <b>@($"{context.ScoreThreshold * 100:F0}%")</b>
+                                        </label>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <hr class="m-0 p-0 mx-5 border-secondary align-self-center"/>
+                                }
+
+                                @if (matchingFilesCount > 0)
+                                {
+                                    <div class="badge bg-success">
+                                        @($"file".ToQuantity(matchingFilesCount))
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="badge bg-warning">
+                                        @("No files")
+                                    </div>
+                                }
+                            </div>
+
+
+                        </ItemTemplate>
+                    </BlazorBootstrap.SortableList>
                 }
             </div>
         </div>
-    }
+    </ReactiveSection>
+}
+
 </div>
 
 @code {
+
+    public AutomaticTrainerTaskSettings()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.PredictionStrategy));
+    }
+
+    private void OnPredictItemsReorder(BlazorBootstrap.SortableListEventArgs args)
+    {
+        var labelsToShow = DataContext.PredictItems;
+        var itemToMove = labelsToShow.ElementAt(args.OldIndex);
+
+        labelsToShow.RemoveAt(args.OldIndex);
+        if (args.NewIndex < labelsToShow.Count)
+        {
+            labelsToShow.Insert(args.NewIndex, itemToMove);
+        }
+        else
+        {
+            labelsToShow.Add(itemToMove);
+        }
+    }
 
 }

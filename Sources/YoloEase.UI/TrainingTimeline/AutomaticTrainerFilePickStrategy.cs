@@ -2,14 +2,6 @@ namespace YoloEase.UI.TrainingTimeline;
 
 public enum AutomaticTrainerFilePickStrategy
 {
+    AnnotatedFirst,
     Random,
-    ActiveLearning
-}
-
-
-public enum AutomaticTrainerPredictionStrategy
-{
-    Unlabeled,
-    AllFiles,
-    Disabled,
 }
