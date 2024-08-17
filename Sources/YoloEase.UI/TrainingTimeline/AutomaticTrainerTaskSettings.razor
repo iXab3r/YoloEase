@@ -138,7 +138,15 @@
                     <i class="fa fa-folder-open"></i>
                 </ReactiveButton>
 
-                <div class="form-control input-group-text" id="modelFile">@((DataContext.Project.Predictions.PredictionModel?.ModelFile?.Name ?? "<null>").TakeMidChars(32))</div>
+                @{
+                    var modelName = DataContext.Project.Predictions.PredictionModel?.ModelFile?.Name ?? "<null>";
+                }
+                <div class="form-control input-group-text" id="modelFile">
+                    <BootstrapTooltip Title="@(modelName)">
+                        @(modelName.TakeMidChars(32))
+                    </BootstrapTooltip>
+                    
+                </div>
                 <ReactiveButton Class="btn btn-outline-secondary" MinExecutionTime="TimeSpan.Zero" Command="@(DataContext.Project.Predictions.SelectModel)"
                                 IsEnabled="@(DataContext.ModelStrategy == AutomaticTrainerModelStrategy.Custom)">
                     <span>...</span>

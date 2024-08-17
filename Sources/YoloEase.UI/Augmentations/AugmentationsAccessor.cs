@@ -42,20 +42,30 @@ public class AugmentationsAccessor : RefreshableReactiveObject
     {
         this.idGenerator = idGenerator;
         this.annotationsAccessor = annotationsAccessor;
+
+        EnabledEffects = effectsSource
+            .Connect()
+            .AutoRefreshOnObservable(x => x.WhenAnyValue(y => y.IsEnabled))
+            .Filter(x => x.IsEnabled)
+            .AsObservableList()
+            .AddTo(Anchors);
         
         Binder.Attach(this).AddTo(Anchors);
     }
 
     public ISourceList<IImageEffect> Effects => effectsSource;
     
+    public IObservableList<IImageEffect> EnabledEffects { get; }
+    
     public DirectoryInfo? StorageDirectory { get;  [UsedImplicitly] private set; }
 
     public DirectoryInfo? EffectsCacheDirectory { get; [UsedImplicitly] private set; }
     
-    public async Task<FileInfo[]> PrepareAnnotationsWithAugmentations(FileInfo[] initialAnnotations, ComplexProgressTracker progressTracker)
+    public async Task<FileInfo[]> PrepareAnnotationsWithAugmentations(
+        FileInfo[] initialAnnotations, 
+        IImageEffect[] effectsToApply,
+        ComplexProgressTracker progressTracker)
     {
-        var effectsToApply = effectsSource.Items.ToArray();
-        
         var trainId = $"{idGenerator.Next()}";
         var temporaryDirectory = new DirectoryInfo(Path.Combine(StorageDirectory!.FullName, "augmentations", trainId));
         temporaryDirectory.Create();

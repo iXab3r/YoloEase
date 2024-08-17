@@ -1,6 +1,6 @@
 namespace YoloEase.UI.Augmentations;
 
-public interface IYoloObject
+public interface IYoloObject : IDisposableReactiveObject
 {
     IPoeEyeConfigVersioned Properties { get; set; }
 }

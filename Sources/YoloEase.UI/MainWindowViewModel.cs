@@ -190,14 +190,16 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                 this.WhenAnyValue(x => x.YoloEaseProject!.TrainingBatch.BatchPercentage).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.BaseModelPath).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.Epochs).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.ModelSize).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.TrainAdditionalArguments).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.ConfidenceThresholdPercentage).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.IoUThresholdPercentage).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.PredictAdditionalArguments).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.PredictionModel).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Augmentations.Effects).Switch().ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.Augmentations.Effects).Switch().WhenAnyPropertyChanged().ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.FileSystemAssets.InputDirectories).Select(x => x ?? new SourceCacheEx<DirectoryInfo, string>(x => x.FullName)).Switch().ToUnit().StartWithDefault())
-            .Sample(TimeSpan.FromSeconds(1))
+            .Sample(TimeSpan.FromSeconds(5))
             .Select(x => PrepareProjectConfig());
         
         configSource

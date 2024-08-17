@@ -57,11 +57,11 @@ public class CreateDatasetTimelineEntry : RunnableTimelineEntry<DatasetInfo>
 
         FileInfo[] preparedAnnotations;
         
-        if (augmentationsAccessor.Effects.Count > 0)
+        if (augmentationsAccessor.EnabledEffects.Count > 0)
         {
-            AppendTextLine($"Applying {"augmentation".ToQuantity(augmentationsAccessor.Effects.Count)} to {"annotation file".ToQuantity(annotationFiles.Count())}");
+            AppendTextLine($"Applying {"augmentation".ToQuantity(augmentationsAccessor.EnabledEffects.Count)} to {"annotation file".ToQuantity(annotationFiles.Count())}");
 
-            preparedAnnotations = await augmentationsAccessor.PrepareAnnotationsWithAugmentations(annotationFiles, progressTracker);
+            preparedAnnotations = await augmentationsAccessor.PrepareAnnotationsWithAugmentations(annotationFiles, augmentationsAccessor.EnabledEffects.Items.ToArray(), progressTracker);
         }
         else
         {

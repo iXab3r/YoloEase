@@ -372,10 +372,18 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     {
                         var trainingProgressEntry = trainingEntryFactory.Create(timelineController, datasetInfo, Project.TrainingDataset, Project.Predictions).AddTo(timelineSource);
                         var modelFile = await trainingProgressEntry.Run(cancellationToken);
+                        
+                        if (ModelStrategy == AutomaticTrainerModelStrategy.Latest)
+                        {
+                            Project.Predictions.PredictionModel = modelFile;
+                        }
+                        
                         if (cancellationToken.IsCancellationRequested)
                         {
                             break;
                         }
+
+                        
                     }
                     catch (Exception e)
                     {

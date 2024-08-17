@@ -88,7 +88,7 @@ public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
             }, cancellationToken);
 
             var projectName = string.IsNullOrEmpty(DatasetInfo.ProjectInfo.ProjectName) ? string.Empty : $"{Humanizer.InflectorExtensions.Pascalize(DatasetInfo.ProjectInfo.ProjectName)}_";
-            var modelFilePathRevision = Path.Combine(modelFile.DirectoryName!, $"{projectName}{Path.GetFileName(DatasetInfo.IndexFile.DirectoryName)}{modelFile.Extension}");
+            var modelFilePathRevision = Path.Combine(modelFile.DirectoryName!, $"{projectName}_{Path.GetFileName(DatasetInfo.IndexFile.DirectoryName)}_{modelFile.Extension}");
             File.Move(modelFile.FullName, modelFilePathRevision);
             var modelFileRevision = new FileInfo(modelFilePathRevision);
             
