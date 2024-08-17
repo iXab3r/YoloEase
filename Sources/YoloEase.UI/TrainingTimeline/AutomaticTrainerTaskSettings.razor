@@ -335,13 +335,13 @@
 
                                 @if (matchingLabelCount > 0)
                                 {
-                                    <div class="badge bg-success">
+                                    <div class="badge bg-success" style="min-width: 60px;">
                                         @($"label".ToQuantity(matchingLabelCount))
                                     </div>
                                 }
                                 else
                                 {
-                                    <div class="badge bg-warning">
+                                    <div class="badge bg-warning" style="min-width: 60px;">
                                         @("No labels")
                                     </div>
                                 }
@@ -367,13 +367,13 @@
 
                                 @if (matchingFilesCount > 0)
                                 {
-                                    <div class="badge bg-success">
+                                    <div class="badge bg-success" style="min-width: 60px;">
                                         @($"file".ToQuantity(matchingFilesCount))
                                     </div>
                                 }
                                 else
                                 {
-                                    <div class="badge bg-warning">
+                                    <div class="badge bg-warning" style="min-width: 60px;">
                                         @("No files")
                                     </div>
                                 }

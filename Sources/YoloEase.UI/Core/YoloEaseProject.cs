@@ -1,3 +1,4 @@
+using YoloEase.UI.Augmentations;
 using YoloEase.UI.Services;
 
 namespace YoloEase.UI.Core;
@@ -20,6 +21,7 @@ public class YoloEaseProject : RefreshableReactiveObject
         CvatProjectAccessor cvatProjectAccessor,
         IYoloModelCachingService yoloModelCachingService,
         FileSystemAssetsAccessor fileSystemAssetsAccessor,
+        IFactory<AugmentationsAccessor, AnnotationsAccessor> augmentationsAccessorFactory,
         IFactory<LocalStorageAssetsAccessor, IFileAssetsAccessor> localStorageDatasetAccessorFactory,
         IFactory<Yolo8DatasetAccessor, IFileAssetsAccessor> trainingDatasetAccessorFactory,
         IFactory<Yolo8PredictAccessor, IFileAssetsAccessor> predictAccessorFactory,
@@ -34,12 +36,15 @@ public class YoloEaseProject : RefreshableReactiveObject
         TrainingDataset = trainingDatasetAccessorFactory.Create(Assets).AddTo(Anchors);
         TrainingBatch = batchAccessorFactory.Create(cvatProjectAccessor, Assets).AddTo(Anchors);
         Annotations = annotationsAccessorFactory.Create(cvatProjectAccessor, Assets, TrainingDataset).AddTo(Anchors);
+        Augmentations = augmentationsAccessorFactory.Create(Annotations).AddTo(Anchors);
         Binder.Attach(this).AddTo(Anchors);
     }
     
     public DirectoryInfo StorageDirectory { get; set; }
     
     public CvatProjectAccessor RemoteProject { get; }
+    
+    public AugmentationsAccessor Augmentations { get; }
     
     public LocalStorageAssetsAccessor Assets { get; }
     

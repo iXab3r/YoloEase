@@ -15,13 +15,6 @@
     }
     else
     {
-        @if (DataContext.IsAdvancedMode)
-        {
-            <div id="sideMenu">
-                <ProjectTree DataContext="@DataContext.ProjectTree"/>
-            </div>
-        }
-
         <div class="top-right-menu">
             <a href="https://wiki.eyeauras.net/en/YoloEase/getting-started">
                 <i class="fa fa-external-link align-middle"></i>
@@ -40,32 +33,7 @@
                     }
 
                     <TabPane Tab="@(Track(tab, tab => tab.Title))" Key="@tab.Id">
-                        @{
-                            switch (tab.DataContext)
-                            {
-                                case MainWindowViewModel mainWindowViewModel:
-                                    <ProjectSettings DataContext="@mainWindowViewModel"/>
-                                    break;
-                                case AutomaticTrainer automaticTrainer:
-                                    <AutomaticTrainerView DataContext="@automaticTrainer"/>
-                                    break;
-                                case LocalStorageAssetsAccessor localStorageDatasetAccessor:
-                                    <FileSystemDatasetEditor DataContext="@localStorageDatasetAccessor"/>
-                                    break;
-                                case CvatProjectAccessor cvatProjectAccessor:
-                                    <CvatProjectEditor DataContext="@cvatProjectAccessor"/>
-                                    break;
-                                case TrainingBatchAccessor trainingBatchAccessor:
-                                    <TrainingBatchEditor DataContext="@trainingBatchAccessor"/>
-                                    break;
-                                case AnnotationsAccessor annotationsAccessor:
-                                    <AnnotationsEditor DataContext="@annotationsAccessor"/>
-                                    break;
-                                case Yolo8DatasetAccessor yolo8DatasetAccessor:
-                                    <TrainingDatasetEditor DataContext="@yolo8DatasetAccessor"/>
-                                    break;
-                            }
-                        }
+                        <BlazorContentPresenter Content="@tab.DataContext"/>
                     </TabPane>
                 }
             </Tabs>

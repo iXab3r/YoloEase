@@ -334,12 +334,13 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     break;
                 }
 
-                var createDatasetEntry = new CreateDatasetTimelineEntry(Project.Annotations).AddTo(timelineSource);
+                var createDatasetEntry = new CreateDatasetTimelineEntry(Project.Annotations, Project.Augmentations).AddTo(timelineSource);
                 var datasetInfo = await createDatasetEntry.Run(cancellationToken);
                 if (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
+                
 
                 if (TrainingMode == AutomaticTrainerMode.GoogleColab)
                 {

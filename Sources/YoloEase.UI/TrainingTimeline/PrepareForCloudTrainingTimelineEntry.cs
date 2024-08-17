@@ -31,7 +31,6 @@ public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileIn
 
         Text = $"Zipping revision {changesetName}...";
         ZipDirectory(directoryPath.FullName, outputZipPath);
-        Text = $"Zipping revision {changesetName}...";
         var outputZip = new FileInfo(outputZipPath);
         DataArchiveFile = outputZip;
         Text = $"Revision {changesetName} is prepared for upload";

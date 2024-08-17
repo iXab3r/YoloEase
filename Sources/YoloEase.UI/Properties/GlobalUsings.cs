@@ -24,3 +24,13 @@ global using WinRectangle = System.Drawing.Rectangle;
 global using WinRectangleF = System.Drawing.RectangleF;
 global using WpfColor = System.Windows.Media.Color;
 global using WinColor = System.Drawing.Color;
+
+global using SharpColor = SixLabors.ImageSharp.Color;
+global using SharpRectangle = SixLabors.ImageSharp.Rectangle;
+global using SharpPoint = SixLabors.ImageSharp.Point;
+global using SharpNumber = SixLabors.ImageSharp.Number;
+global using SharpSize = SixLabors.ImageSharp.Size;
+global using SharpRectangleF = SixLabors.ImageSharp.RectangleF;
+global using SharpPointF = SixLabors.ImageSharp.PointF;
+global using SharpSizeF = SixLabors.ImageSharp.SizeF;
+global using SharpImage = SixLabors.ImageSharp.Image;

@@ -48,9 +48,9 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             ? await PickAnnotated()
             : await PickRandom();
 
-        Text = $"Creating new task with {"file".ToQuantity(files.Length)}";
+        AppendTextLine($"Creating new task with {"file".ToQuantity(files.Length)}");
         var task = await trainingBatchAccessor.CreateNextTask();
-        Text = $"Created new task #{task} with {"file".ToQuantity(files.Length)} in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}";
+        AppendTextLine($"Created new task #{task} with {"file".ToQuantity(files.Length)} in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}");
 
         if (AutoAnnotate && LabeledFiles != null)
         {
@@ -65,7 +65,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
     private async Task<FileInfo[]> PickAnnotated()
     {
         var unannotatedFiles = trainingBatchAccessor.UnannotatedFiles.Items.ToArray();
-        Text = $"Picking best files for the next batch";
+        AppendTextLine($"Picking best files for the next batch");
 
         var filesToPick = new List<FileInfo>();
         var alreadyUsed = new HashSet<string>();
@@ -123,7 +123,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             .Select((x, frameIdx) => new {Frame = x, FrameIdx = frameIdx})
             .ToDictionary(x => x.Frame.Name, StringComparer.OrdinalIgnoreCase);
 
-        Text = $"Annotating the task #{task.Id}";
+        AppendTextLine($"Annotating the task #{task.Id}");
         var predictions = LabeledFiles
             .GroupBy(x => x.File)
             .Select(x => new PredictInfo() {File = x.Key, Labels = x.Select(y => y.Label).ToArray()})
@@ -158,9 +158,9 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             .SelectMany(x => x)
             .ToArray();
 
-        Text = $"Uploading {"label".ToQuantity(labels.Count())} for {"frame".ToQuantity(taskFramesByFileName.Count)}";
+        AppendTextLine( $"Uploading {"label".ToQuantity(labels.Count())} for {"frame".ToQuantity(taskFramesByFileName.Count)}");
         var annotations = await annotationsAccessor.UploadAnnotations(task.Id.Value, labels);
-        Text = $"Created task #{task.Id} with {"frame".ToQuantity(taskFramesByFileName.Count)} and {labels.Length} labels in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}";
+        AppendTextLine( $"Created task #{task.Id} with {"frame".ToQuantity(taskFramesByFileName.Count)} and {labels.Length} labels in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}");
         return annotations;
     }
 }

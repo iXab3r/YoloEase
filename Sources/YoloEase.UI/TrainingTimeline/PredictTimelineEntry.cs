@@ -38,7 +38,7 @@ public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
         using var progressAnchor = Disposable.Create(() => ProgressPercent = null);
         var sw = Stopwatch.StartNew();
         ProgressPercent = 0;
-        Text = "Starting prediction process";
+        AppendTextLine("Starting prediction process");
 
         try
         {

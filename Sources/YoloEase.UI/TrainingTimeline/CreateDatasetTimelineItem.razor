@@ -1,13 +1,20 @@
+@using PoeShared.UI
 @inherits PoeShared.Blazor.BlazorReactiveComponent<CreateDatasetTimelineEntry>
 
 <div class="d-flex">
-    @if (Track(x => x.ProgressPercent != null))
-    {
-        <ProgressBar Value="@Track(x => x.ProgressPercent.Value)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
-    }
-    <div>@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</div>
+    <ReactiveSection DebounceTime="@UiConstants.UiThrottlingDelay" Trackers="@(new() { this.WhenAnyValue(x => x.DataContext.ProgressPercent) })">
+        @{
+            var progress = DataContext.ProgressPercent;
+        }
+        @if (progress != null)
+        {
+            <ProgressBar Value="@(progress.Value)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+        }
+    </ReactiveSection>
+
+    <pre class="p-0 m-0" style="font-family: inherit; font-size: 1em;">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>
     <ReactiveButton
-        Class="btn btn-link h-auto mx-2 p-0"
+        Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
         IsEnabled="@Track(x => x.IsBusy)"
         Command="@(DataContext.Cancel)">
@@ -15,7 +22,7 @@
         stop
     </ReactiveButton>
     <ReactiveButton
-        Class="btn btn-link h-auto mx-2 p-0"
+        Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
         IsEnabled="@Track(x => x.Dataset != null)"
         Command="@(async () => await ProcessUtils.SelectFileOrFolder(DataContext.Dataset.IndexFile))">

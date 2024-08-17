@@ -60,9 +60,9 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
         Binder.Attach(this).AddTo(Anchors);
     }
 
-    public DirectoryInfo StorageDirectory { get; set; }
+    public DirectoryInfo? StorageDirectory { get; set; }
 
-    public DirectoryInfo DatasetsDirectory { get; [UsedImplicitly] private set; }
+    public DirectoryInfo? DatasetsDirectory { get; [UsedImplicitly] private set; }
 
     public IObservableListEx<TrainedModelFileInfo> TrainedModels { get; }
 
@@ -154,6 +154,7 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
             .Select(x => datasetDirectory.GetFiles(x, SearchOption.AllDirectories))
             .SelectMany(x => x).Select(x => x.Name)
             .ToArray();
+
         var projectInfo = new YoloEaseProjectInfo()
         {
             Files = images,

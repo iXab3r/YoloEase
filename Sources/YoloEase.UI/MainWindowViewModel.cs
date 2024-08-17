@@ -1,23 +1,19 @@
 using System.Linq;
-using System.Reactive.Subjects;
-using System.Threading;
 using AntDesign;
 using JetBrains.Annotations;
 using LiteDB;
 using Microsoft.Extensions.FileProviders;
 using PoeShared.Blazor.Scaffolding;
-using PoeShared.Blazor.Wpf;
 using PoeShared.Common;
 using PoeShared.Dialogs.Services;
 using PoeShared.Scaffolding.WPF;
 using PoeShared.Services;
 using Polly;
-using YoloEase.Cvat.Shared.Services;
+using YoloEase.UI.Augmentations;
 using YoloEase.UI.Controls;
 using YoloEase.UI.Core;
 using YoloEase.UI.Prism;
 using YoloEase.UI.ProjectTree;
-using YoloEase.UI.Services;
 using YoloEase.UI.TrainingTimeline;
 
 namespace YoloEase.UI;
@@ -41,6 +37,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     private readonly TabItem settingsTab;
     private readonly TabItem trainerTab;
+    private readonly TabItem augmentationsTab;
     private readonly TabItem localTab;
     private readonly TabItem remoteTab;
     private readonly TabItem batchTab;
@@ -51,22 +48,23 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     static MainWindowViewModel()
     {
         Binder.Bind(x => x.LoadedProjectFile != null && x.LoadedProjectFile.Directory != null ? x.LoadedProjectFile.Directory.GetSubdirectory("storage")  : default).To(x => x.StorageDirectory);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => PrepareProjectDirectory(x.StorageDirectory, x.YoloEaseProject.RemoteProject.ProjectId, x.YoloEaseProject.RemoteProject.ServerUrl)).To(x => x.ProjectOutputDirectory);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.ProjectOutputDirectory).To(x => x.YoloEaseProject.StorageDirectory);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => PrepareProjectDirectory(x.StorageDirectory, x.YoloEaseProject!.RemoteProject.ProjectId, x.YoloEaseProject.RemoteProject.ServerUrl)).To(x => x.ProjectOutputDirectory);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.ProjectOutputDirectory).To(x => x.YoloEaseProject!.StorageDirectory);
 
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject.RemoteProject.ProjectId).To(x => x.ProjectId);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.ProjectId).To(x => x.YoloEaseProject.RemoteProject.ProjectId);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.RemoteProject.ProjectId).To(x => x.ProjectId);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.ProjectId).To(x => x.YoloEaseProject!.RemoteProject.ProjectId);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject).To(x => x.AutomaticTrainer.Project);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject).To(x => x.ProjectTree.Project);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject.Assets).To((x,v) => x.localTab.DataContext = v);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject.RemoteProject).To((x,v) => x.remoteTab.DataContext = v);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject.TrainingBatch).To((x,v) => x.batchTab.DataContext = v);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject.Annotations).To((x,v) => x.annotationsTab.DataContext = v);
-        Binder.BindIf(x => x.YoloEaseProject != null,x => x.YoloEaseProject.TrainingDataset).To((x,v) => x.trainingTab.DataContext = v);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.Assets).To((x,v) => x.localTab.DataContext = v);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.RemoteProject).To((x,v) => x.remoteTab.DataContext = v);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.TrainingBatch).To((x,v) => x.batchTab.DataContext = v);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.Augmentations).To((x,v) => x.augmentationsTab.DataContext = v);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.Annotations).To((x,v) => x.annotationsTab.DataContext = v);
+        Binder.BindIf(x => x.YoloEaseProject != null,x => x.YoloEaseProject!.TrainingDataset).To((x,v) => x.trainingTab.DataContext = v);
 
-        Binder.BindIf(x => x.LoadedProjectFile != null, x => $"{Path.Combine(x.LoadedProjectFile.DirectoryName.TakeMidChars(16, false), x.LoadedProjectFile.Name)}")
-            .Else(x => default)
-            .To(x => x.LoadedProjectShortPath);
+        Binder.BindIf(x => x.LoadedProjectFile != null, x => $"{Path.Combine(x.LoadedProjectFile!.DirectoryName.TakeMidChars(16, false), x.LoadedProjectFile.Name)}")
+            .Else(x => default!)
+            .To(x => x.LoadedProjectShortPath!);
 
         Binder
             .Bind(x =>
@@ -118,6 +116,11 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         {
             Title = "Trainer",
             DataContext = AutomaticTrainer
+        }.AddTo(tabsSource);    
+        
+        augmentationsTab = new TabItem()
+        {
+            Title = "Augmentations",
         }.AddTo(tabsSource);
 
         localTab = new TabItem()
@@ -181,18 +184,19 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                 AutomaticTrainer.WhenAnyValue(x => x.AutoAnnotate).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.ModelStrategy).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.PickStrategy).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.Username).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.ServerUrl).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.Password).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.TrainingBatch.BatchPercentage).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.TrainingDataset.BaseModelPath).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.TrainingDataset.Epochs).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.TrainingDataset.TrainAdditionalArguments).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.Predictions.ConfidenceThresholdPercentage).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.Predictions.IoUThresholdPercentage).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.Predictions.PredictAdditionalArguments).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.Predictions.PredictionModel).ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject.FileSystemAssets.InputDirectories).Select(x => x ?? new SourceCacheEx<DirectoryInfo, string>(x => x.FullName)).Switch().ToUnit().StartWithDefault())
+                this.WhenAnyValue(x => x.YoloEaseProject!.RemoteProject.Username).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.RemoteProject.ServerUrl).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.RemoteProject.Password).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.TrainingBatch.BatchPercentage).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.BaseModelPath).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.Epochs).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.TrainAdditionalArguments).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.ConfidenceThresholdPercentage).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.IoUThresholdPercentage).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.PredictAdditionalArguments).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.PredictionModel).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.Augmentations.Effects).Switch().ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.FileSystemAssets.InputDirectories).Select(x => x ?? new SourceCacheEx<DirectoryInfo, string>(x => x.FullName)).Switch().ToUnit().StartWithDefault())
             .Sample(TimeSpan.FromSeconds(1))
             .Select(x => PrepareProjectConfig());
         
@@ -275,6 +279,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-colors.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-style.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-ant-blazor.css"));
+        additionalFilesSource.Add(new RefFileInfo(@"YoloEase.styles.css"));
         
         additionalFilesSource.Add(new RefFileInfo(@"assets/css/yoloease.css"));
         
@@ -318,15 +323,17 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     public IObservableList<TabItem> Tabs { get; }
 
-    public YoloEaseProject YoloEaseProject { get; private set; }
+    public YoloEaseProject? YoloEaseProject { get; private set; }
 
     public int ProjectId { get; set; }
 
     public AutomaticTrainer AutomaticTrainer { get; }
+    
+    public AugmentationsAccessor Augmentations { get; }
 
     public ProjectTreeViewModel ProjectTree { get; }
 
-    public string LoadedProjectShortPath { get; [UsedImplicitly] private set; }
+    public string? LoadedProjectShortPath { get; [UsedImplicitly] private set; }
 
     public DirectoryInfo StorageDirectory { get; [UsedImplicitly] private set; }
 
@@ -350,7 +357,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     public ICommandWrapper ExitAppCommand { get; }
 
-    public FileInfo LoadedProjectFile { get; private set; }
+    public FileInfo? LoadedProjectFile { get; private set; }
 
     public GeneralProperties LoadedProject { get; private set; }
 
@@ -505,7 +512,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         applicationAccessor.Exit();
     }
 
-    private static DirectoryInfo PrepareProjectDirectory(DirectoryInfo storageDirectory, int? projectId, string apiUrl)
+    private static DirectoryInfo? PrepareProjectDirectory(DirectoryInfo? storageDirectory, int? projectId, string apiUrl)
     {
         if (storageDirectory == null || string.IsNullOrEmpty(apiUrl))
         {
@@ -516,7 +523,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         return new DirectoryInfo(Path.Combine(storageDirectory.FullName, $"{uri.Host}_project_{projectId}"));
     }
 
-    private static DirectoryInfo ParseToDirectoryOrDefault(string path)
+    private static DirectoryInfo? ParseToDirectoryOrDefault(string path)
     {
         if (string.IsNullOrEmpty(path))
         {
@@ -529,7 +536,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     public async Task RemoveDataFolderDirectory(DirectoryInfo directoryInfo)
     {
-        YoloEaseProject.FileSystemAssets.InputDirectories.Remove(directoryInfo);
+        YoloEaseProject!.FileSystemAssets.InputDirectories.Remove(directoryInfo);
     }
 
     public async Task AddDataFolderDirectory()
@@ -539,14 +546,14 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             var selectedDirectory = folderBrowserDialog.ShowDialog();
             if (selectedDirectory != null)
             {
-                YoloEaseProject.FileSystemAssets.InputDirectories.AddOrUpdate(selectedDirectory);
+                YoloEaseProject?.FileSystemAssets.InputDirectories.AddOrUpdate(selectedDirectory);
             }
         });
     }
 
     public Task OpenProject()
     {
-        return YoloEaseProject.RemoteProject.NavigateToProject(YoloEaseProject.RemoteProject.ProjectId);
+        return YoloEaseProject!.RemoteProject.NavigateToProject(YoloEaseProject.RemoteProject.ProjectId);
     }
 
     public async Task OpenAppDirectory()
@@ -619,6 +626,48 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         AutomaticTrainer.AutoAnnotate = config.AutoAnnotationIsEnabled;
         AutomaticTrainer.AutoAnnotateConfidenceThresholdPercentage = config.AutoAnnotateConfidenceThresholdPercentage;
 
+        var effects = config.Augmentations.EmptyIfNull()
+            .Select(x =>
+            {
+                switch (x.Value)
+                {
+                    case RotateImageEffectProperties properties:
+                    {
+                        return new RotateImageEffect()
+                        {
+                            Properties = properties
+                        };
+                    }
+                    case FlipImageEffectProperties properties:
+                    {
+                        return new FlipImageEffect()
+                        {
+                            Properties = properties
+                        };
+                    }
+                    case BoxBlurImageEffectProperties properties:
+                    {
+                        return new BoxBlurImageEffect()
+                        {
+                            Properties = properties
+                        };
+                    }
+                    case NoiseImageEffectProperties properties:
+                    {
+                        return new NoiseImageEffect()
+                        {
+                            Properties = properties
+                        };
+                    }
+                }
+                return default(IImageEffect);
+            })
+            .Where(x => x != null)
+            .ToArray();
+        
+        project.Augmentations.Effects.Clear();
+        project.Augmentations.Effects.EditDiff(effects);
+
         YoloEaseProject = project;
         LoadedProject = config;
     }
@@ -628,7 +677,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         var baseConfig = LoadedProject ?? new GeneralProperties();
         var updatedConfig = baseConfig with
         {
-            Username = YoloEaseProject.RemoteProject.Username,
+            Username = YoloEaseProject!.RemoteProject.Username,
             Password = YoloEaseProject.RemoteProject.Password,
             ServerUrl = YoloEaseProject.RemoteProject.ServerUrl,
             ProjectId = YoloEaseProject.RemoteProject.ProjectId,
@@ -645,8 +694,17 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
             PredictConfidenceThresholdPercentage = YoloEaseProject.Predictions.ConfidenceThresholdPercentage,
             PredictAdditionalArguments = YoloEaseProject.Predictions.PredictAdditionalArguments,
+            
+            Augmentations = SaveEffects(YoloEaseProject.Augmentations.Effects.Items)
         };
         return updatedConfig;
+    }
+
+    private static List<PoeConfigMetadata<IPoeEyeConfigVersioned>>? SaveEffects(IEnumerable<IImageEffect> effects)
+    {
+        return effects
+            .Select(x => new PoeConfigMetadata<IPoeEyeConfigVersioned>(x.Properties))
+            .ToList();
     }
 
     private void SaveProjectConfig(GeneralProperties config, FileInfo file)

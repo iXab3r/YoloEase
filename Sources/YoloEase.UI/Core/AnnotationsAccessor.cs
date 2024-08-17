@@ -201,22 +201,9 @@ public class AnnotationsAccessor : RefreshableReactiveObject
         annotationsSource.EditDiff(annotations);
     }
 
-    public async Task<DatasetInfo> CreateAnnotatedDataset()
+    public async Task<DatasetInfo> CreateAnnotatedDataset(IReadOnlyList<FileInfo> annotationFiles)
     {
         var annotations = Annotations.Items.ToArray();
-        var annotationFiles = annotations
-            .Select(x =>
-            {
-                if (string.IsNullOrEmpty(x.FilePath))
-                {
-                    return null;
-                }
-
-                return new FileInfo(x.FilePath);
-            })
-            .Where(x => x != null)
-            .ToArray();
-        
         var datasetInfo = await Training.CreateAnnotatedDataset(annotationFiles, RemoteProject);
         return datasetInfo with
         {
@@ -226,7 +213,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
             }
         };
     }
-
+    
     private static TaskAnnotationFileInfo CreateEmpty(TaskRead task)
     {
         if (task.Id == null)

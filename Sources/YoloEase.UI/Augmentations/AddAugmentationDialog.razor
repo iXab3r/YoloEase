@@ -1,0 +1,151 @@
+﻿@using PoeShared.Blazor.Services
+@using SixLabors.ImageSharp.Processing
+@attribute [BlazorView(IsForManualRegistrationOnly = true)]
+@inherits YoloEaseComponent<AugmentationsAccessor>
+
+<Modal @ref="@modalRef" Title="@("Add new Augmentation")"
+       Centered="true"
+       Visible="@IsVisible"
+       DefaultMaximized
+       ZIndex="20000"
+       OnCancel="@(() => Hide())">
+    <div class="wrap-panel gap-1">
+        <div class="card effect-card">
+            <img class="card-img-top" src="https://app.roboflow.com/images/augmentation/ninety.jpg" alt="Card image">
+            <div class="card-body gap-1">
+                <h4 class="card-title">Rotate</h4>
+                <p class="card-text">Rotate the image clockwise</p>
+                <div class="d-grid-auto-flow-row gap-2">
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new RotateImageEffect() {Rotation = RotateMode.Rotate90}))">
+                        90°  
+                    </ReactiveButton>
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new RotateImageEffect() {Rotation = RotateMode.Rotate180}))">
+                        180°  
+                    </ReactiveButton>
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new RotateImageEffect() {Rotation = RotateMode.Rotate270}))">
+                        270° 
+                    </ReactiveButton>
+                </div>
+            </div>
+        </div>
+
+        <div class="card effect-card">
+            <img class="card-img-top" src="https://app.roboflow.com/images/augmentation/flip.jpg" alt="Card image">
+            <div class="card-body">
+                <h4 class="card-title">Flip</h4>
+                <p class="card-text">Flips the image against X/Y axe</p>
+                <div class="d-grid-auto-flow-row gap-2">
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new FlipImageEffect() {FlipMode = FlipMode.Horizontal}))">
+                        Horizontal
+                    </ReactiveButton>
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new FlipImageEffect() {FlipMode = FlipMode.Vertical}))">
+                        Vertical
+                    </ReactiveButton>
+                </div>
+            </div>
+        </div>
+
+        <div class="card effect-card">
+            <img class="card-img-top" src="https://app.roboflow.com/images/augmentation/blur.jpg" alt="Card image">
+            <div class="card-body">
+                <h4 class="card-title">Box Blur</h4>
+                <p class="card-text">Applies a box blur to the image.</p>
+                <div class="d-grid-auto-flow-row gap-2">
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new BoxBlurImageEffect() {Radius = 1}))">
+                        Radius: 1px
+                    </ReactiveButton>
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new BoxBlurImageEffect() {Radius = 3}))">
+                        Radius: 3px
+                    </ReactiveButton>
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new BoxBlurImageEffect() {Radius = 5}))">
+                        Radius: 5px
+                    </ReactiveButton>
+                    <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new BoxBlurImageEffect() {Radius = 10}))">
+                        Radius: 10px
+                    </ReactiveButton>
+                </div>
+            </div>
+        </div>
+
+        <div class="card effect-card">
+            <img class="card-img-top" src="https://app.roboflow.com/images/augmentation/noise.jpg" alt="Card image">
+            <div class="card-body">
+                <h4 class="card-title">Noise</h4>
+                <p class="card-text">Applies pixel noise to the image.</p>
+                <div class="d-grid-auto-flow-row gap-2">
+                    @foreach (var percentage in new float[] {5, 10, 20, 50})
+                    {
+                        <ReactiveButton Class="btn btn-outline-secondary w-100" Command="@(() => AddEffect(new NoiseImageEffect() {Percentage = percentage}))">
+                           @($"{percentage:F1}% of all pixels")
+                        </ReactiveButton>
+                    }
+                </div>
+            </div>
+        </div>
+
+    </div>
+</Modal>
+
+@code {
+    private static readonly Binder<AddAugmentationDialog> Binder = new();
+
+    private Modal? modalRef;
+
+    static AddAugmentationDialog()
+    {
+    }
+
+    public AddAugmentationDialog()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.IsVisible));
+
+        Binder.Attach(this).AddTo(Anchors);
+    }
+
+    public bool IsVisible { get; set; }
+
+    [Inject] public INotificationService? NotificationService { get; init; }
+
+    protected override async Task OnAfterFirstRenderAsync()
+    {
+        await base.OnAfterFirstRenderAsync();
+
+        modalRef!.Footer = ModalFooter.DefaultCancelFooter;
+        modalRef!.OkButtonProps = new ButtonProps()
+        {
+        };
+    }
+
+    public async Task Show()
+    {
+        IsVisible = true;
+    }
+
+    public async Task Hide()
+    {
+        IsVisible = false;
+    }
+
+    private async Task AddEffect(IImageEffect imageEffect)
+    {
+        var properties = imageEffect.Properties;
+        var propertiesAsString = properties.ToString();
+        var existingEffect = DataContext.Effects.Items.FirstOrDefault(x => x.Properties.ToString() == propertiesAsString);
+
+        if (existingEffect != null)
+        {
+            NotificationService!.Open(new NotificationConfig()
+            {
+                Duration = 3,
+                Message = "That effect is already added",
+                NotificationType = NotificationType.Warning
+            }).AndForget();
+        }
+        else
+        {
+            DataContext.Effects.Add(imageEffect);
+            await Hide();
+        }
+    }
+
+}

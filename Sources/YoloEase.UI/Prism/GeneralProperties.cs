@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using PoeShared.Converters;
+using YoloEase.UI.Augmentations;
 using YoloEase.UI.TrainingTimeline;
 
 namespace YoloEase.UI.Prism;
@@ -35,9 +36,12 @@ public sealed record GeneralProperties : IPoeEyeConfigVersioned
     public float AutoAnnotateConfidenceThresholdPercentage { get; set; } = 25;
     
     public float PredictConfidenceThresholdPercentage { get; set; } = 25;
+    
     public float PredictIoUThresholdPercentage { get; set; } = 70;
     
     public int BatchPercentage { get; set; } = 5;
+    
+    public List<PoeConfigMetadata<IPoeEyeConfigVersioned>>? Augmentations { get; set; } 
 
     public int Version { get; set; }
 }

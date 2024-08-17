@@ -1,10 +1,15 @@
 @inherits PoeShared.Blazor.BlazorReactiveComponent<PreTrainingTimelineEntry>
 
 <div class="d-flex">
-    @if (Track(x => x.ProgressPercent != null))
-    {
-        <ProgressBar Value="@Track(x => x.ProgressPercent != null ? x.ProgressPercent.Value : 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
-    }
+    <ReactiveSection DebounceTime="@PoeShared.UI.UiConstants.UiThrottlingDelay" Trackers="@(new() { this.WhenAnyValue(x => x.DataContext.ProgressPercent) })">
+        @{
+            var progress = DataContext.ProgressPercent;
+        }
+        @if (progress != null)
+        {
+            <ProgressBar Value="@(progress.Value)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+        }
+    </ReactiveSection>
 
     <div class="vstack gap-3">
         @if (Track(x => x.TerminatedStaleProcessCount > 0))
@@ -43,7 +48,7 @@
             <div>
                 @Track(x => $"{x.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
                 <ReactiveButton
-                    Class="btn btn-link h-auto mx-2 p-0"
+                    Class="btn btn-link h-auto mx-2 p-0 align-self-start"
                     HideIfDisabled="true"
                     IsEnabled="@Track(x => x.IsBusy)"
                     Command="@(DataContext.Cancel)">

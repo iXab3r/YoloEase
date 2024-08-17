@@ -1,0 +1,53 @@
+﻿@using BlazorComponentUtilities
+@inherits PoeShared.Blazor.BlazorReactiveComponent<YoloEase.UI.Augmentations.AugmentationsAccessor>
+
+<h5>Augmentation Options</h5>
+<div>
+    Augmentation performs transforms on your existing images to create new variations and increase the number of images in your dataset. This ultimately makes models more accurate across a broader range of use cases.
+</div>
+
+<Table TItem="IImageEffect" DataSource="@(DataContext.Effects.Items)"
+       Class="py-3"
+       HidePagination="true">
+    <ActionColumn Title="" Class="text-end">
+        <ReactiveCheckBox @bind-IsChecked="@context.IsEnabled"/>
+    </ActionColumn>
+    <PropertyColumn Property="@(x => x.Name)" Title="Name">
+        @{
+            var classBuilder = new CssBuilder().AddClass("strikeout-warning", !context.IsEnabled);
+        }
+        <span class="@classBuilder">
+            @(context.Name)
+        </span>
+    </PropertyColumn>
+    <PropertyColumn Property="@(x => x.Description)" Title="Properties">
+        @{
+            var classBuilder = new CssBuilder().AddClass("strikeout-warning", !context.IsEnabled);
+        }
+        <span class="@classBuilder">
+            @(context.Description)
+        </span>
+    </PropertyColumn>
+    <ActionColumn Title="" Class="text-end">
+        <ReactiveButton Command="@(async () => DataContext.Effects.Remove(context))">
+            Remove
+        </ReactiveButton>
+    </ActionColumn>
+</Table>
+
+<ReactiveButton Class="btn btn-primary w-25" Command="@(async () => await augmentationDialogRef!.Show())">
+    <i class="fa fa-add"></i>
+    Add Augmentation...
+</ReactiveButton>
+
+<AddAugmentationDialog @ref="@augmentationDialogRef" DataContext="@DataContext"/>
+
+@code {
+    private AddAugmentationDialog? augmentationDialogRef;
+
+    public AugmentationsEditor()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Effects));
+    }
+
+}

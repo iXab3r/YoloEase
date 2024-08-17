@@ -38,13 +38,13 @@ public class PreTrainingTimelineEntry : RunnableTimelineEntry
     protected override async Task RunInternal(CancellationToken cancellationToken)
     {
         using var progressAnchor = Disposable.Create(() => ProgressPercent = null);
-        Text = "Running pre-training checks...";
+        AppendTextLine("Running pre-training checks...");
 
         var killedProcesses = KillStaleYoloProcesses(DatasetInfo);
         TerminatedStaleProcessCount = killedProcesses.Count;
 
         ChecksResult = await yolo8DatasetAccessor.RunChecks(cancellationToken);
-        Text = "Checks completed";
+        AppendTextLine("Checks completed");
     }
 
     private static IReadOnlyList<Process> KillStaleYoloProcesses(DatasetInfo datasetInfo)
