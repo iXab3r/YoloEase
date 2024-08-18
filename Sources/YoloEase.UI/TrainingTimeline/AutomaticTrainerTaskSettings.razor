@@ -21,6 +21,7 @@
 </ReactiveSection>
 
 <div>
+    <h5>Training settings</h5>
     <h6>Batch size</h6>
     @{
         var batchTrackers = new ReactiveTrackerList()
@@ -37,11 +38,26 @@
                    max="@(DataContext.Project.TrainingBatch.MaxBatchPercentage)"
                    value="@(DataContext.Project.TrainingBatch.BatchPercentage)"
                    oninput="@((ChangeEventArgs x) => DataContext.Project.TrainingBatch.BatchPercentage = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
-            <label class="text-nowrap">@($"{DataContext.Project.TrainingBatch.BatchPercentage}%/{"file".ToQuantity(DataContext.Project.TrainingBatch.BatchSize)}")</label>
+            <label class="text-nowrap" style="min-width:100px;">@($"{DataContext.Project.TrainingBatch.BatchPercentage}%/{"file".ToQuantity(DataContext.Project.TrainingBatch.BatchSize)}")</label>
         </div>
     </ReactiveSection>
 
 </div>
+
+<div>
+    <h6>Train/Validation % split</h6>
+    <ReactiveSection Trackers="@(new(){ this.WhenAnyValue(x => x.DataContext.Project.TrainingDataset.TrainValSplitPercentage) })">
+        <div class="d-flex gap-1 align-items-center">
+            <input type="range" class="flex-grow-1"
+                   min="@(5)"
+                   max="@(95)"
+                   value="@(DataContext.Project.TrainingDataset.TrainValSplitPercentage)"
+                   oninput="@((ChangeEventArgs x) => DataContext.Project.TrainingDataset.TrainValSplitPercentage = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
+            <label class="text-nowrap" style="min-width:100px;">@($"{DataContext.Project.TrainingDataset.TrainValSplitPercentage}%")</label>
+        </div>
+    </ReactiveSection>
+</div>
+
 
 <div>
     <h6>File pick strategy</h6>
@@ -145,7 +161,7 @@
                     <BootstrapTooltip Title="@(modelName)">
                         @(modelName.TakeMidChars(32))
                     </BootstrapTooltip>
-                    
+
                 </div>
                 <ReactiveButton Class="btn btn-outline-secondary" MinExecutionTime="TimeSpan.Zero" Command="@(DataContext.Project.Predictions.SelectModel)"
                                 IsEnabled="@(DataContext.ModelStrategy == AutomaticTrainerModelStrategy.Custom)">

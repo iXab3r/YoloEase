@@ -11,6 +11,7 @@ from cvat_sdk.core.proxies.tasks import ResourceType
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
 def print_script_info():
     """Logs the script location and the arguments it was run with."""
     script_location = os.path.realpath(__file__)
@@ -18,6 +19,7 @@ def print_script_info():
 
     logger.debug(f"Script location: {script_location}")
     logger.debug(f"Script arguments: {script_args}")
+
 
 def read_file_paths(file_path):
     """Read file paths from a file."""
@@ -29,6 +31,7 @@ def read_file_paths(file_path):
         logger.error(f"Error reading file paths: {e}")
         return []
 
+
 def test_connectivity(args):
     """Test connectivity to CVAT server."""
     try:
@@ -36,6 +39,7 @@ def test_connectivity(args):
             logger.info("Connection successful!")
     except Exception as e:
         logger.error(f"Connection failed: {e}")
+
 
 def create_task(args):
     """Create a new task in CVAT."""

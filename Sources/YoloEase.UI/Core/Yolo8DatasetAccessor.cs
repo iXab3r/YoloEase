@@ -73,6 +73,8 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
     public string TrainAdditionalArguments { get; set; }
 
     public int ModelSize { get; set; } = 640;
+    
+    public float TrainValSplitPercentage { get; set; } = 80;
 
     public string BaseModelPath { get; set; }
 
@@ -140,7 +142,8 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
         {
             Annotations = annotations,
             OutputDirectory = datasetDirectory,
-            UseSymlinks = true
+            UseSymlinks = true,
+            TrainValPercentage = (int)TrainValSplitPercentage,
         });
 
         var indexFile = new FileInfo(Path.Combine(datasetDirectory.FullName, "data.yaml"));

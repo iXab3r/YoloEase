@@ -27,6 +27,8 @@ public sealed record GeneralProperties : IPoeEyeConfigVersioned
     
     public int ModelSize { get; set; } = 640;
     
+    public float TrainValSplitPercentage { get; set; } = 80;
+    
     public bool AutoAnnotationIsEnabled { get; set; }
     
     public AutomaticTrainerModelStrategy AutoAnnotateModelStrategy { get; set; } = AutomaticTrainerModelStrategy.Latest;
