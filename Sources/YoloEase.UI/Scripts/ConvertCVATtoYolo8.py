@@ -3,6 +3,7 @@ import argparse
 import xml.etree.ElementTree as ET
 import shutil
 import cv2
+import logging
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -10,17 +11,22 @@ from shapely.geometry import Polygon, LineString, GeometryCollection
 from dataclasses import dataclass
 from shapely.ops import split
 
+# Set up logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 def main():
     try:
         main_internal()
     except Exception as ex:
-        print(f"Exception occurred in script: {ex}")
+        logger.error(f"Exception occurred in script: {ex}")
         exit(-1)
+
 
 def main_internal():
     script_options = parse_options()
-    print("Options:", script_options)
+    logger.info("Options:", script_options)
 
     output_folder = os.path.abspath(script_options.output_directory)
     if os.path.exists(output_folder):
@@ -31,9 +37,9 @@ def main_internal():
     for annotations_file in script_options.input_annotations_files:
         images_by_path.extend(prepare_images(annotations_file))
 
-    save(output_folder, images_by_path, script_options.output_directory)
+    save(output_folder, images_by_path, script_options.output_directory, script_options.train_val_percentage)
 
-    print(f"Processing completed, images: {len(images_by_path)}")
+    logger.info(f"Processing completed, images: {len(images_by_path)}")
 
 
 def prepare_images(annotations_file):
@@ -48,7 +54,7 @@ def prepare_images(annotations_file):
     }
 
     if len(annotations.images) != len(all_images):
-        print(
+        logger.info(
             f"Different number of annotated/unannotated images: {len(annotations.images)} vs {len(all_images)}"
         )
 
@@ -56,13 +62,13 @@ def prepare_images(annotations_file):
     for image in annotations.images:
         matching_image_file = all_images.get(image.name)
         if matching_image_file is None:
-            print(f"Failed to find annotated image {image.name} in {images_folder}")
+            logger.info(f"Failed to find annotated image {image.name} in {images_folder}")
             continue
 
         if len(image.masks) == 0 and len(image.boxes) == 0:
-            print(f"Image {image.name} in {images_folder} is not annotated")
+            logger.info(f"Image {image.name} in {images_folder} is not annotated")
 
-        print(f"Processing {image.name}, boxes: {len(image.boxes)}, masks: {len(image.masks)}")
+        logger.info(f"Processing {image.name}, boxes: {len(image.boxes)}, masks: {len(image.masks)}")
         boxes = [
             YoloLabeledBBox(
                 class_name=box.label,
@@ -90,11 +96,11 @@ def prepare_images(annotations_file):
 
 
 def parse_to_yolo_labeled_masks(mask, image):
-    print(f"Parsing mask of {image.name}: {mask.label}, {len(mask.rle)} len")
+    logger.info(f"Parsing mask of {image.name}: {mask.label}, {len(mask.rle)} len")
 
     polygons = CvatMaskConverter.cvat_rle_to_polygon(mask.rle, mask.height, mask.width)
     adjusted_polygons = CvatMaskConverter.adjust_polygon_coords(polygons, mask.left, mask.top)
-    print(f"Parsed mask of {image.name} to {len(polygons)} polys")
+    logger.info(f"Parsed mask of {image.name} to {len(polygons)} polys")
     # CvatMaskConverter.draw_and_show_polygons(image.height, image.width, adjusted_polygons)
 
     scaled_polygons = [polygon.astype(np.float32).copy() for polygon in adjusted_polygons]  # convert to float first
@@ -114,7 +120,7 @@ def parse_to_yolo_labeled_masks(mask, image):
     return yolo_masks
 
 
-def save(output_folder, images, use_symlinks):
+def save(output_folder, images, use_symlinks, train_val_percentage):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
@@ -145,31 +151,26 @@ test: ../test/images
 nc: {len(labels)}
 names: [{', '.join(f"'{label.name}'" for label in labels.values())}]
 
-roboflow:
-  workspace: xab3r
-  project: d4
-  version: 20
-  license: Private
 """
         )
 
-    imageTrainCount = 75
-    imageValidCount = 25
+    imageTrainCount = train_val_percentage
+    imageValidCount = 100 - train_val_percentage
     imageTestCount = 0
-    print(
+    logger.info(
         f"Splitting {len(images)} images to train/valid/test: {imageTrainCount}/{imageValidCount}/{imageTestCount}%"
     )
     names = ["train", "valid", "test"]
     split = split_collection(images, imageTrainCount, imageValidCount, imageTestCount)
 
-    print(f"Writing the results of a split to {output_folder}")
+    logger.info(f"Writing the results of a split to {output_folder}")
     for i, images_collection in enumerate(split):
         images_collection_name = names[i]
         collection_folder_path = os.path.join(output_folder, images_collection_name)
         images_folder_path = os.path.join(collection_folder_path, "images")
         labels_folder_path = os.path.join(collection_folder_path, "labels")
 
-        print(
+        logger.info(
             f"Writing '{images_collection_name}' to {collection_folder_path}, count: {len(images_collection)}"
         )
 
@@ -207,13 +208,27 @@ roboflow:
                 f.write("\n".join(image_masks))
 
 
+def read_file_paths(file_path):
+    """Read file paths from a file."""
+    try:
+        with open(file_path, 'r') as file:
+            paths = file.read().splitlines()
+            return paths
+    except Exception as e:
+        logger.error(f"Error reading file paths: {e}")
+        return []
+
+
 def parse_options():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--inputAnnotationsFiles",
         help="Paths to CVAT 1.1 annotation file (annotations.xml)",
-        required=True,
         nargs="+",
+    )
+    parser.add_argument(
+        "--inputAnnotationsFileList",
+        help="Path to file containing list of paths to CVAT 1.1 annotation files (annotations.xml)",
     )
     parser.add_argument(
         "--outputDirectory",
@@ -225,12 +240,20 @@ def parse_options():
         help="Use symbolic links instead of copying files",
         action="store_true"
     )
+    parser.add_argument(
+        "--trainPercentage",
+        type=int,
+        help="Percentage of images to use for training",
+    )
     args = parser.parse_args()
 
+    file_paths = args.inputAnnotationsFiles if args.inputAnnotationsFiles else read_file_paths(args.inputAnnotationsFileList)
+
     return ScriptOptions(
-        input_annotations_files=args.inputAnnotationsFiles,
+        input_annotations_files=file_paths,
         output_directory=args.outputDirectory,
-        use_symlinks=args.symlinks
+        use_symlinks=args.symlinks,
+        train_val_percentage=args.trainPercentage
     )
 
 
@@ -469,10 +492,11 @@ class YoloLabeledMask:
 
 
 class ScriptOptions:
-    def __init__(self, input_annotations_files, output_directory, use_symlinks):
+    def __init__(self, input_annotations_files, output_directory, use_symlinks, train_val_percentage):
         self.input_annotations_files = input_annotations_files
         self.output_directory = output_directory
         self.use_symlinks = use_symlinks
+        self.train_val_percentage = train_val_percentage
 
 
 class CvatMaskConverter:

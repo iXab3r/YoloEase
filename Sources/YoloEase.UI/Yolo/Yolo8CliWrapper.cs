@@ -12,6 +12,7 @@ public sealed record Yolo8ConvertAnnotationsArguments
     public DirectoryInfo OutputDirectory { get; init; }
     public FileInfo[] Annotations { get; init; }
     public bool UseSymlinks { get; init; }
+    public int TrainValPercentage { get; init; } = 80;
 }
 
 public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
@@ -57,22 +58,38 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         {
             throw new FileNotFoundException($"Conversion script not found @ {conversionScript.FullName}", conversionScript.Name);
         }
-
-        using var tmpScriptFile = new TempFile(conversionScript);
+        
+        TempFile tmpFileListFile = null;
+        if (settings.Annotations.Length > 10)
+        {
+            tmpFileListFile = new TempFile();
+            await File.WriteAllLinesAsync(tmpFileListFile.File.FullName, settings.Annotations.Select(x => x.FullName).ToArray(), CancellationToken.None);
+        }
 
         var cmd = Cli.Wrap("python")
             .WithArguments(x =>
             {
-                x.Add($"\"{tmpScriptFile.File.FullName}\"", escape: false);
+                x.Add($"\"{conversionScript.FullName}\"", escape: false);
                 if (settings.UseSymlinks)
                 {
                     x.Add($"--symlinks", escape: false);
                 }
 
-                x.Add($"--inputAnnotationsFiles", escape: false);
-                x.Add(string.Join(" ", settings.Annotations.Select(x => $"\"{x.FullName}\"")), escape: false);
+               
                 x.Add($"--outputDirectory", escape: false);
                 x.Add($"\"{settings.OutputDirectory.FullName}\"", escape: false);
+                x.Add($"--trainPercentage", escape: false);
+                x.Add($"{settings.TrainValPercentage}", escape: false);
+                
+                if (tmpFileListFile == null)
+                {
+                    x.Add($"--inputAnnotationsFiles", escape: false);
+                    x.Add(string.Join(" ", settings.Annotations.Select(x => $"\"{x.FullName}\"")), escape: false);
+                }
+                else
+                {
+                    x.Add($"--inputAnnotationsFileList \"{tmpFileListFile.File.FullName}\"", escape: false);
+                }
             });
 
         await foreach (var cmdEvent in cmd.ListenAndLogAsync())
@@ -89,6 +106,15 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         if (!settings.OutputDirectory.Exists)
         {
             throw new InvalidOperationException($"Failed to execute command, directory not found: {settings.OutputDirectory.FullName}");
+        }
+        
+        if (tmpFileListFile != null)
+        {
+            //I purposefully do not use try.finally or using
+            //to make it so if some error occurs, TMP file will still be in place to test things out
+            //yes, it will leave minor trash behind
+            Log.Info($"Cleaning up tmp file @ {tmpFileListFile}");
+            tmpFileListFile.Dispose();
         }
     }
 

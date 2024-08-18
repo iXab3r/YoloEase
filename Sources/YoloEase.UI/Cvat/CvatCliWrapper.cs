@@ -132,21 +132,18 @@ public partial class CvatCliWrapper
             throw new FileNotFoundException($"CVAT Wrapper script not found @ {wrapperScript.FullName}", wrapperScript.Name);
         }
         
-        using var tmpScriptFile = new TempFile(wrapperScript);
-
         TempFile tmpFileListFile = null;
         if (filesToUpload.Count > 10)
         {
             tmpFileListFile = new TempFile();
             await File.WriteAllLinesAsync(tmpFileListFile.File.FullName, filesToUpload.Select(x => x.FullName).ToArray(), CancellationToken.None);
         }
-        using var tmpFileListFileAnchors = tmpFileListFile;
         
         var cmd = Cli.Wrap("python")
             .WithWorkingDirectory(AppDomain.CurrentDomain.BaseDirectory)
             .WithArguments(x =>
             {
-                x.Add($"\"{tmpScriptFile.File.FullName}\"", escape: false);
+                x.Add($"\"{wrapperScript.FullName}\"", escape: false);
 
                 x.Add($"task.create", escape: false);
                 x.Add($"--task-name \"{taskName}\"", escape: false);
@@ -193,6 +190,15 @@ public partial class CvatCliWrapper
         if (taskId == null)
         {
             throw new InvalidOperationException("Failed to get task ID as a result of running Create");
+        }
+
+        if (tmpFileListFile != null)
+        {
+            //I purposefully do not use try.finally or using
+            //to make it so if some error occurs, TMP file will still be in place to test things out
+            //yes, it will leave minor trash behind
+            Log.Info($"Cleaning up tmp file @ {tmpFileListFile}");
+            tmpFileListFile.Dispose();
         }
 
         return taskId.Value;
