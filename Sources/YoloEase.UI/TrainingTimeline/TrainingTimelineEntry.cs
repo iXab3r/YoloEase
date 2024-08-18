@@ -87,8 +87,10 @@ public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
                 Text = $"{update.ProgressPercentage:F0}% in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}, epochs: {update.EpochCurrent}/{update.EpochMax}, VideoRAM: {update.VideoRAM}";
             }, cancellationToken);
 
+            var modelName = DatasetInfo.ProjectInfo.ModelTrainingSettings.Model;
             var projectName = string.IsNullOrEmpty(DatasetInfo.ProjectInfo.ProjectName) ? string.Empty : $"{Humanizer.InflectorExtensions.Pascalize(DatasetInfo.ProjectInfo.ProjectName)}_";
-            var modelFilePathRevision = Path.Combine(modelFile.DirectoryName!, $"{projectName}{Path.GetFileName(DatasetInfo.IndexFile.DirectoryName)}{modelFile.Extension}");
+            var modelSuffix = string.IsNullOrEmpty(modelName) ? string.Empty : $"{Path.GetFileNameWithoutExtension(modelName)}_";
+            var modelFilePathRevision = Path.Combine(modelFile.DirectoryName!, $"{projectName}{modelSuffix}{Path.GetFileName(DatasetInfo.IndexFile.DirectoryName)}{modelFile.Extension}");
             File.Move(modelFile.FullName, modelFilePathRevision);
             var modelFileRevision = new FileInfo(modelFilePathRevision);
             
