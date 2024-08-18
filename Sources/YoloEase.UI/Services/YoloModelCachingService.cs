@@ -10,7 +10,7 @@ public class YoloModelCachingService : DisposableReactiveObjectWithLogger, IYolo
 {
     private static readonly Binder<YoloModelCachingService> Binder = new();
 
-    private static readonly Uri BaseDownloadUri = new Uri(@"https://eyeauras.blob.core.windows.net/eyeauras-ml/yolov8", UriKind.Absolute);
+    private static readonly Uri BaseDownloadUri = new Uri(@"https://s3.eyeauras.net/public/eyeauras-ml/yolo", UriKind.Absolute);
 
     static YoloModelCachingService()
     {
