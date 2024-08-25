@@ -226,7 +226,7 @@
                     <PropertyColumn Property="x => x.FullName" Title="Source name">
                         @if (PathUtils.IsParentDir(DataContext.YoloEaseProject.StorageDirectory.FullName, context.FullName))
                         {
-                            @(Path.GetRelativePath(DataContext.YoloEaseProject.StorageDirectory.FullName, context.FullName).Take(64))
+                            @(Path.GetRelativePath(DataContext.YoloEaseProject.StorageDirectory.FullName, context.FullName).TakeMidChars(64))
                         }
                         else
                         {
