@@ -55,8 +55,6 @@
 @code {
     private static readonly Binder<VideoSplitterDialog> Binder = new();
 
-    private readonly IOpenFileDialog openFileDialog;
-    private readonly IScheduler uiScheduler;
     private readonly ComplexProgressTracker progressTracker = new ComplexProgressTracker();
     private Modal modalRef;
     private CancellationTokenSource taskTokenSource = new CancellationTokenSource();
@@ -77,13 +75,8 @@
             .To(x => x.MarksFormFrameNth);
     }
 
-    public VideoSplitterDialog(
-        IOpenFileDialog openFileDialog,
-        [Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler
-    )
+    public VideoSplitterDialog()
     {
-        this.openFileDialog = openFileDialog;
-        this.uiScheduler = uiScheduler;
 
         ChangeTrackers.Add(this.WhenAnyValue(x => x.IsVisible));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.Marks));
@@ -122,9 +115,13 @@
         };
     }
 
-    private async Task Show()
+    public async Task Show(FileInfo videoFile)
     {
         IsVisible = true;
+        VideoFile = videoFile;
+        FrameCount = VideoToFramesSplitter.GetFrameCount(VideoFile);
+        StartFrameIdx = 0;
+        EndFrameIdx = FrameCount;
     }
 
     private async Task Hide()
@@ -176,7 +173,7 @@
         var files = outputDirectory.GetFiles();
 
         var alreadyAddedFiles = DataContext.YoloEaseProject
-            .FileSystemAssets
+            .Assets
             .Files
             .Items
             .Select(x => x.Name)
@@ -208,7 +205,7 @@
 
             DataContext
                 .YoloEaseProject
-                .FileSystemAssets
+                .DataSources
                 .InputDirectories
                 .AddOrUpdate(outputDirectory);
 
@@ -221,33 +218,7 @@
             
             await Hide();
         }
-
     }
 
-    public async Task AddVideo()
-    {
-        using var isBusy = isBusyLatch.Rent();
-
-        var inputFilePath = await Observable.Start(() =>
-        {
-            openFileDialog.InitialFileName = DataContext.YoloEaseProject.TrainingDataset.BaseModelPath;
-            if (openFileDialog.ShowDialog() != null)
-            {
-                return openFileDialog.LastFile.FullName;
-            }
-
-            return default;
-        }, uiScheduler);
-        if (string.IsNullOrEmpty(inputFilePath))
-        {
-            return;
-        }
-
-        VideoFile = new FileInfo(inputFilePath);
-        FrameCount = VideoToFramesSplitter.GetFrameCount(VideoFile);
-        StartFrameIdx = 0;
-        EndFrameIdx = FrameCount;
-        await Show();
-    }
 
 }

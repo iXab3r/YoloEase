@@ -1,4 +1,6 @@
-﻿@using YoloEase.UI.Core
+﻿@using PoeShared.Dialogs.Services
+@using YoloEase.Cvat.Shared.Services
+@using YoloEase.UI.Core
 @inherits YoloEaseComponent<MainWindowViewModel>
 
 <HeadContent>
@@ -46,12 +48,6 @@
     <div id="statusMiddle">
     </div>
     <div id="statusRight">
-        @if (DataContext.AppArguments.IsDebugMode)
-        {
-            <ReactiveButton Class="btn btn-link btn-primary" Command="@(async () => DataContext.RaiseRefresh())">Redraw UI</ReactiveButton>
-            <ReactiveButton Class="btn btn-link btn-primary" Command="@DataContext.YoloEaseProject.Refresh">Refresh</ReactiveButton>
-        }
-
         <ReactiveButton Class="btn btn-link" Command="@DataContext.OpenAppDirectory">
             <i class="fa fa-folder-open"></i>
         </ReactiveButton>
@@ -63,3 +59,7 @@
 
 <ReactiveNotificationsContainer Notifications="@DataContext.WhenNotified"/>
 
+@code{
+
+    
+}

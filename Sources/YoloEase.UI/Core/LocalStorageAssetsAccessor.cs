@@ -1,17 +1,20 @@
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
 using YoloEase.UI.Scaffolding;
 
 namespace YoloEase.UI.Core;
 
 public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssetsAccessor
 {
+    public static readonly string[] FilesFilter = new[] {"*.png", "*.jpg", "*.bmp"};
+
     private readonly SourceCacheEx<FileInfo, string> localFileSource = new(x => x.FullName);
     private readonly SourceCacheEx<DirectoryInfo, string> inputDirectoriesSource = new(x => x.FullName);
 
-    private readonly IFileAssetsAccessor assetsAccessor;
-    public static readonly string[] FilesFilter = new[] {"*.png", "*.jpg", "*.bmp"};
+    private readonly DataSourcesProvider assetsAccessor;
 
-    public LocalStorageAssetsAccessor(IFileAssetsAccessor assetsAccessor)
+    public LocalStorageAssetsAccessor(DataSourcesProvider assetsAccessor)
     {
         this.assetsAccessor = assetsAccessor;
     }
@@ -21,21 +24,23 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
     public IObservableCacheEx<FileInfo, string> Files => localFileSource;
 
     public ISourceCacheEx<DirectoryInfo, string> InputDirectories => inputDirectoriesSource;
-    
-    public async Task Refresh()
-    {
-        if (isBusyLatch.IsBusy)
-        {
-            throw new InvalidOperationException("Another refresh is already in progress");
-        }
-        using var isBusy = isBusyLatch.Rent();
 
-        await Task.Run(SynchronizeDirectories);
-        await Task.Run(RefreshLocalFiles);
+    protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
+    {
+        using var progressTracker = new ComplexProgressTracker(progressReporter ?? new SimpleProgressReporter());
+        
+        await Task.Run(() => SynchronizeDirectories(progressTracker.GetOrAdd(nameof(SynchronizeDirectories))));
+        await Task.Run(() => RefreshLocalFiles(progressTracker.GetOrAdd(nameof(RefreshLocalFiles))));
     }
 
-    private async Task SynchronizeDirectories()
+    private async Task SynchronizeDirectories(IProgressReporter progressReporter)
     {
+        using var progressTracker = new ComplexProgressTracker(progressReporter);
+        
+        var directoriesScanReporter = progressTracker.GetOrAdd("Directories Scanning");
+        var filesCleanupReporter = progressTracker.GetOrAdd("Files cleanup");
+        var imageScanReporter = progressTracker.GetOrAdd("Scanning images");
+        
         var inputDirectories = assetsAccessor.InputDirectories.Items.ToArray();
         var storage = new DirectoryInfo(Path.Combine(StorageDirectory.FullName, "assets"));
         if (!storage.Exists)
@@ -51,6 +56,7 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
         
         var sourceFilesByStorageName = new Dictionary<string, (FileInfo OriginalFile, FileInfo StorageFile)>();
         var linkedDirectories = new List<DirectoryInfo>();
+        
         for (var i = 0; i < inputDirectories.Length; i++)
         {
             var directory = inputDirectories[i];
@@ -90,6 +96,8 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
                 var storageFile = new FileInfo(Path.Combine(trainingStorage.FullName, storageFileName));
                 sourceFilesByStorageName.Add(storageFile.Name, (OriginalFile: fileToLink, StorageFile: storageFile));
             }
+            
+            directoriesScanReporter.Update(i+1, inputDirectories.Length);
         }
         
         var storageFilesByStorageName = FilesFilter.Select(x => trainingStorage.GetFiles(x, SearchOption.AllDirectories))
@@ -100,8 +108,9 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
             .Where(x => !sourceFilesByStorageName.ContainsKey(x.Key))
             .ToArray();
 
-        foreach (var storageFileInfo in filesToRemove)
+        for (var i = 0; i < filesToRemove.Length; i++)
         {
+            var storageFileInfo = filesToRemove[i];
             Log.Debug($"Removing obsolete storage file {storageFileInfo}");
             try
             {
@@ -111,17 +120,25 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
             {
                 Log.Warn($"Failed to remove obsolete storage file {storageFileInfo}", e);
             }
-            Log.Debug($"Removed obsolete storage file {storageFileInfo}");
+            finally
+            {
+                Log.Debug($"Removed obsolete storage file {storageFileInfo}");
+                filesCleanupReporter.Update(i+1, filesToRemove.Length);
+            }
         }
 
-        foreach (var sourceFileInfo in sourceFilesByStorageName.Values)
+        var images = sourceFilesByStorageName.Values.ToArray();
+        var processedImages = 0;
+        await Parallel.ForAsync(0, images.Length, new ParallelOptions(), async (i, token) =>
         {
-            Log.Debug($"Processing {sourceFileInfo}");
+            var sourceFileInfo = images[i];
+            Log.Debug($"Processing image {sourceFileInfo}");
+            
             try
             {
                 var imageSize = ImageUtils.GetImageSize(sourceFileInfo.OriginalFile);
-                Log.Debug($"Image metadata for {sourceFileInfo.OriginalFile}: {new { imageSize }}");
-                
+                Log.Debug($"Image metadata for {sourceFileInfo.OriginalFile}: {new {imageSize}}");
+
                 if (!sourceFileInfo.StorageFile.Exists)
                 {
                     File.Copy(sourceFileInfo.OriginalFile.FullName, sourceFileInfo.StorageFile.FullName);
@@ -129,23 +146,34 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
             }
             catch (Exception e)
             {
-                Log.Warn($"Failed to process {sourceFileInfo}", e);
+                Log.Warn($"Failed to process image {sourceFileInfo}", e);
             }
-        }
+            finally
+            {
+                imageScanReporter.Update(Interlocked.Increment(ref processedImages), images.Length);
+            }
+        });
         
         linkedDirectories.Add(trainingStorage);
         inputDirectoriesSource.EditDiff(linkedDirectories);
     }
     
-    private async Task RefreshLocalFiles()
+    private async Task RefreshLocalFiles(IProgressReporter progressReporter)
     {
-        var files = new System.Collections.Generic.HashSet<FileInfo>();
-
-        foreach (var directory in inputDirectoriesSource.Items)
+        var files = new ConcurrentDictionary<string, FileInfo>();
+        var filters = new[] {"*.png", "*.jpg", "*.bmp"};
+        var directoriesToProcess = inputDirectoriesSource.Items.ToArray();
+        var processedDirectories = 0;
+        await Parallel.ForEachAsync(directoriesToProcess, new ParallelOptions(), async (directory, token) =>
         {
-            FilesFilter.Select(x => directory.GetFiles(x)).SelectMany(x => x).ForEach(x => files.Add(x));
-        }
+            filters
+                .Select(directory.GetFiles)
+                .SelectMany(x => x)
+                .ForEach(x => files[x.FullName] = x);
+            var count = Interlocked.Increment(ref processedDirectories);
+            progressReporter.Update(count, directoriesToProcess.Length);
+        });
 
-        localFileSource.EditDiff(files);
+        localFileSource.EditDiff(files.Values);
     }
 }

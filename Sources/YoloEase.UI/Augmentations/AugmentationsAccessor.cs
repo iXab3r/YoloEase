@@ -5,12 +5,10 @@ using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Serialization;
 using JetBrains.Annotations;
-using Newtonsoft.Json;
 using PoeShared.Logging;
 using PoeShared.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing.Processing;
-using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Processing;
 using YoloEase.Cvat.Shared;
@@ -123,7 +121,12 @@ public class AugmentationsAccessor : RefreshableReactiveObject
         return result.ToArray();
     }
 
-    private void PrepareAugmentedAnnotations(
+    protected override Task RefreshInternal(IProgressReporter? progressReporter = default)
+    {
+        throw new NotImplementedException();
+    }
+
+    private static void PrepareAugmentedAnnotations(
         FileInfo annotationsFile, 
         FileInfo outputFile,
         IReadOnlyList<CvatAnnotationImage> annotationImages)
@@ -274,6 +277,4 @@ public class AugmentationsAccessor : RefreshableReactiveObject
 
         return (CvatAnnotations) result;
     }
-    
-    
 }

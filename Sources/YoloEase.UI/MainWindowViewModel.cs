@@ -13,7 +13,6 @@ using YoloEase.UI.Augmentations;
 using YoloEase.UI.Controls;
 using YoloEase.UI.Core;
 using YoloEase.UI.Prism;
-using YoloEase.UI.ProjectTree;
 using YoloEase.UI.TrainingTimeline;
 
 namespace YoloEase.UI;
@@ -54,7 +53,6 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.RemoteProject.ProjectId).To(x => x.ProjectId);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.ProjectId).To(x => x.YoloEaseProject!.RemoteProject.ProjectId);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject).To(x => x.AutomaticTrainer.Project);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject).To(x => x.ProjectTree.Project);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.Assets).To((x,v) => x.localTab.DataContext = v);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.RemoteProject).To((x,v) => x.remoteTab.DataContext = v);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.TrainingBatch).To((x,v) => x.batchTab.DataContext = v);
@@ -78,14 +76,12 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         IOpenFileDialog openProjectFileDialog,
         ISaveFileDialog saveProjectFileDialog,
         IAppArguments appArguments,
-        ProjectTreeViewModel projectTree,
         AutomaticTrainer automaticTrainer,
         IConfigSerializer configSerializer,
         IApplicationAccessor applicationAccessor,
         IFactory<YoloEaseProject> projectFactory,
         [Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler)
     {
-        ProjectTree = projectTree.AddTo(Anchors);
         AutomaticTrainer = automaticTrainer.AddTo(Anchors);
         AppArguments = appArguments;
         this.folderBrowserDialog = folderBrowserDialog;
@@ -177,9 +173,21 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             })
             .AddTo(Anchors);
 
-        ProjectsDirectory = new DirectoryInfo(Path.Combine(appArguments.AppDataDirectory, "projects"));
+        ProjectsDirectory = new DirectoryInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "YoloEase projects"));
+        if (ProjectsDirectory.Exists)
+        {
+            try
+            {
+                Log.Info($"Creating projects directory @ {ProjectsDirectory.FullName}");
+                ProjectsDirectory.Create();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"Failed to create projects directory @ {ProjectsDirectory.FullName}", ex);
+            }
+        }
         
-        var configSource = Observable.CombineLatest(
+        var configSource = Observable.Merge(
                 this.WhenAnyValue(x => x.ProjectId).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.AutoAnnotate).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.ModelStrategy).ToUnit(),
@@ -199,8 +207,9 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.PredictionModel).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Augmentations.Effects).Switch().ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Augmentations.Effects).Switch().WhenAnyPropertyChanged().ToUnit(),
-                this.WhenAnyValue(x => x.YoloEaseProject!.FileSystemAssets.InputDirectories).Select(x => x ?? new SourceCacheEx<DirectoryInfo, string>(x => x.FullName)).Switch().ToUnit().StartWithDefault())
+                this.WhenAnyValue(x => x.YoloEaseProject!.DataSources.InputDirectories).Switch().ToUnit())
             .Sample(TimeSpan.FromSeconds(5))
+            .Skip(1) //skip first one as it will be auto-generated
             .Select(x => PrepareProjectConfig());
         
         configSource
@@ -333,8 +342,6 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     public AutomaticTrainer AutomaticTrainer { get; }
     
     public AugmentationsAccessor Augmentations { get; }
-
-    public ProjectTreeViewModel ProjectTree { get; }
 
     public string? LoadedProjectShortPath { get; [UsedImplicitly] private set; }
 
@@ -482,31 +489,34 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     private async Task LoadProjectCommandExecuted(object arg)
     {
-        FileInfo selectedFile;
-        if (arg is RecentProjectInfo recentProjectInfo)
+        uiScheduler.Schedule(() =>
         {
-            selectedFile = new FileInfo(recentProjectInfo.FilePath);
-        }
-        else
-        {
-            var loaded = LoadedProjectFile;
-            if (loaded != null)
+            FileInfo selectedFile;
+            if (arg is RecentProjectInfo recentProjectInfo)
             {
-                openProjectFileDialog.InitialDirectory = loaded.DirectoryName;
-                openProjectFileDialog.InitialFileName = loaded.Name;
+                selectedFile = new FileInfo(recentProjectInfo.FilePath);
             }
             else
             {
-                openProjectFileDialog.InitialDirectory = ProjectsDirectory.FullName;
+                var loaded = LoadedProjectFile;
+                if (loaded != null)
+                {
+                    openProjectFileDialog.InitialDirectory = loaded.DirectoryName;
+                    openProjectFileDialog.InitialFileName = loaded.Name;
+                }
+                else
+                {
+                    openProjectFileDialog.InitialDirectory = ProjectsDirectory.FullName;
+                }
+
+                selectedFile = openProjectFileDialog.ShowDialog();
             }
 
-            selectedFile = openProjectFileDialog.ShowDialog();
-        }
-        
-        if (selectedFile != null)
-        {
-            LoadProjectConfig(selectedFile);
-        }
+            if (selectedFile != null)
+            {
+                LoadProjectConfig(selectedFile);
+            }
+        });
     }
 
     private void ExitAppCommandExecuted()
@@ -539,7 +549,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     public async Task RemoveDataFolderDirectory(DirectoryInfo directoryInfo)
     {
-        YoloEaseProject!.FileSystemAssets.InputDirectories.Remove(directoryInfo);
+        YoloEaseProject!.DataSources.InputDirectories.Remove(directoryInfo);
     }
 
     public async Task AddDataFolderDirectory()
@@ -549,7 +559,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             var selectedDirectory = folderBrowserDialog.ShowDialog();
             if (selectedDirectory != null)
             {
-                YoloEaseProject?.FileSystemAssets.InputDirectories.AddOrUpdate(selectedDirectory);
+                YoloEaseProject?.DataSources.InputDirectories.AddOrUpdate(selectedDirectory);
             }
         });
     }
@@ -611,7 +621,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         project.RemoteProject.Password = config.Password;
         project.RemoteProject.ServerUrl = config.ServerUrl;
         project.RemoteProject.ProjectId = config.ProjectId;
-        project.FileSystemAssets.InputDirectories.EditDiff(config.DataDirectoryPaths.EmptyIfNull().Where(x => !string.IsNullOrEmpty(x)).Select(x => new DirectoryInfo(x)));
+        project.DataSources.InputDirectories.EditDiff(config.DataDirectoryPaths.EmptyIfNull().Where(x => !string.IsNullOrEmpty(x)).Select(x => new DirectoryInfo(x)));
         project.TrainingDataset.BaseModelPath = config.BaseModelPath;
         project.TrainingDataset.Epochs = config.TrainingEpochs;
         project.TrainingDataset.ModelSize = config.ModelSize;
@@ -684,7 +694,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             Password = YoloEaseProject.RemoteProject.Password,
             ServerUrl = YoloEaseProject.RemoteProject.ServerUrl,
             ProjectId = YoloEaseProject.RemoteProject.ProjectId,
-            DataDirectoryPaths = YoloEaseProject.FileSystemAssets.InputDirectories.Items.Select(x => x.FullName).ToArray(),
+            DataDirectoryPaths = YoloEaseProject.DataSources.InputDirectories.Items.Select(x => x.FullName).ToArray(),
             TrainingEpochs = YoloEaseProject.TrainingDataset.Epochs,
             ModelSize = YoloEaseProject.TrainingDataset.ModelSize,
             TrainValSplitPercentage = YoloEaseProject.TrainingDataset.TrainValSplitPercentage,
@@ -725,5 +735,10 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     {
         var updatedConfig = PrepareProjectConfig();
         SaveProjectConfig(updatedConfig, file);
+    }
+
+    protected override Task RefreshInternal(IProgressReporter? progressReporter = default)
+    {
+        throw new NotImplementedException();
     }
 }

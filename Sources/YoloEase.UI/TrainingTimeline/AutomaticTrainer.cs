@@ -82,6 +82,8 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     public bool AutoAnnotate { get; set; }
     
+    public bool StopWhenDone { get; set; }
+    
     public bool PredictIncludeAnnotated { get; set; }
 
     public AutomaticTrainerModelStrategy ModelStrategy { get; set; }
@@ -207,7 +209,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     public async Task Start()
     {
-        using var isBusy = isBusyLatch.Rent();
+        using var isBusy = MarkAsBusy();
         using var cleanup = Disposable.Create(() => activeTrainingCancellationTokenSource = null);
         activeTrainingCancellationTokenSource = new CancellationTokenSource();
 
@@ -224,6 +226,11 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             Text = "Automatic training stopped",
             Timestamp = clock.Now
         });
+    }
+    
+    protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
+    {
+        await Project.Refresh(progressReporter);
     }
 
     private async Task HandleTraining(CancellationToken cancellationToken)
@@ -245,31 +252,8 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     Timestamp = clock.Now
                 }.AddTo(timelineSource);
 
-                await Project.FileSystemAssets.Refresh();
-                await Project.Assets.Refresh();
-
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                await Project.RemoteProject.Refresh();
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                await Project.TrainingBatch.Refresh();
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                await Project.Annotations.Refresh();
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
+                var projectEntry = new ProjectTimelineEntry(Project).AddTo(timelineSource);
+                await projectEntry.Run(cancellationToken);
 
                 if (Project.Predictions.PredictionModel == null && ModelStrategy == AutomaticTrainerModelStrategy.Latest)
                 {
@@ -322,14 +306,23 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                         trainingSettings,
                         Project.Annotations, Project.RemoteProject).AddTo(timelineSource);
                     var changeset = await changesetEntry.Run(cancellationToken);
+                    Log.Info($"Changeset size: {changeset.Count}");
                     if (!changeset.Any())
                     {
-                        continue;
+                        if (StopWhenDone)
+                        {
+                            Log.Info("Stopping training - no changes");
+                            break;
+                        }
+                        else
+                        {
+                            Log.Info("Skipping training cycle - no changes");
+                            continue;
+                        }
                     }
                 }
 
                 if (cancellationToken.IsCancellationRequested)
-                    
                 {
                     break;
                 }
@@ -435,9 +428,14 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         }
 
         var directories = Project.Assets.InputDirectories.Items.ToArray();
-        if (directories.Count() > 1)
+        if (directories.Length > 1)
         {
             throw new NotSupportedException("Predict is not supported for multiple input directories(yet)");
+        }
+        
+        if (directories.Length<=0)
+        {
+            throw new InvalidOperationException("No input directories");
         }
 
         var inputDirectory = directories[0];

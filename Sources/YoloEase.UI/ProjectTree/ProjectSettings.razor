@@ -1,5 +1,7 @@
 @using CvatApi
 @using System.Globalization
+@using PoeShared.Dialogs.Services
+@using FileInfo = System.IO.FileInfo
 @inherits PoeShared.Blazor.BlazorReactiveComponent<MainWindowViewModel>
 
 <div class="container">
@@ -81,7 +83,7 @@
             }
             else
             {
-                <ReactiveButton Class="btn btn-link" Command="@DataContext.YoloEaseProject.RemoteProject.Refresh">
+                <ReactiveButton Class="btn btn-link" Command="@(() => DataContext.YoloEaseProject.RemoteProject.Refresh())">
                     <i class="fa fa-refresh"></i>
                     Refresh
                 </ReactiveButton>
@@ -202,10 +204,10 @@
 
 <div class="row mt-3">
     <div class="col-8">
-        <h4>Data sources (directories, files, etc)<span class="text-danger">*</span> (@Track(x => x.YoloEaseProject.FileSystemAssets.InputDirectories.Count))</h4>
+        <h4>Data sources (directories, files, etc)<span class="text-danger">*</span> (@Track(x => x.YoloEaseProject.DataSources.InputDirectories.Count))</h4>
     </div>
     <div class="col-4 text-sm-end flex">
-        <ReactiveButton Class="btn btn-primary my-1" Command="@(async () => await videoSplitterDialog.AddVideo())">Add Video...</ReactiveButton>
+        <ReactiveButton Class="btn btn-primary my-1" Command="@(async () => await AddVideo())">Add Video...</ReactiveButton>
         <ReactiveButton Class="btn btn-primary my-1" Command="@DataContext.AddDataFolderDirectory">Add Folder...</ReactiveButton>
     </div>
 </div>
@@ -213,10 +215,10 @@
 <div class="row">
     <div class="col-12">
 
-        <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.FileSystemAssets.InputDirectories)})">
-            @if (DataContext.YoloEaseProject.FileSystemAssets.InputDirectories.Count > 0)
+        <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.DataSources.InputDirectories)})">
+            @if (DataContext.YoloEaseProject.DataSources.InputDirectories.Count > 0)
             {
-                <Table TItem="DirectoryInfo" DataSource="@(DataContext.YoloEaseProject.FileSystemAssets.InputDirectories.Items)"
+                <Table TItem="DirectoryInfo" DataSource="@(DataContext.YoloEaseProject.DataSources.InputDirectories.Items)"
                        HidePagination="true">
                     <ActionColumn Title="" Class="text-end">
                         <ReactiveButton Class="btn btn-outline-secondary" Command="@(async () => await PoeShared.Scaffolding.ProcessUtils.OpenFolder(context))">
@@ -393,9 +395,40 @@
 </div>
 
 <VideoSplitterDialog @ref="@videoSplitterDialog" DataContext="@DataContext"></VideoSplitterDialog>
+<MultiVideoSplitterDialog @ref="@multiVideoSplitterDialog" DataContext="@DataContext"></MultiVideoSplitterDialog>
 
 @code {
+    private readonly IScheduler uiScheduler;
 
     private VideoSplitterDialog videoSplitterDialog;
+    private MultiVideoSplitterDialog multiVideoSplitterDialog;
 
+    public ProjectSettings([Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler)
+    {
+        this.uiScheduler = uiScheduler;
+    }
+    
+    [Inject]
+    protected IOpenFileDialog? OpenFileDialog { get; init; }
+    
+    private async Task AddVideo()
+    {
+        uiScheduler.Schedule(async () =>
+        {
+            FileInfo videoFile = default;
+            if (OpenFileDialog?.ShowDialog() != null)
+            {
+                OpenFileDialog.InitialDirectory = OpenFileDialog.LastFile.DirectoryName;
+                OpenFileDialog.InitialFileName = OpenFileDialog.LastFile.Name;
+                videoFile = OpenFileDialog.LastFile;
+            }
+
+            if (videoFile == null)
+            {
+                return;
+            }
+
+            await videoSplitterDialog.Show(videoFile);
+        });
+    }
 }

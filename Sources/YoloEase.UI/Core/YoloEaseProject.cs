@@ -20,19 +20,19 @@ public class YoloEaseProject : RefreshableReactiveObject
     public YoloEaseProject(
         CvatProjectAccessor cvatProjectAccessor,
         IYoloModelCachingService yoloModelCachingService,
-        FileSystemAssetsAccessor fileSystemAssetsAccessor,
+        IFactory<DataSourcesProvider> fileSystemAssetsAccessor,
+        IFactory<Yolo8PredictAccessor> predictAccessorFactory,
         IFactory<AugmentationsAccessor, AnnotationsAccessor> augmentationsAccessorFactory,
-        IFactory<LocalStorageAssetsAccessor, IFileAssetsAccessor> localStorageDatasetAccessorFactory,
+        IFactory<LocalStorageAssetsAccessor, DataSourcesProvider> localStorageDatasetAccessorFactory,
         IFactory<Yolo8DatasetAccessor, IFileAssetsAccessor> trainingDatasetAccessorFactory,
-        IFactory<Yolo8PredictAccessor, IFileAssetsAccessor> predictAccessorFactory,
         IFactory<AnnotationsAccessor,  CvatProjectAccessor, IFileAssetsAccessor, Yolo8DatasetAccessor> annotationsAccessorFactory,
         IFactory<TrainingBatchAccessor, CvatProjectAccessor, IFileAssetsAccessor> batchAccessorFactory)
     {
         this.yoloModelCachingService = yoloModelCachingService;
         RemoteProject = cvatProjectAccessor.AddTo(Anchors);
-        FileSystemAssets = fileSystemAssetsAccessor.AddTo(Anchors);
-        Assets = localStorageDatasetAccessorFactory.Create(FileSystemAssets).AddTo(Anchors);
-        Predictions = predictAccessorFactory.Create(FileSystemAssets).AddTo(Anchors);
+        DataSources = fileSystemAssetsAccessor.Create().AddTo(Anchors);
+        Predictions = predictAccessorFactory.Create().AddTo(Anchors);
+        Assets = localStorageDatasetAccessorFactory.Create(DataSources).AddTo(Anchors);
         TrainingDataset = trainingDatasetAccessorFactory.Create(Assets).AddTo(Anchors);
         TrainingBatch = batchAccessorFactory.Create(cvatProjectAccessor, Assets).AddTo(Anchors);
         Annotations = annotationsAccessorFactory.Create(cvatProjectAccessor, Assets, TrainingDataset).AddTo(Anchors);
@@ -48,7 +48,7 @@ public class YoloEaseProject : RefreshableReactiveObject
     
     public LocalStorageAssetsAccessor Assets { get; }
     
-    public FileSystemAssetsAccessor FileSystemAssets { get; }
+    public DataSourcesProvider DataSources { get; }
     
     public Yolo8DatasetAccessor TrainingDataset { get; }
     
@@ -58,14 +58,8 @@ public class YoloEaseProject : RefreshableReactiveObject
     
     public AnnotationsAccessor Annotations { get; }
 
-    public async Task Refresh()
+    protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        if (isBusyLatch.IsBusy)
-        {
-            throw new InvalidOperationException("Another refresh is already in progress");
-        }
-        using var isBusy = isBusyLatch.Rent();
-        
         await Assets.Refresh();
         await RemoteProject.Refresh();
         await Annotations.Refresh();

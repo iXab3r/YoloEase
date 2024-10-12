@@ -11,7 +11,7 @@ public abstract class RefreshableReactiveObject : DisposableReactiveObjectWithLo
 {
     private static readonly Binder<RefreshableReactiveObject> Binder = new();
 
-    protected readonly SharedResourceLatch isBusyLatch;
+    private readonly SharedResourceLatch isBusyLatch;
 
     static RefreshableReactiveObject()
     {
@@ -30,8 +30,20 @@ public abstract class RefreshableReactiveObject : DisposableReactiveObjectWithLo
 
     public ISubject<NotificationConfig> WhenNotified { get; } = new Subject<NotificationConfig>();
 
-    public void RaiseRefresh()
+    public async Task Refresh(IProgressReporter? progressReporter = default)
     {
-        WhenRefresh.OnNext(new StackTrace());
+        if (isBusyLatch.IsBusy)
+        {
+            throw new InvalidOperationException("Another refresh is already in progress");
+        }
+        using var isBusy = isBusyLatch.Rent();
+        await RefreshInternal(progressReporter);
+    }
+
+    protected abstract Task RefreshInternal(IProgressReporter? progressReporter = default);
+
+    protected IDisposable MarkAsBusy()
+    {
+        return isBusyLatch.Rent();
     }
 }

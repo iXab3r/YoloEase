@@ -53,12 +53,8 @@ public class AnnotationsAccessor : RefreshableReactiveObject
         annotationsSource.Remove(annotationFileInfo);
     }
 
-    public async Task Refresh()
+    protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        if (isBusyLatch.IsBusy)
-        {
-            throw new InvalidOperationException("Another refresh is already in progress");
-        }
         var annotatedTasks = RemoteProject.Tasks.Items.Where(x => x.Status == JobStatus.Completed).ToArray();
         annotatedTaskSource.EditDiff(annotatedTasks);
 

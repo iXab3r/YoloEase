@@ -82,14 +82,8 @@ public class CvatProjectAccessor : RefreshableReactiveObject
         return uri.Host.Equals("cvat.eyeauras.net") ? "https://cvat.eyeauras.net" : ServerUrl;
     }
 
-    public async Task Refresh()
+    protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        if (isBusyLatch.IsBusy)
-        {
-            throw new InvalidOperationException("Another refresh is already in progress");
-        }
-        using var isBusy = isBusyLatch.Rent();
-        
         var projects = await cvatClient.RetrieveProjects();
         projectsSources.EditDiff(projects);
 

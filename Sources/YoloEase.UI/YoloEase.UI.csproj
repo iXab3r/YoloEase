@@ -69,11 +69,14 @@
           <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
 
+        <None Update="data\readme.md">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+
     </ItemGroup>
 
 
     <ItemGroup>
       <Folder Include="wwwroot\assets\images\" />
     </ItemGroup>
-
 </Project>

@@ -1,0 +1,199 @@
+﻿@using System.Collections.Immutable
+@using System.Threading
+@using PoeShared.Services
+@using JetBrains.Annotations
+@using PoeShared
+@inherits YoloEaseComponent<MainWindowViewModel>
+
+
+<Modal @ref="@modalRef" Title="@("Extract frames from video files")"
+       Centered="true"
+       Visible="@IsVisible"
+       OnOk="@(() => SplitVideo())"
+       OnCancel="@(() => Hide())">
+    <div class="flex align-self-center d-grid h-100" style="grid-template-rows: auto 1fr auto">
+        <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.IsBusy)})">
+            <div class="alert bg-secondary">
+                <h6>Range of frames to extract</h6>
+                <Slider TValue="@(double)"
+                        DefaultValue="@(FrameNth)"
+                        Disabled="@IsBusy"
+                        Min="@(0)"
+                        Max="@(60)"
+                        OnChange="@(e => { FrameNth = (int) e; })"/>
+
+                <h6>@($"You are going to get ~{ExpectedFrameCount} frames using these settings")</h6>
+            </div>
+
+            <table class="table table-striped overflow-y-auto">
+                <thead>
+                <tr>
+                    <td>File</td>
+                    <td># Frames</td>
+                    <td># Extract</td>
+                    <td>Progress</td>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in rowsSource.Items)
+                {
+                    var rowError = row.LastError;
+
+                    <tr>
+                        <td>
+                            @(row.FileInfo.Name.TakeMidChars(32))
+                        </td>
+                        <td>
+                            <ReactiveSection Trackers="@(new() {row.WhenAnyValue(x => x.FrameCount)})">
+                                <span class="text-secondary">@row.FrameCount</span>
+                            </ReactiveSection>
+                        </td>
+                        <td>
+                            <ReactiveSection Trackers="@(new() {row.WhenAnyValue(x => x.ExpectedFrameCount)})">
+                                <span class="text-success">@row.ExpectedFrameCount</span>
+                            </ReactiveSection>
+                        </td>
+                        <td>
+                            <ReactiveSection Trackers="@(new() {row.WhenAnyValue(x => x.IsBusy, x => x.ProgressReporter.ProgressPercent)})">
+                                @if (row.IsBusy)
+                                {
+                                    <ProgressBar Value="@row.ProgressReporter.ProgressPercent"></ProgressBar>
+                                }
+                                else if (rowError != null)
+                                {
+                                    <BootstrapTooltip Title="@rowError.Value.Message">
+                                        <span class="text-danger">
+                                            ERROR
+                                        </span>
+                                    </BootstrapTooltip>
+                                }
+                                else
+                                {
+                                    <span>
+
+                                    </span>
+                                }
+                            </ReactiveSection>
+                        </td>
+                    </tr>
+                }
+
+                </tbody>
+            </table>
+
+
+            <ReactiveSection Trackers="@(new() {progressTracker.WhenAnyValue(x => x.ProgressPercent)})">
+                <ProgressBar Value="@progressTracker.ProgressPercent"></ProgressBar>
+            </ReactiveSection>
+        </ReactiveSection>
+    </div>
+</Modal>
+
+@code {
+    private static readonly Binder<MultiVideoSplitterDialog> Binder = new();
+
+    private readonly ComplexProgressTracker progressTracker = new ComplexProgressTracker();
+    private Modal modalRef;
+    private CancellationTokenSource taskTokenSource = new CancellationTokenSource();
+    private readonly SharedResourceLatch isBusyLatch = new SharedResourceLatch();
+    private readonly SourceListEx<VideoFileSplitRow> rowsSource = new();
+
+    static MultiVideoSplitterDialog()
+    {
+        Binder.Bind(x => x.isBusyLatch.IsBusy).To(x => x.IsBusy);
+        
+        Binder.Bind(x => x.rowsSource.Collection.Sum(y => y.ExpectedFrameCount))
+            .To(x => x.ExpectedFrameCount);
+        
+        Binder.Bind(x => x.rowsSource.Collection.Sum(y => y.FrameCount))
+            .To(x => x.FrameCount);
+        
+        Binder.BindAction(x => PoeShared.Scaffolding.EnumerableExtensions.ForEach(x.rowsSource, y => SetFrame(y, x.FrameNth)));
+    }
+
+    public MultiVideoSplitterDialog()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.IsVisible));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.IsBusy));
+
+        rowsSource
+            .Connect()
+            .DisposeMany()
+            .SubscribeToErrors(Log.HandleUiException)
+            .AddTo(Anchors);
+        
+        
+        Binder.Attach(this).AddTo(Anchors);
+    }
+
+    public bool IsVisible { get; private set; }
+
+    public ImmutableArray<FileInfo> VideoFiles { get; private set; }
+
+    public long FrameCount { get; private set; }
+
+    public int FrameNth { get; private set; } = 5;
+
+    public long ExpectedFrameCount { get; [UsedImplicitly] private set; }
+
+    public bool IsBusy { get; [UsedImplicitly] private set; }
+
+    [Inject] public INotificationService NotificationService { get; init; }
+    
+    private static void SetFrame(VideoFileSplitRow row, int frameNth)
+    {
+        row.FrameNth = frameNth;
+    }
+
+    protected override async Task OnAfterFirstRenderAsync()
+    {
+        await base.OnAfterFirstRenderAsync();
+
+        modalRef.OkButtonProps = new ButtonProps()
+        {
+        };
+    }
+
+    public async Task Show(params FileInfo[] videoFiles)
+    {
+        VideoFiles = videoFiles.ToImmutableArray();
+
+
+        taskTokenSource = new CancellationTokenSource();
+        progressTracker.Reset();
+        
+        rowsSource.Clear();
+        rowsSource.AddRange( videoFiles.Select(x => new VideoFileSplitRow(x, progressTracker.GetOrAdd(x.Name))));
+
+        IsVisible = true;
+    }
+
+    private async Task Hide()
+    {
+        IsVisible = false;
+        VideoFiles = ImmutableArray<FileInfo>.Empty;
+        rowsSource.Clear();
+        taskTokenSource.Cancel(false);
+    }
+
+    private async Task SplitVideo()
+    {
+        using var isBusy = isBusyLatch.Rent();
+
+        modalRef.OkButtonProps.Disabled = true;
+        modalRef.OkButtonProps.Loading = true;
+        using var enabledOkButton = Disposable.Create(() =>
+        {
+            modalRef.OkButtonProps.Disabled = false;
+            modalRef.OkButtonProps.Loading = false;
+        });
+        StateHasChanged();
+
+        foreach (var row in rowsSource.Items)
+        {
+            await row.Run(taskTokenSource.Token);
+        }
+    }
+
+
+}

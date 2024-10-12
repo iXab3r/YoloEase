@@ -1,4 +1,3 @@
-@using System.Globalization
 @using CvatApi
 @inherits YoloEaseComponent<AutomaticTrainer>
 
@@ -20,10 +19,27 @@
                     Start automatic training
                 </ReactiveButton>
             }
-            <a href="https://wiki.eyeauras.net/en/YoloEase/how-to-use-automatic-trainer">
-                <i class="fa fa-external-link align-middle m-2"></i>
-            </a>
         </div>
+
+        <span class="align-self-center mx-2">
+            <RadioGroup @bind-Value="DataContext.StopWhenDone" Size="@(AntSizeLDSType.Small)">
+                <Radio Value="@(false)">
+                    <BootstrapTooltip Title="If set, will be running until stopped manually">
+                        Run until stopped
+                    </BootstrapTooltip>
+                </Radio>
+                <Radio Value="@(true)">
+                    <BootstrapTooltip Title="If set, will stop training loop after completion on a single training">
+                        Run once
+                    </BootstrapTooltip>
+                </Radio>
+            </RadioGroup>
+        </span>
+
+        <a href="https://wiki.eyeauras.net/en/YoloEase/how-to-use-automatic-trainer">
+            <i class="fa fa-external-link align-middle m-2"></i>
+        </a>
+
         <div class="flex-grow-1"></div>
         <div class="d-flex">
             <div class="align-self-center">
@@ -47,23 +63,24 @@
 
     <div class="flex-grow-1 d-grid p-2 overflow-hidden" style="grid-template-columns: 1fr auto auto">
         <div class="scroller overflow-x-hidden overflow-y-auto">
-            @if (Track(x => x.Timeline.Count > 0))
-            {
-                <Timeline Mode="TimelineMode.Left" Style="margin-left: -80%">
-                    <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Timeline)})">
+            <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Timeline).Switch()})">
+                @if (DataContext.Timeline.Count > 0)
+                {
+                    <Timeline Mode="TimelineMode.Left" Style="margin-left: -80%">
                         @foreach (var entry in DataContext.Timeline.Items)
                         {
                             <TrainerTimelineItemWrapper DataContext="@entry"/>
                         }
-                    </ReactiveSection>
-                </Timeline>
-            }
-            else
-            {
-                <div class="alert alert-secondary">
-                    Timeline of events will be displayed here. Click "Start" to kick-off training process
-                </div>
-            }
+                    </Timeline>
+                }
+                else
+                {
+                    <div class="alert alert-secondary">
+                        Timeline of events will be displayed here. Click "Start" to kick-off training process
+                    </div>
+                }
+            </ReactiveSection>
+
             <div class="scroller-anchor"></div>
         </div>
 
@@ -100,7 +117,7 @@
             </div>
             <div class="flex-grow-1 text-center">
                 <ReactiveButton Class="btn btn-link"
-                                Command="@DataContext.Project.Refresh">
+                                Command="@(() => DataContext.Refresh())">
                     <i class="fa fa-refresh"></i>
                     Refresh
                 </ReactiveButton>

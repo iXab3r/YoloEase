@@ -11,9 +11,7 @@ using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.Core;
 
-
-
-public class Yolo8PredictAccessor : RefreshableReactiveObject
+public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
 {
     private static readonly Binder<Yolo8PredictAccessor> Binder = new();
 

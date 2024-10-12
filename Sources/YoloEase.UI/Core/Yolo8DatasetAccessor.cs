@@ -87,15 +87,8 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
         Model = BaseModelPath
     };
 
-    public async Task Refresh()
+    protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        if (isBusyLatch.IsBusy)
-        {
-            throw new InvalidOperationException("Another refresh is already in progress");
-        }
-
-        using var isBusy = isBusyLatch.Rent();
-
         await RefreshStorageDatasets();
         await RefreshTrainedModels();
     }

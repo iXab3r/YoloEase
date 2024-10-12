@@ -85,14 +85,8 @@ public class TrainingBatchAccessor : RefreshableReactiveObject
         return PrepareNextBatchFiles(nextBatch);
     }
 
-    public async Task Refresh()
+    protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        if (isBusyLatch.IsBusy)
-        {
-            throw new InvalidOperationException("Another refresh is already in progress");
-        }
-        using var isBusy = isBusyLatch.Rent();
-
         var projectFiles = Project.ProjectFiles.Items.ToDictionary(x => x.FileName);
         var localFiles = Assets.Files.Items.ToDictionary(x => x.Name);
 
