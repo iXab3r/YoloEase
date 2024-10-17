@@ -243,8 +243,15 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         TrainedModelFileInfo lastTrainedModel = default;
         while (!cancellationToken.IsCancellationRequested)
         {
+            if (StopWhenDone && cycleIdx > 1)
+            {
+                Log.Info("Stopping training as one run is already done");
+                break;
+            }
+            
             try
             {
+                
                 new BasicTimelineEntry
                 {
                     Text = $"Cycle #{cycleIdx} started",
@@ -309,16 +316,8 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     Log.Info($"Changeset size: {changeset.Count}");
                     if (!changeset.Any())
                     {
-                        if (StopWhenDone)
-                        {
-                            Log.Info("Stopping training - no changes");
-                            break;
-                        }
-                        else
-                        {
-                            Log.Info("Skipping training cycle - no changes");
-                            continue;
-                        }
+                        Log.Info("Skipping training cycle - no changes");
+                        continue;
                     }
                 }
 
