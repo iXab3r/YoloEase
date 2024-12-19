@@ -1,21 +1,32 @@
-@inherits PoeShared.Blazor.BlazorReactiveComponent<UpdateYoloTimelineEntry>
+@inherits PoeShared.Blazor.Controls.TimelineItemBase<UpdateYoloTimelineEntry>
 
 <div class="d-flex">
     <div class="vstack gap-3">
         <div class="d-flex">
-            <div>@Track(x => x.Text)@(DataContext.IsBusy ? "..." : string.Empty)</div>
+            <div>@(DataContext.Text)@(DataContext.IsBusy ? "..." : string.Empty)</div>
             <ReactiveButton
                 Class="btn btn-link h-auto mx-2 p-0"
                 HideIfDisabled="true"
-                IsEnabled="@Track(x => x.CanRequestUpdate && !x.UpdateRequested)"
+                IsEnabled="@(DataContext.CanRequestUpdate && !DataContext.UpdateRequested)"
                 Command="@(async () => { DataContext.TimelineController.PerformUpdateOnNextCycle = true; DataContext.UpdateRequested = true; })">
                 <i class="fa fa-download fa-fixed"></i>
                 install the update
             </ReactiveButton>
         </div>
-        @if (Track(x => !string.IsNullOrEmpty(x.UpdateText)))
+        @if ((!string.IsNullOrEmpty(DataContext.UpdateText)))
         {
-            <span class="alert alert-warning">@(Track(x => x.UpdateText))</span>
+            <span class="alert alert-warning">@((DataContext.UpdateText))</span>
         }
     </div>
 </div>
+
+@code {
+
+    public UpdateYoloTimelineItem()
+    {
+        ChangeTrackers.Add(this, x => x.DataContext.CanRequestUpdate);
+        ChangeTrackers.Add(this, x => x.DataContext.UpdateRequested);
+        ChangeTrackers.Add(this, x => x.DataContext.UpdateText);
+    }
+
+}

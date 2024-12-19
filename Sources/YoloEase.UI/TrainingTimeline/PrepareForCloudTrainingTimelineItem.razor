@@ -1,45 +1,50 @@
 @inherits PoeShared.Blazor.BlazorReactiveComponent<PrepareForCloudTrainingTimelineEntry>
 
 <div class="d-flex">
-    <ReactiveSection DebounceTime="@PoeShared.UI.UiConstants.UiThrottlingDelay" Trackers="@(new() { this.WhenAnyValue(x => x.DataContext.ProgressPercent) })">
-        @{
-            var progress = DataContext.ProgressPercent;
-        }
-        @if (progress != null)
-        {
-            <ProgressBar Value="@(progress.Value)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
-        }
-    </ReactiveSection>
+    @if (DataContext.ProgressPercent != null)
+    {
+        <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+    }
 
     <div class="vstack gap-3">
         <div class="d-flex">
             <div>
-                @Track(x => $"{x.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
+                @($"{DataContext.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
             </div>
             <ReactiveButton
                 Class="btn btn-link h-auto mx-2 p-0"
                 HideIfDisabled="true"
-                IsEnabled="@Track(x => x.IsBusy)"
+                IsEnabled="@(DataContext.IsBusy)"
                 Command="@(DataContext.Cancel)">
                 <i class="fa fa-stop-circle-o fa-fixed"></i>
                 stop
             </ReactiveButton>
+            <ReactiveButton
+                Class="btn btn-link h-auto mx-2 p-0 align-self-start"
+                HideIfDisabled="true"
+                Command="@(SelectArchiveOrDirectory)">
+                <i class="fa fa-folder-o fa-fixed"></i>
+                open...
+            </ReactiveButton>
 
         </div>
-        @if (Track(x => x.DataArchiveFile != null))
+        @if ((DataContext.DataArchiveFile != null))
         {
             <div class="alert alert-success">
                 <ol>
-                    <li>Go to <a href="https://colab.research.google.com/drive/15rofeDJtaRe4avg6We_JiVd-P4qQHDYj?usp=sharing">
-                        <i class="fa fa-external-link align-middle"></i>
-                        Google Collab
-                    </a></li>
+                    <li>
+                        Go to
+                        <a href="https://colab.research.google.com/drive/15rofeDJtaRe4avg6We_JiVd-P4qQHDYj?usp=sharing">
+                            <i class="fa fa-external-link align-middle"></i>
+                            Google Collab
+                        </a>
+                    </li>
                     <li>
                         Upload ZIP with training data
                         <ReactiveButton
                             Class="btn btn-link h-auto mx-2 p-0"
                             HideIfDisabled="true"
-                            IsEnabled="@Track(x => x.DataArchiveFile != null)"
+                            IsEnabled="@(DataContext.DataArchiveFile != null)"
                             Command="@(async () => await ProcessUtils.SelectFileOrFolder(DataContext.DataArchiveFile))">
                             <i class="fa fa-folder-o fa-fixed"></i>
                             open...
@@ -53,3 +58,27 @@
     </div>
 
 </div>
+
+@code {
+
+
+    public PrepareForCloudTrainingTimelineItem()
+    {
+        ChangeTrackers.Add(this, x => x.DataContext.DataArchiveFile);
+        ChangeTrackers.Add(this, x => x.DataContext.DatasetInfo);
+        ChangeTrackers.Add(this, x => x.DataContext.DataArchiveFile);
+    }
+
+    private async Task SelectArchiveOrDirectory()
+    {
+        if (DataContext.DataArchiveFile != null)
+        {
+            await ProcessUtils.SelectFileOrFolder(DataContext.DataArchiveFile);
+        }
+        else
+        {
+            await ProcessUtils.SelectFileOrFolder(DataContext.DataArchiveDirectory);
+        }
+    }
+
+}

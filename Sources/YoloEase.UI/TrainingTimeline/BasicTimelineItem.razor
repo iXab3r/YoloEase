@@ -1,7 +1,7 @@
-@inherits PoeShared.Blazor.BlazorReactiveComponent<BasicTimelineEntry>
+@inherits PoeShared.Blazor.Controls.TimelineItemBase<BasicTimelineEntry>
 
-@if (Track(x => x.ProgressPercent != null))
+@if ((DataContext.ProgressPercent != null))
 {
-    <ProgressBar Value="@Track(x => x.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+    <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
 }
 <pre class="p-0 m-0" style="font-family: inherit; font-size: 1em;">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>

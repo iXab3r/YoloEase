@@ -29,7 +29,7 @@ public class ChangesetTimelineEntry : RunnableTimelineEntry<IReadOnlyList<Change
         this.projectAccessor = projectAccessor;
     }
 
-    public IObservableListEx<int> NewTasks => newTasksSource;
+    public IObservableList<int> NewTasks => newTasksSource;
 
     protected override async Task<IReadOnlyList<Changeset>> RunInternal(CancellationToken cancellationToken)
     {

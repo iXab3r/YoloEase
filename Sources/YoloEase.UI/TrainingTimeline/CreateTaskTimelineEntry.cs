@@ -27,7 +27,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         this.trainingBatchAccessor = trainingBatchAccessor;
     }
 
-    public TaskRead Task { get; private set; }
+    public TaskRead? Task { get; private set; }
 
     public AnnotationsRead Annotations { get; private set; }
 

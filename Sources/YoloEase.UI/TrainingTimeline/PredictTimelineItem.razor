@@ -1,15 +1,15 @@
-@inherits PoeShared.Blazor.BlazorReactiveComponent<PredictTimelineEntry>
+@inherits PoeShared.Blazor.Controls.TimelineItemBase<PredictTimelineEntry>
 
 <div class="d-flex">
-    @if (Track(x => x.ProgressPercent != null))
+    @if (DataContext.ProgressPercent != null)
     {
-        <ProgressBar Value="@Track(x => x.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+        <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
     }
     <pre class="p-0 m-0" style="font-family: inherit; font-size: 1em;">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>
     <ReactiveButton
         Class="btn btn-link h-auto mx-2 p-0"
         HideIfDisabled="true"
-        IsEnabled="@Track(x => x.IsBusy)"
+        IsEnabled="@(DataContext.IsBusy)"
         Command="@(DataContext.Cancel)">
         <i class="fa fa-stop-circle fa-fixed"></i>
         stop
@@ -17,8 +17,8 @@
     <ReactiveButton
         Class="btn btn-link h-auto mx-2 p-0"
         HideIfDisabled="true"
-        IsEnabled="@Track(x => x.DatasetPredictions != null && x.DatasetPredictions.Predictions.Any())"
-        Command="@(async () => await ProcessUtils.OpenFolder(DataContext.DatasetPredictions.Predictions[0].File.Directory))">
+        IsEnabled="@(DataContext.DatasetPredictions != null && DataContext.DatasetPredictions.Predictions.Any())"
+        Command="@(async () => await ProcessUtils.OpenFolder(DataContext.DatasetPredictions!.Predictions[0].File.Directory))">
         <i class="fa fa-folder-o fa-fixed"></i>
         open...
     </ReactiveButton>

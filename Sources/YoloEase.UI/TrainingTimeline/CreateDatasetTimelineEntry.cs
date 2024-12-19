@@ -21,7 +21,7 @@ public class CreateDatasetTimelineEntry : RunnableTimelineEntry<DatasetInfo>
         this.augmentationsAccessor = augmentationsAccessor;
     }
     
-    public DatasetInfo Dataset { get; private set; }
+    public DatasetInfo? Dataset { get; private set; }
 
     protected override async Task<DatasetInfo> RunInternal(CancellationToken cancellationToken)
     {

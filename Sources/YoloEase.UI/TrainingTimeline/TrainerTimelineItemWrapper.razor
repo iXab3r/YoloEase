@@ -1,25 +1,22 @@
 @using System.Globalization
 @using PoeShared.Blazor.Scaffolding
 @using PoeShared.Blazor.Wpf.Scaffolding
-@inherits PoeShared.Blazor.BlazorReactiveComponent<TimelineEntry>
+@inherits PoeShared.Blazor.Controls.TimelineItemBase<TimelineEntry>
 
-<TimelineItem Class="@Track(x => x.IsBusy ? "ant-timeline-item-pending" : "")"
-              Label="@Track(x => x.Timestamp == null ? "" : x.Timestamp.Value.ToString("HH:mm:ss", CultureInfo.InvariantCulture))">
+<TimelineItem Class="@(DataContext.IsBusy ? "ant-timeline-item-pending" : "")"
+              Label="@(DataContext.Timestamp == null ? "" : DataContext.Timestamp.Value.ToString("HH:mm:ss", CultureInfo.InvariantCulture))">
     <div class="d-flex align-items-center">
         @if (!string.IsNullOrEmpty(DataContext.PrefixIcon))
         {
             <i class="@($"me-2 align-self-center fa {DataContext.PrefixIcon}")"></i>
         }
         <BlazorContentPresenter Content="@DataContext"/>
-        
+
     </div>
-    @if (Track(x => x.Images.Count) > 0)
-    {
-        <div class="d-flex">
-            @foreach (var imageData in Track(x => x.Images.Collection))
-            {
-                <Image Src="@imageData.ToLocalFileUri().AbsoluteUri" Height="64" Class="mx-1"/>
-            }
-        </div>
-    }
+    <div class="d-flex">
+        @foreach (var imageData in DataContext.Images.Items)
+        {
+            <Image Src="@imageData.ToLocalFileUri().AbsoluteUri" Height="64" Class="mx-1"/>
+        }
+    </div>
 </TimelineItem>

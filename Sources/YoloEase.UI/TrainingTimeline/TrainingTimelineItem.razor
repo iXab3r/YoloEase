@@ -1,23 +1,18 @@
-@inherits PoeShared.Blazor.BlazorReactiveComponent<TrainingTimelineEntry>
+@inherits PoeShared.Blazor.Controls.TimelineItemBase<TrainingTimelineEntry>
 
 <div class="d-flex">
-    <ReactiveSection DebounceTime="@PoeShared.UI.UiConstants.UiThrottlingDelay" Trackers="@(new() { this.WhenAnyValue(x => x.DataContext.ProgressPercent) })">
-        @{
-            var progress = DataContext.ProgressPercent;
-        }
-        @if (progress != null)
-        {
-            <ProgressBar Value="@(progress.Value)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
-        }
-    </ReactiveSection>
-    
+    @if (DataContext.ProgressPercent != null)
+    {
+        <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+    }
+
     <div>
-        @Track(x => $"{x.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
+        @($"{DataContext.Text}{(DataContext.IsBusy ? "..." : string.Empty)}")
     </div>
     <ReactiveButton
         Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
-        IsEnabled="@Track(x => x.IsBusy)"
+        IsEnabled="@(DataContext.IsBusy)"
         Command="@(DataContext.Cancel)">
         <i class="fa fa-stop-circle-o fa-fixed"></i>
         stop
@@ -25,7 +20,7 @@
     <ReactiveButton
         Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
-        IsEnabled="@Track(x => x.ModelFile != null)"
+        IsEnabled="@(DataContext.ModelFile != null)"
         Command="@(async () => await ProcessUtils.SelectFileOrFolder(DataContext.ModelFile))">
         <i class="fa fa-folder-o fa-fixed"></i>
         open...
@@ -33,9 +28,19 @@
     <ReactiveButton
         Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
-        IsEnabled="@Track(x => x.ModelFile != null)"
+        IsEnabled="@(DataContext.ModelFile != null)"
         Command="@(async () => await DataContext.Predict())">
         <i class="fa fa-folder-o fa-fixed"></i>
         predict...
     </ReactiveButton>
 </div>
+
+@code {
+
+    public TrainingTimelineItem()
+    {
+        ChangeTrackers.Add(this, x => x.DataContext.ModelFile);
+        ChangeTrackers.Add(this, x => x.DataContext.TrainedModelFile);
+    }
+
+}

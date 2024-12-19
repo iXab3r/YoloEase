@@ -1,22 +1,17 @@
 @using PoeShared.UI
-@inherits PoeShared.Blazor.BlazorReactiveComponent<CreateTaskTimelineEntry>
+@inherits PoeShared.Blazor.Controls.TimelineItemBase<CreateTaskTimelineEntry>
 
 <div class="d-flex">
-    <ReactiveSection DebounceTime="@UiConstants.UiThrottlingDelay" Trackers="@(new() { this.WhenAnyValue(x => x.DataContext.ProgressPercent) })">
-        @{
-            var progress = DataContext.ProgressPercent;
-        }
-        @if (progress != null)
-        {
-            <ProgressBar Value="@(progress.Value)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
-        }
-    </ReactiveSection>
+    @if (DataContext.ProgressPercent != null)
+    {
+        <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+    }
 
     <pre class="p-0 m-0" style="font-family: inherit; font-size: 1em;">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>
     <ReactiveButton
         Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
-        IsEnabled="@Track(x => x.IsBusy)"
+        IsEnabled="@(DataContext.IsBusy)"
         Command="@(DataContext.Cancel)">
         <i class="fa fa-stop-circle-o fa-fixed"></i>
         stop
@@ -25,7 +20,7 @@
         Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
         IsEnabled="@(DataContext.Task != null)"
-        Command="@(async () => await DataContext.CvatProjectAccessor.NavigateToTask(DataContext.Task.Id.Value))">
+        Command="@(async () => await DataContext.CvatProjectAccessor.NavigateToTask(DataContext.Task!.Id!.Value))">
         <i class="fa fa-link fa-fixed"></i>
         open...
     </ReactiveButton>
@@ -35,7 +30,7 @@
 
     public CreateTaskTimelineItem()
     {
-        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.ProgressPercent));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Task));
     }
 
 }

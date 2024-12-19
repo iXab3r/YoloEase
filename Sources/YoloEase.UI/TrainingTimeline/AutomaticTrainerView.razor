@@ -1,24 +1,27 @@
+@using PoeShared.Blazor.Scaffolding
 @using CvatApi
 @inherits YoloEaseComponent<AutomaticTrainer>
 
 <div class="d-flex flex-column h-100">
     <div class="d-flex p-0 m-1">
         <div>
-            @if (Track(x => x.IsBusy))
-            {
-                <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-link" Command="@DataContext.Stop">
-                    <i class="fa fa-stop-circle"></i>
-                    Stop automatic training
-                </ReactiveButton>
-                <div class="spinner-border align-middle"></div>
-            }
-            else
-            {
-                <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-primary" Command="@DataContext.Start">
-                    <i class="fa fa-play-circle"></i>
-                    Start automatic training
-                </ReactiveButton>
-            }
+            <ReactiveSection Trackers="@(new ReactiveTrackerList().With(this.WhenAnyValue(x => x.DataContext.IsBusy)))">
+                @if (DataContext.IsBusy)
+                {
+                    <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-link" Command="@DataContext.Stop">
+                        <i class="fa fa-stop-circle"></i>
+                        Stop automatic training
+                    </ReactiveButton>
+                    <div class="spinner-border align-middle"></div>
+                }
+                else
+                {
+                    <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-primary" Command="@DataContext.Start">
+                        <i class="fa fa-play-circle"></i>
+                        Start automatic training
+                    </ReactiveButton>
+                }
+            </ReactiveSection>
         </div>
 
         <span class="align-self-center mx-2">
@@ -51,8 +54,12 @@
                     <Radio Value="@(AutomaticTrainerMode.GoogleColab)" Class="text-body">
                         <img src="/assets/images/Google_Colaboratory_SVG_Logo.svg" alt="Google Colab Logo" width="16" height="16"/>
                         Google Colab
+                        <a href="https://colab.research.google.com/drive/15rofeDJtaRe4avg6We_JiVd-P4qQHDYj?usp=sharing">
+                            <i class="fa fa-external-link align-middle m-2"></i>
+                        </a>
                     </Radio>
                 </RadioGroup>
+                
             </div>
             <ReactiveButton MinExecutionTime="TimeSpan.Zero" Command="@DataContext.ClearTimeline">
                 <i class="fa fa-refresh"></i>
@@ -63,7 +70,7 @@
 
     <div class="flex-grow-1 d-grid p-2 overflow-hidden" style="grid-template-columns: 1fr auto auto">
         <div class="scroller overflow-x-hidden overflow-y-auto">
-            <ReactiveSection Trackers="@(new() {this.WhenAnyValue(x => x.DataContext.Timeline).Switch()})">
+            <ReactiveSection Trackers="@(new ReactiveTrackerList().With(this.WhenAnyValue(x => x.DataContext.Timeline)))">
                 @if (DataContext.Timeline.Count > 0)
                 {
                     <Timeline Mode="TimelineMode.Left" Style="margin-left: -80%">

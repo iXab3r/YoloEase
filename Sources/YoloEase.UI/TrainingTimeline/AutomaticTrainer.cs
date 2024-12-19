@@ -72,7 +72,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     public YoloEaseProject Project { get; set; }
 
-    public IObservableListEx<TimelineEntry> Timeline => timelineSource;
+    public IObservableList<TimelineEntry> Timeline => timelineSource;
 
     public TimeSpan CycleTimeout { get; set; } = TimeSpan.FromSeconds(30);
 

@@ -31,7 +31,7 @@ public class PreTrainingTimelineEntry : RunnableTimelineEntry
 
     public DatasetInfo DatasetInfo { get; }
 
-    public Yolo8ChecksResult ChecksResult { get; private set; }
+    public Yolo8ChecksResult? ChecksResult { get; private set; }
     
     public int TerminatedStaleProcessCount { get; private set; }
 

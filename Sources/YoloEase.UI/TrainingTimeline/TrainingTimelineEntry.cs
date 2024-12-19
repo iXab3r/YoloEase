@@ -38,9 +38,9 @@ public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
     
     public DatasetInfo DatasetInfo { get; }
     
-    public FileInfo ModelFile { get; private set; }
+    public FileInfo? ModelFile { get; private set; }
     
-    public TrainedModelFileInfo TrainedModelFile { get; private set; }
+    public TrainedModelFileInfo? TrainedModelFile { get; private set; }
     
     public async Task Predict()
     {

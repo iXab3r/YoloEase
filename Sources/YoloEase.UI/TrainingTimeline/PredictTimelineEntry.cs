@@ -31,7 +31,7 @@ public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
         this.predictAccessor = predictAccessor;
     }
     
-    public DatasetPredictInfo DatasetPredictions { get; private set; }
+    public DatasetPredictInfo? DatasetPredictions { get; private set; }
 
     protected override async Task<DatasetPredictInfo> RunInternal(CancellationToken cancellationToken)
     {
