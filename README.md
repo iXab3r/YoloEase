@@ -21,6 +21,15 @@ Then you can start creating annotation tasks. When new task is created you can p
 As soon as the program will detect that something has changed - settings, annotations, images - it will re-train the model right away. As soon as the model will be ready you can use it to pre-annotate next batch
 ![Training process](https://i.imgur.com/gunKrAJ.png)
 
+# Two operation modes - Local Training and Google Collab
+## Local Training
+With Local Training you're training the model using your own hardware. Positive side - you're paying only for electricity, negative - you have to have everything [setup and ready to go](https://wiki.eyeauras.net/en/YoloEase/prerequisites)
+![Local](https://s3.eyeauras.net/media/2024/12/YoloEase_iWvKxn0lfEKOJC2e.png)
+
+## Google Collab
+With Google Collab you're using cloud infrastructure to do the training, meaning that the actual training code runs elsewhere. You can either use a free tier or a paid one, your choice.
+![Collab](https://s3.eyeauras.net/media/2024/12/YoloEase_rt5H9OWKDnFJjrSb.png)
+
 
 ## How it streamlines the process
 - **Datasets**: Select your unannotated images for training. YoloEase treats these as read-only. Images/videos are supported. 
