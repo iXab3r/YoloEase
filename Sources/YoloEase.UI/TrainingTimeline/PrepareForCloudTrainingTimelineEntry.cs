@@ -35,7 +35,7 @@ public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileIn
 
         DataArchiveDirectory = DatasetInfo.IndexFile.Directory!;
         var changesetName = Path.GetFileName(DataArchiveDirectory.FullName);
-        var outputZipPath = Path.Combine(DataArchiveDirectory.Parent!.FullName, $"{changesetName}.zip");
+        var outputZipPath = Path.Combine(DataArchiveDirectory.Parent!.FullName, $"{DatasetInfo.ProjectInfo.ProjectName}_{changesetName}_{DatasetInfo.ProjectInfo.ModelTrainingSettings.Model}.zip");
 
         Text = $"Zipping revision {changesetName}...";
             
@@ -49,7 +49,6 @@ public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileIn
         });
 
         sevenZipWrapper.CreateFromDirectory(DataArchiveDirectory, new FileInfo(outputZipPath), CompressionLevel.NoCompression);
-        //ZipDirectory(DataArchiveDirectory.FullName, outputZipPath, progressTracker.GetOrAdd("zip"));
         
         var outputZip = new FileInfo(outputZipPath);
         DataArchiveFile = outputZip;

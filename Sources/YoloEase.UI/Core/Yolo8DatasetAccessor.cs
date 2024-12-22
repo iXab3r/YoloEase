@@ -71,6 +71,7 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
     public int Epochs { get; set; }
 
     public string TrainAdditionalArguments { get; set; }
+    public int MaxNumberOfCpuCores { get; set; }
 
     public int ModelSize { get; set; } = 640;
     
@@ -295,6 +296,7 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
             ImageSize = $"{ModelSize}",
             DataYamlPath = dataYamlFile.FullName,
             OutputDirectory = outputDirectory,
+            MaxCpuCoresCount = MaxNumberOfCpuCores,
             AdditionalArguments = TrainAdditionalArguments
         }, updateHandler: updateHandler, cancellationToken: cancellationToken);
         log.Step($"Successfully trained model: {trainedModel.FullName} ({ByteSize.FromBytes(trainedModel.Length)})");

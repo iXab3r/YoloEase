@@ -6,5 +6,6 @@ public sealed record Yolo8TrainProgressUpdate
     public int EpochMax  { get; init; }
     public float EpochPercentage { get; init; }
     public float ProgressPercentage { get; init; }
-    public string VideoRAM  { get; init; }
+    public string? VideoRAM  { get; init; }
+    public string? Text { get; init; }
 }

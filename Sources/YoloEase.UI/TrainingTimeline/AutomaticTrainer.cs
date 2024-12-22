@@ -112,14 +112,12 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             ? datasetPredict.Predictions
             : new PredictInfo[0];
 
-        var blacklistByFileName = blacklistedFileNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var blacklistByFileName = blacklistedFileNames
+            .Select(x => Path.GetFileNameWithoutExtension(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var filteredPredictions = predictions
-            .Where(x => !blacklistByFileName.Contains(x.File.Name))
-            .ToArray();
-        
-        var blacklistedPrediction = predictions
-            .Where(x => blacklistByFileName.Contains(x.File.Name))
+            .Where(x => !blacklistByFileName.Contains(Path.GetFileNameWithoutExtension(x.File.Name)))
             .ToArray();
         
         var labelTypes = filteredPredictions
@@ -235,8 +233,6 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     private async Task HandleTraining(CancellationToken cancellationToken)
     {
-        Project.Predictions.LatestPredictions = null;
-        
         var cycleIdx = 1;
         DatasetInfo lastTrainedDataset = default;
         ModelTrainingSettings lastTrainingSettings = default;
@@ -409,12 +405,13 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                 }.AddTo(timelineSource);
                 cycleIdx++;
 
-                var gracePeriodEntry = new TimeoutTimelineEntry(CycleTimeout).AddTo(timelineSource);
-                await gracePeriodEntry.Run(cancellationToken);
+                if (!StopWhenDone)
+                {
+                    var gracePeriodEntry = new TimeoutTimelineEntry(CycleTimeout).AddTo(timelineSource);
+                    await gracePeriodEntry.Run(cancellationToken);
+                }
             }
         }
-
-        cancellationToken.WaitHandle.WaitOne();
     }
 
     private async Task AddPredictionsIfNeeded(CancellationToken cancellationToken)
@@ -440,8 +437,6 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         var inputDirectory = directories[0];
 
         var latestPredictions = predictions.LatestPredictions;
-
-
         IReadOnlyList<FileInfo> filesToRunPredictOn;
         switch (PredictionStrategy)
         {
@@ -466,6 +461,10 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
         if (filesToRunPredictOn.IsEmpty())
         {
+            new BasicTimelineEntry()
+            {
+                Text = "Skipping predictions - no files detected"
+            }.AddTo(timelineSource);
             return;
         }
         
@@ -476,6 +475,10 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         var haveToPredict = noPredictions || isAnotherModel || storageHasChanged;
         if (!haveToPredict)
         {
+            new BasicTimelineEntry()
+            {
+                Text = $"Skipping predictions - not needed, status: {new { noPredictions, isAnotherModel, storageHasChanged }}"
+            }.AddTo(timelineSource);
             return;
         }
 

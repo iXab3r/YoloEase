@@ -7,5 +7,6 @@ public sealed record Yolo8TrainArguments
     public string ImageSize { get; init; }
     public int? Epochs { get; init; }
     public string AdditionalArguments { get; init; }
+    public int MaxCpuCoresCount { get; init; }
     public DirectoryInfo OutputDirectory { get; init; }
 }

@@ -201,6 +201,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                 this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.ModelSize).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.TrainValSplitPercentage).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.TrainAdditionalArguments).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.TrainingDataset.MaxNumberOfCpuCores).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.ConfidenceThresholdPercentage).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.IoUThresholdPercentage).ToUnit(),
                 this.WhenAnyValue(x => x.YoloEaseProject!.Predictions.PredictAdditionalArguments).ToUnit(),
@@ -627,6 +628,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         project.TrainingDataset.ModelSize = config.ModelSize;
         project.TrainingBatch.BatchPercentage = config.BatchPercentage;
         project.TrainingDataset.TrainAdditionalArguments = config.TrainAdditionalArguments;
+        project.TrainingDataset.MaxNumberOfCpuCores = config.MaxNumberOfCpuCores;
         project.Predictions.ConfidenceThresholdPercentage = config.PredictConfidenceThresholdPercentage;
         project.Predictions.IoUThresholdPercentage = config.PredictIoUThresholdPercentage;
         project.Predictions.PredictAdditionalArguments = config.PredictAdditionalArguments;
@@ -701,6 +703,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             BatchPercentage = YoloEaseProject.TrainingBatch.BatchPercentage,
             BaseModelPath = YoloEaseProject.TrainingDataset.BaseModelPath,
             TrainAdditionalArguments = YoloEaseProject.TrainingDataset.TrainAdditionalArguments,
+            MaxNumberOfCpuCores = YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores,
             AutoAnnotationIsEnabled = AutomaticTrainer.AutoAnnotate,
             AutoAnnotationModelPath = YoloEaseProject.Predictions.PredictionModel?.ModelFile?.FullName,
             AutoAnnotateConfidenceThresholdPercentage = AutomaticTrainer.AutoAnnotateConfidenceThresholdPercentage,

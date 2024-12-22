@@ -1,5 +1,6 @@
 @using CvatApi
 @using System.Globalization
+@using PoeShared.Blazor.Scaffolding
 @using PoeShared.Dialogs.Services
 @using FileInfo = System.IO.FileInfo
 @inherits PoeShared.Blazor.BlazorReactiveComponent<MainWindowViewModel>
@@ -305,6 +306,25 @@
         </div>
     </div>
 </div>
+
+    <div class="row">
+        <div class="col-sm-3 text-sm-end">
+            <label for="maxCpuCores" class="col-form-label">Max CPU Cores</label>
+        </div>
+        <div class="col-sm-9 align-self-center">
+            <ReactiveSection Trackers="@(new ReactiveTrackerList().With(DataContext.WhenAnyValue(x => x.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)))">
+                <div class="d-flex gap-1 align-items-center">
+                    <input type="range" class="flex-grow-1" id="maxCpuCores"
+                           min="0"
+                           max="@(Environment.ProcessorCount)"
+                           value="@(DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)"
+                           oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
+                    <label class="text-nowrap" style="min-width:100px;">@($"{(DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores <= 0 ? "Any" : DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)}")</label>
+                </div>
+            </ReactiveSection>
+            
+        </div>
+    </div>
 <div class="row">
     <div class="col-sm-3 text-sm-end">
         <label for="trainAdditionalArguments" class="col-form-label">Additional arguments</label>

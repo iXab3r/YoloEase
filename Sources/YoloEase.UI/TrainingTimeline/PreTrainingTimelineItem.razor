@@ -19,17 +19,17 @@
             <div class="hstack gap-2">
                 @if (isCpu)
                 {
-                    <span class="badge bg-danger">@(DataContext.ChecksResult.DeviceName))</span>
+                    <span class="badge bg-danger">@(DataContext.ChecksResult.DeviceName)</span>
                 }
                 else
                 {
-                    <span class="badge bg-success">@(DataContext.ChecksResult.DeviceName))</span>
+                    <span class="badge bg-success">@(DataContext.ChecksResult.DeviceName)</span>
                 }
-                <span class="badge bg-secondary">@(DataContext.ChecksResult.DeviceType))</span>
-                <span class="badge bg-secondary">@(DataContext.ChecksResult.DeviceIndex))</span>
-                <span class="badge bg-secondary">@(DataContext.ChecksResult.PythonVersion))</span>
-                <span class="badge bg-secondary">@(DataContext.ChecksResult.YoloVersion))</span>
-                <span class="badge bg-secondary">@(DataContext.ChecksResult.TorchVersion))</span>
+                <span class="badge bg-secondary">@(DataContext.ChecksResult.DeviceType)</span>
+                <span class="badge bg-secondary">@(DataContext.ChecksResult.DeviceIndex)</span>
+                <span class="badge bg-secondary">@(DataContext.ChecksResult.PythonVersion)</span>
+                <span class="badge bg-secondary">@(DataContext.ChecksResult.YoloVersion)</span>
+                <span class="badge bg-secondary">@(DataContext.ChecksResult.TorchVersion)</span>
             </div>
             @if (isCpu)
             {

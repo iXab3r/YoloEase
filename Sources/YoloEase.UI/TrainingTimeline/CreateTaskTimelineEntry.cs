@@ -57,6 +57,8 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             Annotations = await UploadAnnotations(files, task, sw);
         }
 
+        await trainingBatchAccessor.Project.NavigateToTask(task.Id!.Value);
+
         TaskFiles = files;
         Task = task;
         return task;
@@ -71,11 +73,11 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         var alreadyUsed = new HashSet<string>();
 
         var unannotatedByFileName = unannotatedFiles
-            .ToDictionary(x => x.Name, x => x);
+            .ToDictionary(x => Path.GetFileNameWithoutExtension(x.Name), x => x);
         
         foreach (var labeledFile in LabeledFiles)
         {
-            if (!unannotatedByFileName.TryGetValue(labeledFile.File.Name, out var file))
+            if (!unannotatedByFileName.TryGetValue(Path.GetFileNameWithoutExtension(labeledFile.File.Name), out var file))
             {
                 //file is not in unannotated files list - already completed?
                 continue;
@@ -121,24 +123,25 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         var taskFramesByFileName = taskMetadata.Frames
             .EmptyIfNull()
             .Select((x, frameIdx) => new {Frame = x, FrameIdx = frameIdx})
-            .ToDictionary(x => x.Frame.Name, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(x => Path.GetFileNameWithoutExtension(x.Frame.Name), StringComparer.OrdinalIgnoreCase);
 
         AppendTextLine($"Annotating the task #{task.Id}");
         var predictions = LabeledFiles
             .GroupBy(x => x.File)
             .Select(x => new PredictInfo() {File = x.Key, Labels = x.Select(y => y.Label).ToArray()})
-            .ToDictionary(x => x.File.Name, x => x);
+            .ToDictionary(x => Path.GetFileNameWithoutExtension(x.File.Name), x => x);
 
         var projectLabelsByName = cvatProjectAccessor.Labels.Items
             .ToDictionary(x => x.Name, x => x);
 
         var labels = files
-            .Select(x => predictions.GetValueOrDefault(x.Name))
+            .Select(x => predictions.GetValueOrDefault(Path.GetFileNameWithoutExtension(x.Name)))
             .Where(x => x != null)
             .Where(x => x.Labels.Length != 0)
             .Select(x => x.Labels.Select(prediction =>
             {
-                if (!taskFramesByFileName.TryGetValue(x.File.Name, out var taskFrame))
+                var fileName = Path.GetFileNameWithoutExtension(x.File.Name);
+                if (!taskFramesByFileName.TryGetValue(fileName, out var taskFrame))
                 {
                     throw new InvalidStateException($"Failed to resolve frame using name {x.File.Name}");
                 }

@@ -42,7 +42,7 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
 
     public TrainedModelFileInfo PredictionModel { get; set; }
 
-    public DatasetPredictInfo LatestPredictions { get; set; }
+    public DatasetPredictInfo? LatestPredictions { get; set; }
     
     public float ConfidenceThresholdPercentage { get; set; } = 25f;
     
@@ -74,14 +74,8 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
         };
     }
 
-    private async Task<DatasetPredictInfo> GetPredictionsOrDefault(TrainedModelFileInfo modelFileInfo, DirectoryInfo predictionsDir, YoloModelDescription yoloModelDescription)
+    private static async Task<DatasetPredictInfo?> GetPredictionsOrDefault(TrainedModelFileInfo modelFileInfo, DirectoryInfo predictionsDir, YoloModelDescription yoloModelDescription)
     {
-        var modelDirectory = GetModelPredictionsFolder(modelFileInfo);
-        if (!modelDirectory.Exists)
-        {
-            return null;
-        }
-
         if (!predictionsDir.Exists)
         {
             return null;
@@ -89,13 +83,13 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
         var predictions = ParsePredictions(predictionsDir, yoloModelDescription).ToArray();
         return new DatasetPredictInfo()
         {
-            OutputDirectory = modelDirectory,
+            OutputDirectory = predictionsDir,
             Predictions = predictions,
             ModelFile = modelFileInfo
         };
     }
 
-    public async Task<DatasetPredictInfo> Predict(
+    public async Task<DatasetPredictInfo?> Predict(
         PredictArgs args,
         Action<Yolo8PredictProgressUpdate> updateHandler = null,
         CancellationToken cancellationToken = default)
@@ -112,15 +106,14 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
         using var yoloModel = new YoloModel(modelData, modelOptions);
         Log.Info($"Loaded model from file {modelFile.FullName}: {yoloModel.Description.Dump()}");
         
-        var modelDirectory = GetModelPredictionsFolder(args.Model);
-        if (modelDirectory.Exists)
+        var predictionsFolder = GetModelPredictionsFolder(args.Model);
+        if (predictionsFolder.Exists)
         {
-            modelDirectory.Delete(recursive: true);
+            Log.Debug($"Removing {predictionsFolder}");
+            predictionsFolder.Delete(recursive: true);
         }
-
-        modelDirectory.Create();
-
-        var tmpInputDirectoryPath = modelDirectory.FullName + ".tmp";
+        
+        var tmpInputDirectoryPath = Path.Combine(predictionsFolder.FullName, "images");
         if (Directory.Exists(tmpInputDirectoryPath))
         {
             Directory.Delete(tmpInputDirectoryPath, recursive: true);
@@ -133,17 +126,18 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
             File.CreateSymbolicLink(linkFilePath, file.FullName);
         }
         
+        Log.Debug($"Starting predictions inside {tmpInputDirectoryPath}");
         var predictDirectory = await cliWrapper.Predict(new Yolo8PredictArguments()
         {
             Model = modelFile.FullName,
-            WorkingDirectory = modelDirectory,
+            WorkingDirectory = predictionsFolder,
             Source = tmpInputDirectoryPath,
             Confidence = ConfidenceThresholdPercentage / 100,
             IoU = IoUThresholdPercentage / 100,
             ImageSize = yoloModel.Description.Size.Width.ToString(),
             AdditionalArguments = PredictAdditionalArguments,
         }, updateHandler: updateHandler, cancellationToken: cancellationToken);
-
+        
         return await GetPredictionsOrDefault(args.Model, predictDirectory, yoloModel.Description);
     }
 
@@ -242,9 +236,15 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
         IReadOnlyList<FileInfo> filesInInput,
         DatasetPredictInfo predictions)
     {
-        var filesInInputByName = filesInInput.ToDictionary(x => x.Name);
+        if (!predictions.OutputDirectory.Exists)
+        {
+            return false;
+        }
+        
+        //reason why we're removing extensions is because Yolo changes the format to JPG 
+        var filesInInputByName = filesInInput.ToDictionary(x => Path.GetFileNameWithoutExtension(x.Name));
         var filesInPredictions = ImageFilesExtensions
-            .SelectMany(x => predictions.OutputDirectory.GetFiles(x, SearchOption.AllDirectories)).ToDictionary(x => x.Name);
+            .SelectMany(x => predictions.OutputDirectory.GetFiles(x, SearchOption.AllDirectories)).ToDictionary(x => Path.GetFileNameWithoutExtension(x.Name));
 
         var additionalFiles = filesInInputByName.Where(x => !filesInPredictions.ContainsKey(x.Key)).ToArray();
         if (additionalFiles.Any())

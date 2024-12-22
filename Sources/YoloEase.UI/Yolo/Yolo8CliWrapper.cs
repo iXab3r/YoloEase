@@ -22,6 +22,9 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 
     [GeneratedRegex(@"image (?'ImageCurrent'\d+)/(?'ImageMax'\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex PredictProgressParserRegex();
+    
+    [GeneratedRegex(@"Scanning\s+(?'path'.*)\.\.\..*?(?=(?'ImageCurrent'\d+)[\/\\](?'ImageMax'\d+))", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex TrainScanningProgressParserRegex();
 
     [GeneratedRegex(@"export success.*saved as (?'modelRelativePath'.*) \(.*?\)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex ExportResultParserRegex();
@@ -45,6 +48,9 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         {
             throw new FileNotFoundException(message: $"Conversion script not found @ {conversionScript.FullName}");
         }
+        
+        Environment.SetEnvironmentVariable("YOLO_OFFLINE", "True");
+        Environment.SetEnvironmentVariable("YOLO_AUTOINSTALL", "False");
     }
 
     public async Task ConvertAnnotationsToYolo8FromCvat(Yolo8ConvertAnnotationsArguments settings)
@@ -315,10 +321,18 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         }
 
         var progressParser = TrainProgressParserRegex();
+        var scanningProgressParser = TrainScanningProgressParserRegex();
         var updateParser = UltralyticsUpdateAvailableParserRegex();
         var osErrorParser = OsErrorParserRegex();
 
         var cmd = Cli.Wrap("yolo")
+            .WithEnvironmentVariables(x =>
+            {
+                if (settings.MaxCpuCoresCount > 0)
+                {
+                    x.Set("NUM_THREADS", settings.MaxCpuCoresCount.ToString());
+                }
+            })
             .WithArguments(x =>
             {
                 x.Add($"task=detect", escape: false);
@@ -396,6 +410,21 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 
                 Log.Debug($"Progress update: {progressUpdate}");
                 updateHandler?.Invoke(progressUpdate);
+            }
+            
+            var scanningProgressMatch = scanningProgressParser.Match(text);
+            if (scanningProgressMatch.Success)
+            {
+                var fileName = Path.GetFileName(Path.GetDirectoryName(scanningProgressMatch.Groups["path"].Value));
+                var fileCurrent = int.Parse(scanningProgressMatch.Groups["ImageCurrent"].Value);
+                var fileMax = int.Parse(scanningProgressMatch.Groups["ImageMax"].Value);
+                var progressUpdateRaw = new Yolo8TrainProgressUpdate()
+                {
+                    Text = $"Scanning... {fileName} {fileCurrent}/{fileMax} {((float) fileCurrent / fileMax * 100):F0}%"
+                };
+
+                Log.Debug($"Progress update: {progressUpdateRaw}");
+                updateHandler?.Invoke(progressUpdateRaw);
             }
         }
 

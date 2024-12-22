@@ -62,14 +62,13 @@ public class TrainingBatchAccessor : RefreshableReactiveObject
     public IObservableListEx<TaskRead> UnannotatedTasks { get; }
 
     public IObservableListEx<FileInfo> BatchFiles { get; }
-
+    
     public async Task<TaskRead> CreateNextTask()
     {
         var nextBatch = batchFileSources.Items.ToArray();
         var task = await Project.CreateTask(nextBatch);
         await Project.Refresh();
         await Refresh();
-        await Project.NavigateToTask(task.Id.Value);
         return task;
     }
 

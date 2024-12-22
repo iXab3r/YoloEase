@@ -84,7 +84,14 @@ public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
             var modelFile = await yolo8DatasetAccessor.TrainModel(DatasetInfo, update =>
             {
                 ProgressPercent = (int)update.ProgressPercentage;
-                Text = $"{update.ProgressPercentage:F0}% in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}, epochs: {update.EpochCurrent}/{update.EpochMax}, VideoRAM: {update.VideoRAM}";
+                if (string.IsNullOrEmpty(update.Text))
+                {
+                    Text = $"{update.ProgressPercentage:F0}% in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}, epochs: {update.EpochCurrent}/{update.EpochMax}, VideoRAM: {update.VideoRAM}";
+                }
+                else
+                {
+                    Text = update.Text;
+                }
             }, cancellationToken);
 
             var modelName = DatasetInfo.ProjectInfo.ModelTrainingSettings.Model;

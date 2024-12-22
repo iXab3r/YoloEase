@@ -19,6 +19,8 @@ public sealed record GeneralProperties : IPoeEyeConfigVersioned
     
     public string TrainAdditionalArguments { get; set; }
     
+    public int MaxNumberOfCpuCores { get; set; }
+    
     public string PredictAdditionalArguments { get; set; }
     
     public int ProjectId { get; set; }
