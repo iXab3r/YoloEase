@@ -2,7 +2,7 @@ using System.Threading;
 using Humanizer.Bytes;
 using JetBrains.Annotations;
 using PoeShared.Logging;
-using PoeShared.Squirrel.Core;
+using PoeShared.Services;
 
 namespace YoloEase.UI.Services;
 

@@ -225,17 +225,25 @@ ModelManifest.xml
 Sources/OnTopReplica
 
 Sources/PoeShared
+Sources/PoeShared.Launcher
 Sources/PoeShared.Core
 Sources/PoeShared.Wpf
 Sources/PoeShared.Tests
 Sources/PoeShared.OpenCV
 Sources/PoeShared.Squirrel
-Sources/PoeShared.Squirrel.Shared
+Sources/PoeShared.Squirrel.Metadata
 Sources/PoeShared.Native
 Sources/PoeShared.UI
+Sources/PoeShared.UI.WinForms
 Sources/PoeShared.Blazor
 Sources/PoeShared.Blazor.Controls
 Sources/PoeShared.Blazor.Wpf
+Sources/PoeShared.Blazor.WinForms
+Sources/PoeShared.Blazor.Hosting
+Sources/PoeShared.Fody
+Sources/PoeShared.Fody.TestAssembly
+Sources/PoeShared.Fody.Tests
+Sources/PoeShared.WinCaptureAudio
 Sources/PoeShared.Generators
 Sources/PoeShared.Benchmarks
 Sources/PropertyBinder

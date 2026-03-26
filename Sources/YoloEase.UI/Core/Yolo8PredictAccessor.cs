@@ -104,7 +104,7 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
         var modelData = await File.ReadAllBytesAsync(modelFile.FullName, cancellationToken);
         var modelOptions = new SessionOptions();
         using var yoloModel = new YoloModel(modelData, modelOptions);
-        Log.Info($"Loaded model from file {modelFile.FullName}: {yoloModel.Description.Dump()}");
+        Log.Info($"Loaded model from file {modelFile.FullName}: {yoloModel.Description.DumpToString()}");
         
         var predictionsFolder = GetModelPredictionsFolder(args.Model);
         if (predictionsFolder.Exists)

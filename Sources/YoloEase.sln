@@ -67,6 +67,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PoeShared.Launcher", "PoeSh
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PoeShared.Squirrel.Metadata", "PoeShared.Squirrel.Metadata\PoeShared.Squirrel.Metadata.csproj", "{881EC0F3-95DF-4532-AC9A-16D1EE454520}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PoeShared.Blazor.Hosting", "PoeShared.Blazor.Hosting\PoeShared.Blazor.Hosting.csproj", "{565B2CD9-8546-43EA-A9ED-1D41C8694A76}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -165,6 +167,10 @@ Global
 		{881EC0F3-95DF-4532-AC9A-16D1EE454520}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{881EC0F3-95DF-4532-AC9A-16D1EE454520}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{881EC0F3-95DF-4532-AC9A-16D1EE454520}.Release|Any CPU.Build.0 = Release|Any CPU
+		{565B2CD9-8546-43EA-A9ED-1D41C8694A76}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{565B2CD9-8546-43EA-A9ED-1D41C8694A76}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{565B2CD9-8546-43EA-A9ED-1D41C8694A76}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{565B2CD9-8546-43EA-A9ED-1D41C8694A76}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -193,6 +199,7 @@ Global
 		{52880214-AB19-4303-9B8C-A54F83B01086} = {58615A82-B4DF-4C49-AAC4-4010BD030583}
 		{43DBC27E-BDE1-4A90-90B7-A1DEBB1ED279} = {58615A82-B4DF-4C49-AAC4-4010BD030583}
 		{881EC0F3-95DF-4532-AC9A-16D1EE454520} = {58615A82-B4DF-4C49-AAC4-4010BD030583}
+		{565B2CD9-8546-43EA-A9ED-1D41C8694A76} = {58615A82-B4DF-4C49-AAC4-4010BD030583}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {39177CB0-A484-45AF-A6A7-5EA30816142F}

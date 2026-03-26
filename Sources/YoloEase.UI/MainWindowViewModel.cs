@@ -276,25 +276,12 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             })
             .AddTo(Anchors);
 
-        additionalFilesSource.Add(new RefFileInfo(@"_content/AntDesign/js/ant-design-blazor.js"));
-        additionalFilesSource.Add(new RefFileInfo(@"_content/AntDesign/css/ant-design-blazor.css"));
-        additionalFilesSource.Add(new RefFileInfo(@"css/bootstrap.css"));
-        additionalFilesSource.Add(new RefFileInfo(@"css/app.css"));
-        
         additionalFilesSource.Add(new RefFileInfo(@"https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/Blazor.Bootstrap/blazor.bootstrap.css"));
         additionalFilesSource.Add(new RefFileInfo(@"https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.0.1/chart.umd.js"));
         additionalFilesSource.Add(new RefFileInfo(@"https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"));
         additionalFilesSource.Add(new RefFileInfo(@"https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"));
         additionalFilesSource.Add(new RefFileInfo(@"_content/Blazor.Bootstrap/blazor.bootstrap.js"));
-        
-        additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/PoeShared.Blazor.Controls.bundle.scp.css"));
-        additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-colors.css"));
-        additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-style.css"));
-        additionalFilesSource.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Controls/assets/css/main-ant-blazor.css"));
-        additionalFilesSource.Add(new RefFileInfo(@"YoloEase.styles.css"));
-        
-        additionalFilesSource.Add(new RefFileInfo(@"assets/css/yoloease.css"));
         
         additionalFilesSource.Add(new RefFileInfo(@"assets/js/split.min.js"));
         additionalFilesSource.Add(new RefFileInfo(@"assets/js/main.js"));
@@ -323,8 +310,6 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
         Binder.Attach(this).AddTo(Anchors);
     }
-
-    public Type Type { get; } = typeof(MainWindowComponent);
 
     public string Title { get; [UsedImplicitly] private set; }
 

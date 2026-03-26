@@ -1,0 +1,46 @@
+@using PoeShared.Blazor.Scaffolding
+@using PoeShared.Blazor.Wpf
+@using MouseEventArgs = Microsoft.AspNetCore.Components.Web.MouseEventArgs
+@inherits YoloEaseComponent<MainWindowViewModel>
+
+<span class="d-flex align-items-center gap-2 flex-grow-1 w-100 min-w-0">
+    <ReactiveSection
+        Trackers="@(new ReactiveTrackerList().With(this.WhenAnyValue(x => x.BlazorWindowAccessor.Window.Title, x => x.DataContext.YoloEaseProject)))">
+        <span class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+            <span class="d-flex align-items-center flex-grow-1 min-w-0 user-select-none"
+                  @onmousedown="HandleMouseDown">
+                <span class="text-truncate">
+                    @BlazorWindowAccessor.Window.Title
+                </span>
+            </span>
+
+            @if (DataContext.YoloEaseProject != null)
+            {
+                <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
+                                CommandEx="@DataContext.NewProjectCommand">
+                    <i class="fa fa-file-text"></i>
+                    New project
+                </ReactiveButton>
+                <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
+                                CommandEx="@DataContext.SaveAsProjectCommand">
+                    <i class="fa fa-save"></i>
+                    Save As...
+                </ReactiveButton>
+                <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
+                                CommandEx="@DataContext.LoadProjectCommand">
+                    <i class="fa fa-folder-open"></i>
+                    Load
+                </ReactiveButton>
+            }
+        </span>
+    </ReactiveSection>
+</span>
+
+@code {
+    [Inject] public required IBlazorWindowAccessor BlazorWindowAccessor { get; init; }
+
+    private void HandleMouseDown(MouseEventArgs mouseEventArgs)
+    {
+        BlazorWindowAccessor.Window.EnableDragMove();
+    }
+}
