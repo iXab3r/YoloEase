@@ -1,0 +1,285 @@
+@namespace YoloEase.UI.TaskAnnotation
+@using System.Globalization
+
+<aside class="task-editor-inspector">
+    <section class="task-editor-gl-pane task-editor-inspector-pane task-editor-inspector-primary-pane">
+        <header class="task-editor-gl-header task-editor-tab-header">
+            <button type="button"
+                    class="@Context.GetInspectorTabClass(TaskAnnotationWindow.TaskEditorInspectorTab.Shapes)"
+                    @onclick="() => Context.ActiveInspectorTab = TaskAnnotationWindow.TaskEditorInspectorTab.Shapes">
+                Shapes
+                <span>@Context.CurrentFrameShapes.Count</span>
+                @if (Context.CurrentFrameSuggestionCount > 0)
+                {
+                    <small>@($"{Context.CurrentFrameSuggestionCount} suggestions")</small>
+                }
+            </button>
+            <button type="button"
+                    class="@Context.GetInspectorTabClass(TaskAnnotationWindow.TaskEditorInspectorTab.Labels)"
+                    @onclick="() => Context.ActiveInspectorTab = TaskAnnotationWindow.TaskEditorInspectorTab.Labels">
+                Labels
+                <span>@Context.OrderedLabels.Count</span>
+            </button>
+        </header>
+        <div class="task-editor-gl-body task-editor-tab-body">
+            @if (Context.ActiveInspectorTab != TaskAnnotationWindow.TaskEditorInspectorTab.Labels)
+            {
+                <div class="task-editor-source-filter">
+                    <button type="button" class="@Context.GetSourceFilterClass(TaskAnnotationWindow.TaskEditorSourceFilter.All)" @onclick="() => Context.ShapeSourceFilter = TaskAnnotationWindow.TaskEditorSourceFilter.All">All</button>
+                    <button type="button" class="@Context.GetSourceFilterClass(TaskAnnotationWindow.TaskEditorSourceFilter.Manual)" @onclick="() => Context.ShapeSourceFilter = TaskAnnotationWindow.TaskEditorSourceFilter.Manual">Manual</button>
+                    <button type="button" class="@Context.GetSourceFilterClass(TaskAnnotationWindow.TaskEditorSourceFilter.Automatic)" @onclick="() => Context.ShapeSourceFilter = TaskAnnotationWindow.TaskEditorSourceFilter.Automatic">Models</button>
+                </div>
+                @if (Context.ListedCurrentFrameShapes.Count <= 0)
+                {
+                    <div class="task-editor-empty">No objects on this frame.</div>
+                }
+                else
+                {
+                    <div class="task-editor-object-list">
+                        @foreach (var shape in Context.ListedCurrentFrameShapes)
+                        {
+                            var label = Context.GetLabel(shape.LabelId);
+                            <button type="button"
+                                    class="@Context.GetObjectListItemClass(shape)"
+                                    @onclick="args => Context.SelectShapeFromList(shape.Id, args)"
+                                    @onmouseenter="() => Context.SetHoveredShape(shape.Id)"
+                                    @onmouseleave="() => Context.ClearHoveredShape(shape.Id)">
+                                <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
+                                <span class="text-truncate">@label.Name</span>
+                                <span class="task-editor-object-meta">@Context.FormatRect(shape)</span>
+                                <span class="@Context.GetShapeSourceClass(shape)">@Context.FormatShapeSource(shape)</span>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+            else if (Context.ActiveInspectorTab == TaskAnnotationWindow.TaskEditorInspectorTab.Labels)
+            {
+                @if (!Context.HasLabels)
+                {
+                    <div class="task-editor-empty">No labels configured.</div>
+                }
+                else
+                {
+                    <div class="task-editor-label-list">
+                        @foreach (var labelInfo in Context.OrderedLabels.Select((Label, Index) => new { Label, Index }))
+                        {
+                            var label = labelInfo.Label;
+                            <button type="button"
+                                    class="@Context.GetLabelPillClass(label)"
+                                    @onclick="() => Context.SelectLabel(label.Id)">
+                                <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
+                                <span class="text-truncate">@label.Name</span>
+                                <span class="task-editor-label-shortcut">@Context.GetLabelShortcutText(labelInfo.Index)</span>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </section>
+
+    <section class="task-editor-gl-pane task-editor-inspector-pane task-editor-models-pane">
+        <header class="task-editor-gl-header task-editor-tab-header">
+            <button type="button" class="task-editor-tab is-active">
+                Models
+                <span>@Context.AutoAnnotationModels.Count</span>
+            </button>
+            <div class="task-editor-model-header-actions">
+                <button type="button" title="Add latest trained ONNX model" disabled="@Context.IsModelOperationActive" @onclick="Context.AddLatestAutoAnnotationModel">
+                    <i class="fa fa-plus"></i>
+                    Latest
+                </button>
+                <button type="button" title="Import custom ONNX model" disabled="@Context.IsModelOperationActive" @onclick="Context.ImportAutoAnnotationModel">
+                    <i class="fa fa-folder-open"></i>
+                    ONNX
+                </button>
+            </div>
+        </header>
+        <div class="task-editor-gl-body task-editor-tab-body task-editor-models-body">
+            <div class="@Context.GetModelOperationProgressClass()" aria-hidden="@(!Context.IsModelOperationActive)">
+                <div class="task-editor-model-progress-line">
+                    <span>@Context.ModelOperationProgressText</span>
+                    <span>@Context.ModelOperationProgressPercentLabel</span>
+                </div>
+                <div class="task-editor-model-progress-track">
+                    <div class="task-editor-model-progress-bar" style="@Context.GetModelOperationProgressBarStyle()"></div>
+                </div>
+            </div>
+
+            @if (Context.AutoAnnotationModels.Count <= 0)
+            {
+                <div class="task-editor-empty">No models configured.</div>
+            }
+            else
+            {
+                <div class="task-editor-model-list">
+                    @foreach (var modelInfo in Context.AutoAnnotationModels.Select((Model, Index) => new { Model, Index }))
+                    {
+                        var model = modelInfo.Model;
+                        var isRemovePending = string.Equals(Context.PendingRemoveModelId, model.Id, StringComparison.OrdinalIgnoreCase);
+                        <details class="task-editor-model-card" open="@(modelInfo.Index == 0 || isRemovePending)">
+                            <summary class="task-editor-model-summary">
+                                <span class="task-editor-model-slot"
+                                      title="@(modelInfo.Index < 9 ? $"{Context.FormatModelShortcut(modelInfo.Index)} runs this model on the current image. Shift+{Context.FormatModelShortcut(modelInfo.Index)} runs it on all frames." : "No keyboard shortcut assigned.")">
+                                    @Context.FormatModelShortcut(modelInfo.Index)
+                                </span>
+                                <input type="checkbox"
+                                       checked="@model.IsEnabled"
+                                       disabled="@Context.IsModelOperationActive"
+                                       @onclick:stopPropagation="true"
+                                       @onchange="args => Context.SetModelEnabled(model, args)" />
+                                <span class="task-editor-model-title" title="@model.DisplayName">@Context.FormatModelHeaderName(model)</span>
+                                <span class="@Context.GetModelStatusClass(model)">@Context.FormatModelStatus(model)</span>
+                                @if (Context.ShouldShowModelLoadButton(model))
+                                {
+                                    <button type="button"
+                                            class="task-editor-model-load-button"
+                                            title="Load model and read labels"
+                                            disabled="@Context.IsModelOperationActive"
+                                            @onclick:stopPropagation="true"
+                                            @onclick:preventDefault="true"
+                                            @onclick="() => Context.ValidateAutoAnnotationModel(model)">
+                                        <i class="fa fa-bolt"></i>
+                                        Load
+                                    </button>
+                                }
+                                @if (isRemovePending)
+                                {
+                                    <span class="task-editor-model-remove-confirm">
+                                        <button type="button"
+                                                title="Confirm remove"
+                                                @onclick:stopPropagation="true"
+                                                @onclick:preventDefault="true"
+                                                @onclick="() => Context.RemoveAutoAnnotationModel(model)">
+                                            <i class="fa fa-check"></i>
+                                            Remove
+                                        </button>
+                                        <button type="button"
+                                                title="Cancel remove"
+                                                @onclick:stopPropagation="true"
+                                                @onclick:preventDefault="true"
+                                                @onclick="Context.CancelRemoveAutoAnnotationModel">
+                                            <i class="fa fa-times"></i>
+                                        </button>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <button type="button"
+                                            class="task-editor-model-close-button"
+                                            title="Remove model"
+                                            disabled="@Context.IsModelOperationActive"
+                                            @onclick:stopPropagation="true"
+                                            @onclick:preventDefault="true"
+                                            @onclick="() => Context.BeginRemoveAutoAnnotationModel(model)">
+                                        <i class="fa fa-times"></i>
+                                    </button>
+                                }
+                            </summary>
+
+                            <div class="task-editor-model-details">
+                                <div class="task-editor-model-meta">@Context.FormatResolvedModel(model)</div>
+                                @if (!string.IsNullOrWhiteSpace(model.LastError))
+                                {
+                                    <div class="task-editor-model-error">@model.LastError</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(model.LastRunSummary))
+                                {
+                                    <div class="task-editor-model-meta">@model.LastRunSummary</div>
+                                }
+
+                                <div class="task-editor-model-actions">
+                                    <button type="button" title="Move up" disabled="@(Context.IsModelOperationActive || modelInfo.Index == 0)" @onclick="() => Context.MoveAutoAnnotationModel(model, -1)">
+                                        <i class="fa fa-arrow-up"></i>
+                                    </button>
+                                    <button type="button" title="Move down" disabled="@(Context.IsModelOperationActive || modelInfo.Index >= Context.AutoAnnotationModels.Count - 1)" @onclick="() => Context.MoveAutoAnnotationModel(model, 1)">
+                                        <i class="fa fa-arrow-down"></i>
+                                    </button>
+                                    <button type="button" title="Duplicate" disabled="@Context.IsModelOperationActive" @onclick="() => Context.DuplicateAutoAnnotationModel(model)">
+                                        <i class="fa fa-copy"></i>
+                                    </button>
+                                    <button type="button" title="Run current" disabled="@(!Context.CanRunModel(model))" @onclick="() => Context.RunAutoAnnotation(model, false)">
+                                        <i class="fa fa-play"></i>
+                                    </button>
+                                    <button type="button" title="Run all" disabled="@(!Context.CanRunModel(model))" @onclick="() => Context.RunAutoAnnotation(model, true)">
+                                        <i class="fa fa-forward"></i>
+                                    </button>
+                                </div>
+
+                                <label class="task-editor-model-option"
+                                       title="Model results stay temporary until accepted. Suggestions are not saved or exported.">
+                                    <input type="checkbox"
+                                           checked="@model.CreateSuggestions"
+                                           disabled="@Context.IsModelOperationActive"
+                                           @onchange="args => Context.SetModelCreateSuggestions(model, args)" />
+                                    <span>Create suggestions</span>
+                                </label>
+
+                                <div class="task-editor-model-range">
+                                    <label>Confidence</label>
+                                    <input type="range" min="0" max="100" value="@model.ConfidenceThresholdPercentage.ToString(CultureInfo.InvariantCulture)" disabled="@Context.IsModelOperationActive" @oninput="args => Context.UpdateModelConfidence(model, args)" />
+                                    <span>@($"{model.ConfidenceThresholdPercentage:F0}%")</span>
+                                </div>
+                                <div class="task-editor-model-range">
+                                    <label>IoU</label>
+                                    <input type="range" min="0" max="100" value="@model.IoUThresholdPercentage.ToString(CultureInfo.InvariantCulture)" disabled="@Context.IsModelOperationActive" @oninput="args => Context.UpdateModelIoU(model, args)" />
+                                    <span>@($"{model.IoUThresholdPercentage:F0}%")</span>
+                                </div>
+
+                                <div class="task-editor-model-map-toolbar">
+                                    <span class="task-editor-model-map-title">
+                                        Labels
+                                        <button type="button"
+                                                class="task-editor-info-button"
+                                                title="@Context.ModelMappingHelpText"
+                                                aria-label="Model label mapping help">
+                                            <i class="fa fa-info"></i>
+                                        </button>
+                                    </span>
+                                    <button type="button" disabled="@Context.IsModelOperationActive" @onclick="() => Context.SetAllModelMappingsEnabled(model, true)">Check all</button>
+                                    <button type="button" disabled="@Context.IsModelOperationActive" @onclick="() => Context.SetAllModelMappingsEnabled(model, false)">Uncheck all</button>
+                                </div>
+                                @if (!model.LabelMappings.Items.Any())
+                                {
+                                    <div class="task-editor-empty">Run Load to read model labels.</div>
+                                }
+                                else
+                                {
+                                    <div class="task-editor-model-map-list">
+                                        @foreach (var mapping in model.LabelMappings.Items.OrderBy(x => x.ModelLabelIndex))
+                                        {
+                                            <div class="@Context.GetMappingRowClass(mapping)">
+                                                <input type="checkbox"
+                                                       checked="@mapping.IsEnabled"
+                                                       disabled="@Context.IsModelOperationActive"
+                                                       @onchange="args => Context.SetMappingEnabled(model, mapping, args)" />
+                                                <span class="task-editor-model-label">@mapping.ModelLabelName</span>
+                                                <select class="form-select form-select-sm"
+                                                        value="@(mapping.ProjectLabelId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)"
+                                                        disabled="@(!mapping.IsEnabled || Context.IsModelOperationActive)"
+                                                        @onchange="args => Context.SetMappingProjectLabel(model, mapping, args)">
+                                                    <option value="">Unmapped</option>
+                                                    @foreach (var label in Context.OrderedLabels)
+                                                    {
+                                                        <option value="@label.Id.ToString(CultureInfo.InvariantCulture)">@label.Name</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </details>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+</aside>
+
+@code {
+    [Parameter]
+    [EditorRequired]
+    public ITaskAnnotationWindowContext Context { get; set; } = default!;
+}

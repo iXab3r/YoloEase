@@ -3,47 +3,42 @@
 @using PoeShared.Blazor.Scaffolding
 @using PoeShared.Scaffolding
 @using YoloEase.UI.Core
-@inherits YoloEaseComponent<AnnotationsAccessor>
+@inherits YoloEaseComponent<YoloEaseProject>
 
-<TabPageLayout Class="project-tab" BodyClass="annotation-editor-shell">
+<TabPageLayout Class="project-tab"
+               BodyClass="annotation-editor-shell"
+               ProgressVisible="@IsProjectRefreshing"
+               ProgressIndeterminate="true"
+               ProgressText="Refreshing project">
     <TopBar>
-        @if (DataContext.RemoteProject.Mode == AnnotationBackendMode.Offline)
-        {
-            <div class="ye-tab-title-row">
-                <span class="ye-tab-title">Offline project</span>
-                <span class="ye-tab-subtitle">Manage label names and colors.</span>
-            </div>
-            <div class="annotation-editor-toolbar-stats">
-                <span class="badge text-bg-secondary">@($"{DataContext.RemoteProject.Labels.Count} labels")</span>
-            </div>
+        <div class="ye-tab-title-row">
+            <span class="ye-tab-title">Project</span>
+            <span class="ye-tab-subtitle">@GetProjectSubtitle()</span>
+        </div>
+        <div class="annotation-editor-toolbar-stats">
+            <span class="badge text-bg-secondary">@($"{DataContext.DataSources.InputDirectories.Count} sources")</span>
+            <span class="badge text-bg-secondary">@($"{DataContext.RemoteProject.Labels.Count} labels")</span>
+        </div>
 
-            <div class="flex-grow-1"></div>
+        <div class="flex-grow-1"></div>
 
-            <ReactiveButton Class="btn btn-outline-secondary btn-sm"
-                            Command="@(async () => await OpenProjectFolder())">
-                <i class="fa fa-folder-open"></i>
-                Open
-            </ReactiveButton>
-            <ReactiveButton Class="btn btn-outline-secondary btn-sm"
-                            Command="@(async () => await RefreshProjectData())">
-                <i class="fa fa-refresh"></i>
-                Refresh
-            </ReactiveButton>
-        }
-        else
-        {
-            <div class="ye-tab-title-row">
-                <span class="ye-tab-title">Project</span>
-                <span class="ye-tab-subtitle">CVAT mode</span>
-            </div>
-        }
+        <ReactiveButton Class="btn btn-outline-secondary btn-sm"
+                        Command="@(async () => await OpenProjectFolder())">
+            <i class="fa fa-folder-open"></i>
+            Open
+        </ReactiveButton>
+        <ReactiveButton Class="btn btn-outline-secondary btn-sm"
+                        Command="@(async () => await RefreshProjectData())">
+            <i class="fa fa-refresh"></i>
+            Refresh
+        </ReactiveButton>
     </TopBar>
 
     <ChildContent>
     @if (DataContext.RemoteProject.Mode != AnnotationBackendMode.Offline)
     {
         <div class="alert alert-secondary m-0">
-            The built-in project workspace is available only in offline mode. In CVAT mode, keep using the existing external CVAT flow.
+            Labels and task metadata are managed by CVAT for this project. Local data sources stay here so sync and training can use the same project inputs.
         </div>
     }
     else
@@ -121,6 +116,8 @@
             </div>
         </section>
     }
+
+    <DataSourcesPanel DataContext="@DataContext" />
     </ChildContent>
 </TabPageLayout>
 
@@ -143,7 +140,14 @@
 
     public AnnotationsEditor()
     {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.DataSources.InputDirectories.Count));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.Labels.Count));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsBusy));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Assets.IsBusy));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.IsBusy));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Annotations.IsBusy));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.TrainingBatch.IsBusy));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.TrainingDataset.IsBusy));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -278,6 +282,23 @@
     {
         return AnnotationLabelPalette.PickNext(DataContext.RemoteProject.Labels.Items.Select(x => x.Color));
     }
+
+    private string GetProjectSubtitle()
+    {
+        var mode = DataContext.RemoteProject.Mode == AnnotationBackendMode.Offline ? "Offline backend" : "CVAT backend";
+        var projectName = DataContext.RemoteProject.ProjectName;
+        return string.IsNullOrWhiteSpace(projectName)
+            ? mode
+            : $"{projectName.Trim()} | {mode}";
+    }
+
+    private bool IsProjectRefreshing =>
+        DataContext.IsBusy ||
+        DataContext.Assets.IsBusy ||
+        DataContext.RemoteProject.IsBusy ||
+        DataContext.Annotations.IsBusy ||
+        DataContext.TrainingBatch.IsBusy ||
+        DataContext.TrainingDataset.IsBusy;
 
     private void ShowError(string message)
     {

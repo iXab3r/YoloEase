@@ -28,10 +28,24 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     private readonly CircularSourceList<TimelineEntry> timelineSource = new(100);
     private readonly TimelineController timelineController;
 
-    private CancellationTokenSource activeTrainingCancellationTokenSource = new();
+    private CancellationTokenSource? activeTrainingCancellationTokenSource = new();
 
     static AutomaticTrainer()
     {
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.Assets.Files.Count).To(x => x.ProjectFileCount);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.UnannotatedFiles.Count).To(x => x.UnannotatedFileCount);
+        Binder.Bind(x => Math.Max(0, x.ProjectFileCount - x.UnannotatedFileCount)).To(x => x.AnnotatedFileCount);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.RemoteProject.Tasks.Count).To(x => x.ProjectTaskCount);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.UnannotatedTasks.Count).To(x => x.UnannotatedTaskCount);
+        Binder.Bind(x => Math.Max(0, x.ProjectTaskCount - x.UnannotatedTaskCount)).To(x => x.AnnotatedTaskCount);
+        Binder.Bind(x => x.UnannotatedFileCount > 0).To(x => x.HasUnannotatedFiles);
+        Binder.Bind(x => x.UnannotatedTaskCount > 0).To(x => x.HasUnannotatedTasks);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.MinBatchPercentage).To(x => x.BatchMinPercentage);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.MaxBatchPercentage).To(x => x.BatchMaxPercentage);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.BatchPercentage).To(x => x.BatchPercentage);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.BatchSize).To(x => x.BatchSize);
+        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingDataset.TrainValSplitPercentage).To(x => x.TrainValSplitPercentage);
+        Binder.Bind(x => GetFilteredTasks(x)).To(x => x.FilteredTasks);
     }
 
     public AutomaticTrainer(
@@ -73,27 +87,31 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             .SubscribeAsync(RefreshProjectForTrainer, Log.HandleUiException)
             .AddTo(Anchors);
 
+        var predictionUiState = this.WhenAnyValue(x => x.Project)
+            .Select(project => project == null
+                ? Observable.Return(new PredictionUiState(null, Array.Empty<string>()))
+                : Observable.CombineLatest(
+                    project.Predictions.WhenAnyValue(x => x.LatestPredictions),
+                    project.RemoteProject.WhenAnyValue(x => x.ProjectFiles)
+                        .Select(projectFiles => projectFiles
+                            .Connect()
+                            .Select(_ => projectFiles.Items.Select(y => y.FileName).ToArray()))
+                        .Switch(),
+                    (predictions, projectFileNames) => new PredictionUiState(predictions, projectFileNames)))
+            .Switch();
+
         Observable.CombineLatest(
                 this.WhenAnyValue(x => x.PredictIncludeAnnotated),
-                this.WhenAnyValue(x => x.Project.Predictions.LatestPredictions),
-                this.WhenAnyValue(x => x.Project.RemoteProject.ProjectFiles).Switch().Select(x =>
-                {
-                    var project = Project;
-                    if (project == null)
-                    {
-                        return new string[0];
-                    }
-                    return project.RemoteProject.ProjectFiles.Items.Select(y => y.FileName).ToArray();
-                }),
-                (includeAnnotated, predictions, projectFileNames) => new { includeAnnotated, predictions, projectFileNames })
+                predictionUiState,
+                (includeAnnotated, state) => new { includeAnnotated, state.Predictions, state.ProjectFileNames })
             .Throttle(UiConstants.UiThrottlingDelay)
-            .Subscribe(x => RecalculatePredictItems(x.predictions, x.includeAnnotated ? new string[0] : x.projectFileNames), Log.HandleUiException)
+            .Subscribe(x => RecalculatePredictItems(x.Predictions, x.includeAnnotated ? new string[0] : x.ProjectFileNames), Log.HandleUiException)
             .AddTo(Anchors);
 
         Binder.Attach(this).AddTo(Anchors);
     }
 
-    public YoloEaseProject Project { get; set; }
+    public YoloEaseProject? Project { get; set; }
 
     public IObservableList<TimelineEntry> Timeline => timelineSource;
 
@@ -124,11 +142,77 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     public AutomaticTrainerTaskFilter TaskFilter { get; set; } = AutomaticTrainerTaskFilter.Unannotated;
 
     public ISourceList<PredictLabelItem> PredictItems { get; } = new SourceList<PredictLabelItem>();
+
+    public int ProjectFileCount { get; private set; }
+
+    public int UnannotatedFileCount { get; private set; }
+
+    public int AnnotatedFileCount { get; private set; }
+
+    public int ProjectTaskCount { get; private set; }
+
+    public int UnannotatedTaskCount { get; private set; }
+
+    public int AnnotatedTaskCount { get; private set; }
+
+    public bool HasUnannotatedFiles { get; private set; }
+
+    public bool HasUnannotatedTasks { get; private set; }
+
+    public int BatchMinPercentage { get; private set; }
+
+    public int BatchMaxPercentage { get; private set; }
+
+    public int BatchPercentage { get; private set; }
+
+    public int BatchSize { get; private set; }
+
+    public int TrainValSplitPercentage { get; private set; }
+
+    public IReadOnlyList<AnnotationTaskInfo> FilteredTasks { get; private set; } = Array.Empty<AnnotationTaskInfo>();
     
     public float AutoAnnotateConfidenceThresholdPercentage { get; set; }
 
+    private sealed record PredictionUiState(DatasetPredictInfo? Predictions, string[] ProjectFileNames);
+
+    public void UpdateBatchPercentage(int value)
+    {
+        var project = Project;
+        if (project == null)
+        {
+            return;
+        }
+
+        project.TrainingBatch.BatchPercentage = value;
+    }
+
+    public void UpdateTrainValSplitPercentage(int value)
+    {
+        var project = Project;
+        if (project == null)
+        {
+            return;
+        }
+
+        project.TrainingDataset.TrainValSplitPercentage = value;
+    }
+
+    private static IReadOnlyList<AnnotationTaskInfo> GetFilteredTasks(AutomaticTrainer trainer)
+    {
+        var project = trainer.Project;
+        if (project == null)
+        {
+            return Array.Empty<AnnotationTaskInfo>();
+        }
+
+        return (trainer.TaskFilter == AutomaticTrainerTaskFilter.All
+                ? project.TrainingBatch.Tasks.Items
+                : project.TrainingBatch.UnannotatedTasks.Items)
+            .ToArray();
+    }
+
     private void RecalculatePredictItems(
-        DatasetPredictInfo datasetPredict, 
+        DatasetPredictInfo? datasetPredict, 
         IEnumerable<string> blacklistedFileNames)
     {
         var predictions = datasetPredict != null && datasetPredict.Predictions != null
@@ -183,10 +267,11 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     public async Task<AnnotationTaskInfo> CreateNextTask()
     {
+        var project = GetRequiredProject();
         var batchEntry = new CreateTaskTimelineEntry(
-            Project.RemoteProject,
-            Project.Annotations,
-            Project.TrainingBatch,
+            project.RemoteProject,
+            project.Annotations,
+            project.TrainingBatch,
             Array.Empty<FileLabel>())
         {
             Text = "Preparing next batch...",
@@ -198,26 +283,40 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     public async Task NavigateToNextUnannotatedTask()
     {
-        var tasks = Project.TrainingBatch.UnannotatedTasks.Items.ToArray();
+        var project = GetRequiredProject();
+        var tasks = project.TrainingBatch.UnannotatedTasks.Items.ToArray();
         if (tasks.Length <= 0)
         {
             throw new InvalidOperationException("No tasks for annotation");
         }
 
         var task = tasks.First();
-        await Project.RemoteProject.NavigateToTask(task.Id);
+        await project.RemoteProject.NavigateToTask(task.Id);
     }
 
-    public async Task Stop()
+    public Task Stop()
     {
-        activeTrainingCancellationTokenSource.Cancel();
+        activeTrainingCancellationTokenSource?.Cancel();
+        return Task.CompletedTask;
     }
 
     public async Task Start()
     {
+        var project = Project;
+        if (project == null)
+        {
+            Log.Warn("Ignoring automatic trainer start request because no project is loaded");
+            return;
+        }
+
         using var isBusy = MarkAsBusy();
-        using var cleanup = Disposable.Create(() => activeTrainingCancellationTokenSource = null);
+        using var cleanup = Disposable.Create(() =>
+        {
+            activeTrainingCancellationTokenSource?.Dispose();
+            activeTrainingCancellationTokenSource = null;
+        });
         activeTrainingCancellationTokenSource = new CancellationTokenSource();
+        var cancellationTokenSource = activeTrainingCancellationTokenSource;
 
         timelineSource.Add(new BasicTimelineEntry
         {
@@ -225,7 +324,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             Timestamp = clock.Now
         });
 
-        await Task.Run(() => HandleTraining(activeTrainingCancellationTokenSource.Token));
+        await Task.Run(() => HandleTraining(project, cancellationTokenSource.Token));
 
         timelineSource.Add(new BasicTimelineEntry
         {
@@ -236,7 +335,14 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     
     protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        await Project.Refresh(progressReporter);
+        var project = Project;
+        if (project == null)
+        {
+            Log.Debug("Ignoring trainer refresh because no project is loaded");
+            return;
+        }
+
+        await project.Refresh(progressReporter);
     }
 
     private async Task RefreshProjectForTrainer(YoloEaseProject project)
@@ -256,7 +362,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                project.RemoteProject.CurrentUser != null;
     }
 
-    private async Task HandleTraining(CancellationToken cancellationToken)
+    private async Task HandleTraining(YoloEaseProject project, CancellationToken cancellationToken)
     {
         var cycleIdx = 1;
         DatasetInfo lastTrainedDataset = default;
@@ -280,27 +386,27 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     Timestamp = clock.Now
                 }.AddTo(timelineSource);
 
-                var projectEntry = new ProjectTimelineEntry(Project).AddTo(timelineSource);
+                var projectEntry = new ProjectTimelineEntry(project).AddTo(timelineSource);
                 await projectEntry.Run(cancellationToken);
 
-                if (Project.Predictions.PredictionModel == null && ModelStrategy == AutomaticTrainerModelStrategy.Latest)
+                if (project.Predictions.PredictionModel == null && ModelStrategy == AutomaticTrainerModelStrategy.Latest)
                 {
-                    if (Project.TrainingDataset.TrainedModels.Count <= 0)
+                    if (project.TrainingDataset.TrainedModels.Count <= 0)
                     {
                         new BasicTimelineEntry()
                         {
                             Text = $"Model is not set, refreshing trained models list",
                             Timestamp = clock.Now
                         }.AddTo(timelineSource);
-                        await Project.TrainingDataset.Refresh();
+                        await project.TrainingDataset.Refresh();
                     }
                     
-                    if (Project.TrainingDataset.TrainedModels.Count > 0)
+                    if (project.TrainingDataset.TrainedModels.Count > 0)
                     {
-                        var modelToPick = Project.TrainingDataset.TrainedModels.Items
+                        var modelToPick = project.TrainingDataset.TrainedModels.Items
                             .OrderByDescending(x => x.ModelFile.LastWriteTime)
                             .First();
-                        Project.Predictions.PredictionModel = modelToPick;
+                        project.Predictions.PredictionModel = modelToPick;
                         new BasicTimelineEntry
                         {
                             Text = $"Latest model: {modelToPick}",
@@ -317,20 +423,20 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     }
                 }
                 
-                await Project.TrainingDataset.Refresh();
+                await project.TrainingDataset.Refresh();
                 if (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
                 
-                var trainingSettings = Project.TrainingDataset.TrainingSettings;
+                var trainingSettings = project.TrainingDataset.TrainingSettings;
                 if (lastTrainedDataset is {ProjectInfo: not null})
                 {
                     var changesetEntry = new ChangesetTimelineEntry(
                         lastTrainedDataset,
                         lastTrainingSettings,
                         trainingSettings,
-                        Project.Annotations, Project.RemoteProject).AddTo(timelineSource);
+                        project.Annotations, project.RemoteProject).AddTo(timelineSource);
                     var changeset = await changesetEntry.Run(cancellationToken);
                     Log.Info($"Changeset size: {changeset.Count}");
                     if (!changeset.Any())
@@ -345,7 +451,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     break;
                 }
 
-                var createDatasetEntry = new CreateDatasetTimelineEntry(Project.Annotations, Project.Augmentations).AddTo(timelineSource);
+                var createDatasetEntry = new CreateDatasetTimelineEntry(project.Annotations, project.Augmentations).AddTo(timelineSource);
                 var datasetInfo = await createDatasetEntry.Run(cancellationToken);
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -371,7 +477,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                         timelineController.PerformUpdateOnNextCycle = false;
                     }
                     
-                    var preTrainingProgressEntry = preTrainingEntryFactory.Create(timelineController, datasetInfo, Project.TrainingDataset).AddTo(timelineSource);
+                    var preTrainingProgressEntry = preTrainingEntryFactory.Create(timelineController, datasetInfo, project.TrainingDataset).AddTo(timelineSource);
                     await preTrainingProgressEntry.Run(cancellationToken);
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -381,12 +487,12 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
                     try
                     {
-                        var trainingProgressEntry = trainingEntryFactory.Create(timelineController, datasetInfo, Project.TrainingDataset, Project.Predictions).AddTo(timelineSource);
+                        var trainingProgressEntry = trainingEntryFactory.Create(timelineController, datasetInfo, project.TrainingDataset, project.Predictions).AddTo(timelineSource);
                         var modelFile = await trainingProgressEntry.Run(cancellationToken);
                         
                         if (ModelStrategy == AutomaticTrainerModelStrategy.Latest)
                         {
-                            Project.Predictions.PredictionModel = modelFile;
+                            project.Predictions.PredictionModel = modelFile;
                         }
                         
                         if (cancellationToken.IsCancellationRequested)
@@ -437,16 +543,16 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         }
     }
 
-    private async Task AddPredictionsIfNeeded(CancellationToken cancellationToken)
+    private async Task AddPredictionsIfNeeded(YoloEaseProject project, CancellationToken cancellationToken)
     {
-        var predictions = Project.Predictions;
+        var predictions = project.Predictions;
         var predictionModel = predictions.PredictionModel;
         if (predictionModel == null)
         {
             return;
         }
 
-        var directories = Project.Assets.InputDirectories.Items.ToArray();
+        var directories = project.Assets.InputDirectories.Items.ToArray();
         if (directories.Length > 1)
         {
             throw new NotSupportedException("Predict is not supported for multiple input directories(yet)");
@@ -475,7 +581,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             }
             case AutomaticTrainerPredictionStrategy.Unlabeled:
             {
-                filesToRunPredictOn = Project.TrainingBatch.UnannotatedFiles.Items.ToArray().PickPercentage(PredictBatchPercentage);;
+                filesToRunPredictOn = project.TrainingBatch.UnannotatedFiles.Items.ToArray().PickPercentage(PredictBatchPercentage);;
                 break;
             }
             default:
@@ -512,9 +618,14 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                 Files = filesToRunPredictOn.ToArray(),
                 Model = predictionModel
             },
-            Project.TrainingDataset, 
-            Project.Predictions).AddTo(timelineSource);
+            project.TrainingDataset, 
+            project.Predictions).AddTo(timelineSource);
         var actualPredictions = await predictEntry.Run(cancellationToken);
-        Project.Predictions.LatestPredictions = actualPredictions;
+        project.Predictions.LatestPredictions = actualPredictions;
+    }
+
+    private YoloEaseProject GetRequiredProject()
+    {
+        return Project ?? throw new InvalidOperationException("No project is loaded");
     }
 }

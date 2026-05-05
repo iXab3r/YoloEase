@@ -1,0 +1,239 @@
+@namespace YoloEase.UI.TaskAnnotation
+
+<section class="task-editor-canvas" aria-label="Image editor">
+    <nav class="task-editor-frame-nav" aria-label="Frame navigation">
+        <button type="button" class="task-editor-icon-button" title="First frame" @onclick="Context.GoFirst">
+            <i class="fa fa-fast-backward"></i>
+        </button>
+        <button type="button" class="task-editor-icon-button" title="Step back (C)" @onclick="Context.GoPreviousStep">
+            <i class="fa fa-step-backward"></i>
+        </button>
+        <button type="button" class="task-editor-icon-button" title="Back (D)" @onclick="Context.GoPrevious">
+            <i class="fa fa-chevron-left"></i>
+        </button>
+        <span class="task-editor-frame-index">@Context.CurrentFrameLabel</span>
+        <button type="button" class="task-editor-icon-button" title="Next (F)" @onclick="Context.GoNext">
+            <i class="fa fa-chevron-right"></i>
+        </button>
+        <button type="button" class="task-editor-icon-button" title="Step forward (V)" @onclick="Context.GoNextStep">
+            <i class="fa fa-step-forward"></i>
+        </button>
+        <button type="button" class="task-editor-icon-button" title="Last frame" @onclick="Context.GoLast">
+            <i class="fa fa-fast-forward"></i>
+        </button>
+        @if (Context.CanRemoveCurrentFrame)
+        {
+            <span class="task-editor-frame-nav-separator"></span>
+            @if (Context.PendingRemoveFrameIndex == Context.EffectiveFrameIndex)
+            {
+                <button type="button"
+                        class="task-editor-icon-button task-editor-frame-remove is-confirm"
+                        title="Confirm remove image"
+                        @onclick="Context.RemoveCurrentFrame">
+                    <i class="fa fa-trash"></i>
+                </button>
+                <button type="button"
+                        class="task-editor-icon-button task-editor-frame-remove-cancel"
+                        title="Cancel remove image"
+                        @onclick="Context.CancelRemoveCurrentFrame">
+                    <i class="fa fa-times"></i>
+                </button>
+            }
+            else
+            {
+                <button type="button"
+                        class="task-editor-icon-button task-editor-frame-remove"
+                        title="Remove image"
+                        @onclick="Context.BeginRemoveCurrentFrame">
+                    <i class="fa fa-trash"></i>
+                </button>
+            }
+        }
+    </nav>
+
+    <div class="task-editor-viewport"
+         @ref="editorViewport">
+        <div class="task-editor-image-layer" style="@Context.ImageLayerStyle">
+            @if (!string.IsNullOrWhiteSpace(Context.CurrentImageDataUrl))
+            {
+                <img class="task-editor-image"
+                     src="@Context.CurrentImageDataUrl"
+                     draggable="false"
+                     alt="@Context.CurrentFileLabel" />
+            }
+            else
+            {
+                <div class="task-editor-image-placeholder">
+                    <div class="task-editor-placeholder-mark">
+                        <i class="fa fa-image"></i>
+                    </div>
+                    <div class="fw-semibold">Image unavailable</div>
+                    <div class="text-muted small">@Context.CurrentFileLabel</div>
+                </div>
+            }
+        </div>
+
+        <div class="task-editor-overlay-layer" aria-hidden="true">
+            @if (Context.ShouldShowCreationGuide)
+            {
+                <div class="task-editor-guide task-editor-guide-vertical" style="@Context.GetVerticalGuideStyle()"></div>
+                <div class="task-editor-guide task-editor-guide-horizontal" style="@Context.GetHorizontalGuideStyle()"></div>
+                <div class="task-editor-guide-cross" style="@Context.GetGuideCrossStyle()"></div>
+            }
+
+            @foreach (var shape in Context.CurrentFrameShapes)
+            {
+                var label = Context.GetLabel(shape.LabelId);
+                <div class="@Context.GetShapeClass(shape)"
+                     style="@Context.GetShapeStyle(shape, label)">
+                    @if (Context.ShowLabels || Context.ShouldShowShapeDetails(shape))
+                    {
+                        <span class="task-editor-shape-caption">
+                            @if (Context.ShowLabels)
+                            {
+                                <span>@Context.FormatShapeLabel(label)</span>
+                            }
+                            @if (Context.ShouldShowShapeDetails(shape))
+                            {
+                                <span>@Context.FormatRect(shape)</span>
+                            }
+                        </span>
+                    }
+                    @if (Context.ShouldShowShapeHandles(shape))
+                    {
+                        <span class="task-editor-rotate-stem"></span>
+                        <span class="@Context.GetRotateHandleClass(shape)"></span>
+                        @foreach (var handle in Context.ResizeHandles)
+                        {
+                            <span class="@Context.GetHandleClass(shape, handle)" style="@Context.GetHandleStyle(handle)"></span>
+                        }
+                    }
+                </div>
+            }
+
+            @if (Context.ShouldShowSelectionBounds)
+            {
+                <div class="task-editor-selection-bounds" style="@Context.GetSelectionBoundsStyle()">
+                    <span class="task-editor-rotate-stem"></span>
+                    <span class="@Context.GetSelectionRotateHandleClass()"></span>
+                    @foreach (var handle in Context.ResizeHandles)
+                    {
+                        <span class="@Context.GetSelectionHandleClass(handle)" style="@Context.GetHandleStyle(handle)"></span>
+                    }
+                </div>
+            }
+
+            @if (Context.SelectionMarquee != null)
+            {
+                <div class="task-editor-selection-marquee" style="@Context.GetSelectionMarqueeStyle()"></div>
+            }
+
+            @if (Context.FreeformSelectionPoints.Count > 1)
+            {
+                <svg class="task-editor-selection-lasso" width="100%" height="100%" focusable="false">
+                    <polyline points="@Context.GetFreeformSelectionPolylinePoints()"></polyline>
+                </svg>
+            }
+
+            @foreach (var shape in Context.PendingPasteShapes)
+            {
+                var label = Context.GetLabel(shape.LabelId);
+                <div class="@Context.GetPasteShapeClass(shape)"
+                     style="@Context.GetShapeStyle(shape, label)">
+                    @if (Context.ShowLabels)
+                    {
+                        <span class="task-editor-shape-caption">
+                            <span>@Context.FormatShapeLabel(label)</span>
+                            <span>@Context.FormatRect(shape)</span>
+                        </span>
+                    }
+                </div>
+            }
+
+            @if (Context.DraftRectangle != null)
+            {
+                <div class="task-editor-object-rect is-draft"
+                     style="@Context.GetDraftShapeStyle()">
+                    <span class="task-editor-shape-size">@Context.FormatRect(Context.DraftRectangle)</span>
+                </div>
+            }
+        </div>
+
+        <div class="@Context.GetHitLayerClass()"
+             @onmousedown="Context.HandleCanvasMouseDown"
+             @onmousemove="Context.HandleCanvasMouseMove"
+             @onmouseup="Context.HandleCanvasMouseUp"
+             @onmouseleave="Context.HandleCanvasMouseLeave"
+             @onwheel="Context.HandleCanvasWheel"
+             @onwheel:preventDefault="true"
+             @oncontextmenu:preventDefault="true"></div>
+
+        @if (Context.ShowSuggestions && Context.CurrentFrameSuggestionCount > 0)
+        {
+            <div class="task-editor-suggestion-layer" aria-label="Model suggestions">
+                <div class="task-editor-suggestion-toolbar">
+                    <span>@($"{Context.CurrentFrameSuggestionCount} suggestions")</span>
+                    <button type="button"
+                            title="Accept all suggestions on this frame"
+                            disabled="@(!Context.CanModifySuggestions)"
+                            @onclick="Context.AcceptCurrentFrameSuggestions">
+                        <i class="fa fa-check"></i>
+                        Accept all
+                    </button>
+                    <button type="button"
+                            title="Clear suggestions on this frame"
+                            disabled="@(!Context.CanModifySuggestions)"
+                            @onclick="Context.ClearCurrentFrameSuggestions">
+                        <i class="fa fa-trash"></i>
+                    </button>
+                </div>
+
+                @foreach (var suggestion in Context.CurrentFrameSuggestions)
+                {
+                    var label = Context.GetLabel(suggestion.LabelId);
+                    <div class="@Context.GetSuggestionClass(suggestion)"
+                         style="@Context.GetSuggestionStyle(suggestion, label)"
+                         @onmouseenter="() => Context.SetHoveredSuggestion(suggestion.Id)"
+                         @onmouseleave="() => Context.ClearHoveredSuggestion(suggestion.Id)">
+                        <span class="task-editor-suggestion-caption">
+                            @if (Context.ShowLabels)
+                            {
+                                <span>@Context.FormatShapeLabel(label)</span>
+                            }
+                            <span>@Context.FormatSuggestionConfidence(suggestion)</span>
+                            <span>@Context.FormatSuggestionSource(suggestion)</span>
+                        </span>
+                        <button type="button"
+                                class="task-editor-suggestion-accept"
+                                title="Accept suggestion as a manual annotation"
+                                disabled="@(!Context.CanModifySuggestions)"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => Context.AcceptSuggestion(suggestion.Id)">
+                            <i class="fa fa-check"></i>
+                            Accept
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="task-editor-view-hud">
+        <span>@($"{Context.ZoomPercent}%")</span>
+        <span>@($"x {Context.ViewOffsetX:F0}")</span>
+        <span>@($"y {Context.ViewOffsetY:F0}")</span>
+    </div>
+</section>
+
+@code {
+    private ElementReference editorViewport;
+
+    [Parameter]
+    [EditorRequired]
+    public ITaskAnnotationWindowContext Context { get; set; } = default!;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        Context.EditorViewport = editorViewport;
+    }
+}

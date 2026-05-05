@@ -1,6 +1,7 @@
 using YoloEase.UI.Core;
 using YoloEase.UI.Prerequisites;
 using YoloEase.UI.Services;
+using YoloEase.UI.TaskAnnotation;
 using UnityContainerExtension = Unity.Extension.UnityContainerExtension;
 
 namespace YoloEase.UI.Prism;
@@ -19,7 +20,9 @@ internal sealed class YoloEaseRegistrations : UnityContainerExtension
             .RegisterSingleton<IYoloModelCachingService, YoloModelCachingService>()
             .RegisterSingleton<IPrerequisitesToolchain, PrerequisitesToolchain>()
             .RegisterSingleton<IPrerequisiteCommandRunner, PrerequisiteCommandRunner>()
-            .RegisterSingleton<IGpuRuntimeDetector, GpuRuntimeDetector>();
+            .RegisterSingleton<IGpuRuntimeDetector, GpuRuntimeDetector>()
+            .RegisterSingleton<IVideoFrameExtractor, WindowsMediaVideoFrameExtractor>()
+            .RegisterSingleton<IYoloEngineRepository, YoloEngineRepository>();
 
         PoeShared.Scaffolding.UnityContainerExtensions.RegisterSingleton<PrerequisitesInstaller>(Container);
         PoeShared.Scaffolding.UnityContainerExtensions.RegisterSingleton<PrerequisitesSuiteFactory>(Container);

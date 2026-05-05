@@ -46,15 +46,31 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
         
         var inputDirectories = assetsAccessor.InputDirectories.Items.ToArray();
         var storage = new DirectoryInfo(Path.Combine(StorageDirectory.FullName, "assets"));
-        if (!storage.Exists)
+        try
         {
-            storage.Create();
+            if (!storage.Exists)
+            {
+                storage.Create();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to create assets storage directory {storage.FullName}", e);
+            return;
         }
 
         var trainingStorage = new DirectoryInfo(Path.Combine(storage.FullName, "training"));
-        if (!trainingStorage.Exists)
+        try
         {
-            trainingStorage.Create();
+            if (!trainingStorage.Exists)
+            {
+                trainingStorage.Create();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to create training storage directory {trainingStorage.FullName}", e);
+            return;
         }
         
         var sourceFilesByStorageName = new Dictionary<string, (FileInfo OriginalFile, FileInfo StorageFile)>();
@@ -65,9 +81,27 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
             var directory = inputDirectories[i];
             var directoryId = $"dir{i}";
 
-            var directoryFiles = FilesFilter.Select(x => directory.GetFiles(x, SearchOption.AllDirectories))
-                .SelectMany(x => x)
-                .ToArray();
+            FileInfo[] directoryFiles;
+            try
+            {
+                directory.Refresh();
+                if (!directory.Exists)
+                {
+                    Log.Warn($"Skipping missing data source directory {directory.FullName}");
+                    directoriesScanReporter.Update(i + 1, inputDirectories.Length);
+                    continue;
+                }
+
+                directoryFiles = FilesFilter
+                    .SelectMany(x => directory.GetFiles(x, SearchOption.AllDirectories))
+                    .ToArray();
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Failed to scan data source directory {directory.FullName}", e);
+                directoriesScanReporter.Update(i + 1, inputDirectories.Length);
+                continue;
+            }
 
             foreach (var fileToLink in directoryFiles)
             {
@@ -97,16 +131,29 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
                     : $"{filePrefix}{fileToLink.Name}";
 
                 var storageFile = new FileInfo(Path.Combine(trainingStorage.FullName, storageFileName));
-                sourceFilesByStorageName.Add(storageFile.Name, (OriginalFile: fileToLink, StorageFile: storageFile));
+                if (!sourceFilesByStorageName.TryAdd(storageFile.Name, (OriginalFile: fileToLink, StorageFile: storageFile)))
+                {
+                    Log.Warn($"Skipping duplicate storage file name {storageFile.Name} from {fileToLink.FullName}");
+                }
             }
             
             directoriesScanReporter.Update(i+1, inputDirectories.Length);
         }
         
-        var storageFilesByStorageName = FilesFilter.Select(x => trainingStorage.GetFiles(x, SearchOption.AllDirectories))
-            .SelectMany(x => x)
-            .ToDictionary(x => x.Name)
-            .ToArray();
+        KeyValuePair<string, FileInfo>[] storageFilesByStorageName;
+        try
+        {
+            storageFilesByStorageName = FilesFilter
+                .SelectMany(x => trainingStorage.GetFiles(x, SearchOption.AllDirectories))
+                .ToDictionary(x => x.Name)
+                .ToArray();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to scan training storage directory {trainingStorage.FullName}", e);
+            storageFilesByStorageName = Array.Empty<KeyValuePair<string, FileInfo>>();
+        }
+
         var filesToRemove = storageFilesByStorageName
             .Where(x => !sourceFilesByStorageName.ContainsKey(x.Key))
             .ToArray();
@@ -169,12 +216,28 @@ public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssets
         var processedDirectories = 0;
         await Parallel.ForEachAsync(directoriesToProcess, new ParallelOptions(), async (directory, token) =>
         {
-            filters
-                .Select(directory.GetFiles)
-                .SelectMany(x => x)
-                .ForEach(x => files[x.FullName] = x);
-            var count = Interlocked.Increment(ref processedDirectories);
-            progressReporter.Update(count, directoriesToProcess.Length);
+            try
+            {
+                directory.Refresh();
+                if (!directory.Exists)
+                {
+                    Log.Warn($"Skipping missing local assets directory {directory.FullName}");
+                    return;
+                }
+
+                filters
+                    .SelectMany(directory.GetFiles)
+                    .ForEach(x => files[x.FullName] = x);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Failed to refresh local files from {directory.FullName}", e);
+            }
+            finally
+            {
+                var count = Interlocked.Increment(ref processedDirectories);
+                progressReporter.Update(count, directoriesToProcess.Length);
+            }
         });
 
         localFileSource.EditDiff(files.Values);

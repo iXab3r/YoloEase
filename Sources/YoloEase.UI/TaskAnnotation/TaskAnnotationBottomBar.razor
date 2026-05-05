@@ -1,0 +1,71 @@
+@namespace YoloEase.UI.TaskAnnotation
+
+<footer class="task-editor-bottombar">
+    <div class="task-editor-bottom-telemetry" aria-label="Editor position">
+        @if (Context.IsAutoAnnotating || !string.IsNullOrWhiteSpace(Context.AutoAnnotationStatusText))
+        {
+            <span>@Context.AutoAnnotationStatusText</span>
+        }
+        else
+        {
+            <span>@Context.ImageSizeStatus</span>
+            <span>@Context.CursorPositionStatus</span>
+            <span>@Context.SelectionPositionStatus</span>
+        }
+    </div>
+
+    <div class="task-editor-bottom-right">
+        <div class="task-editor-job-state">
+            <span class="task-editor-job-meta">
+                <span class="task-editor-bottom-meta">@($"{Context.ObjectCount} objects")</span>
+                @if (Context.SuggestionCount > 0)
+                {
+                    <span class="task-editor-bottom-meta">@($"{Context.SuggestionCount} suggestions")</span>
+                }
+                @if (Context.IsDirty)
+                {
+                    <span class="task-editor-bottom-meta">Unsaved changes</span>
+                }
+                @if (Context.IsAutoSaving)
+                {
+                    <span class="task-editor-bottom-meta">Saving...</span>
+                }
+                @if (Context.IsAutoAnnotating)
+                {
+                    <span class="task-editor-bottom-meta">@Context.AutoAnnotationProgressLabel</span>
+                }
+                else if (Context.LastSavedAt != null)
+                {
+                    <span class="task-editor-bottom-meta">@($"Saved {Context.LastSavedAt.Value.LocalDateTime:T}")</span>
+                }
+            </span>
+            <span class="@Context.GetStatusClass(Context.TaskInfo.Status)">@Context.FormatStatus(Context.TaskInfo.Status)</span>
+        </div>
+
+        <div class="task-editor-bottom-actions">
+            @if (Context.IsAutoAnnotating)
+            {
+                <button type="button" class="btn btn-outline-danger btn-sm" @onclick="Context.CancelAutoAnnotationRun">
+                    Cancel
+                </button>
+            }
+            else
+            {
+                <ReactiveButton Class="btn btn-primary btn-sm"
+                                Command="@(async () => await Context.FinishJob())">
+                    <i class="fa fa-check"></i>
+                    Finish Job
+                </ReactiveButton>
+            }
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Context.CloseWindow">
+                Close
+            </button>
+        </div>
+    </div>
+</footer>
+
+@code {
+    [Parameter]
+    [EditorRequired]
+    public ITaskAnnotationWindowContext Context { get; set; } = default!;
+}

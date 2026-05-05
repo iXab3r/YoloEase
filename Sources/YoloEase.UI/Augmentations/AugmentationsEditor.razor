@@ -42,23 +42,24 @@
                             <span class="@contentClass">@localEffect.Description</span>
                         </td>
                         <td class="text-end">
-                            <div class="btn-group btn-group-sm ye-two-step-group">
-                                @if (ReferenceEquals(pendingRemoveEffect, localEffect))
-                                {
-                                    <ReactiveButton Class="btn btn-danger ye-two-step-confirm" Command="@(async () => await ConfirmRemoveEffect(localEffect))">
-                                        <i class="fa fa-trash"></i>
-                                        Remove
-                                    </ReactiveButton>
-                                    <button type="button" class="btn btn-secondary ye-two-step-cancel" @onclick="CancelRemoveEffect">
-                                        Cancel
-                                    </button>
-                                }
-                                else
-                                {
-                                    <button type="button" class="btn btn-outline-danger ye-two-step-primary" @onclick="() => BeginRemoveEffect(localEffect)">
-                                        Remove
-                                    </button>
-                                }
+                            <div class="ye-row-actions">
+                                <div class="ye-two-step-group ye-two-step-group--compact">
+                                    @if (ReferenceEquals(pendingRemoveEffect, localEffect))
+                                    {
+                                        <ReactiveButton Class="btn btn-danger btn-sm ye-two-step-confirm" title="Confirm remove augmentation" Command="@(async () => await ConfirmRemoveEffect(localEffect))">
+                                            <i class="fa fa-check"></i>
+                                        </ReactiveButton>
+                                        <button type="button" class="btn btn-secondary btn-sm ye-two-step-cancel" title="Cancel remove" @onclick="CancelRemoveEffect">
+                                            <i class="fa fa-times"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-outline-danger btn-sm ye-two-step-primary" @onclick="() => BeginRemoveEffect(localEffect)">
+                                            Remove
+                                        </button>
+                                    }
+                                </div>
                             </div>
                         </td>
                     </tr>

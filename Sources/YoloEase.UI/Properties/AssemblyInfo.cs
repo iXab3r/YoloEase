@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using PoeShared.Blazor.Scaffolding;
 
@@ -15,7 +16,8 @@ using PoeShared.Blazor.Scaffolding;
 [assembly: AssemblyHasPoeConfigConverters]
 [assembly: AssemblyHasBlazorViews]
 
-[assembly: AssemblyProduct("CVATAAT")]
+[assembly: AssemblyProduct("YoloEase")]
 [assembly: AssemblyVersion("0.0.0.0")]
 [assembly: AssemblyFileVersion("0.0.0.0")]
 [assembly: AssemblyMetadata("SquirrelAwareVersion", "0")]
+[assembly: InternalsVisibleTo("YoloEase.Tests")]

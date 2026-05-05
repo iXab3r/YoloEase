@@ -1,7 +1,8 @@
 ﻿@using PoeShared.Dialogs.Services
-@using YoloEase.Cvat.Shared.Services
 @using YoloEase.UI.Core
 @inherits YoloEaseComponent<MainWindowViewModel>
+
+<BrowserShortcutSuppressor />
 
 <HeadContent>
     <style>
@@ -10,8 +11,8 @@
 </HeadContent>
 
 
-<div id="appContainer">
-    @if (DataContext.YoloEaseProject == null)
+<div id="appContainer" @ref="appContainerElement">
+    @if (DataContext.YoloEaseProject == null || !DataContext.IsProjectShellAttached)
     {
         <StartingPage DataContext="@DataContext"/>
     }

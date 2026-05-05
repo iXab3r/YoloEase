@@ -11,6 +11,13 @@ Repository-specific instructions for coding agents working in this repo.
 - Good options are the OS temp directory, `/tmp/...`, or another folder outside `/mnt/d/Work/YoloEase/Sources`.
 - Existing `bin/` and `obj/` folders created by the normal toolchain are expected. The restriction is specifically about agent-created `artifacts` folders under `Sources/`.
 
+## Agent Scratch And Temp Files
+
+- Do not put agent scratch files, temporary scripts, downloaded probes, extracted archives, throwaway build outputs, restore caches, screenshots, diagnostics, or generated experiments anywhere inside the repository unless the user explicitly asks for a persistent repo file.
+- Use an external temp root for all disposable work, such as `%TEMP%\YoloEaseCodex\...`, `$env:TEMP\YoloEaseCodex\...`, `/tmp/yoloease-codex/...`, or another directory outside `D:\Work\YoloEase`.
+- Before running tools with configurable output paths, make sure every temp/output/cache path points outside the repo. This includes `dotnet` output overrides, package caches, Playwright screenshots/traces, script-generated files, archives, model probes, and one-off diagnostics.
+- If a command accidentally creates disposable files under the repo, verify the resolved paths and remove only those disposable files before finishing. Never remove user/project source files or unrelated dirty work.
+
 ## Project Orientation
 
 - Read `yoloease-summary.md` before non-trivial changes to annotation flow, dataset storage, CVAT compatibility, dataset export, training, prediction, or retraining automation.
@@ -58,11 +65,27 @@ Repository-specific instructions for coding agents working in this repo.
 - Avoid noisy logs with no diagnostic value. Do not replace structured logging with ad hoc `Console.WriteLine` in production or test code.
 - When running UI or external-process diagnostics, check logs before guessing. Preserve useful log paths and screenshots when reporting failures.
 
+## External Boundary Safety
+
+- Treat filesystem, dialogs, process launching, network calls, clipboard, drag/drop, browser/webview interop, and other OS or external-system interactions as unsafe by default.
+- External boundary failures must not crash or tear down the app. Wrap these operations at the UI/service boundary, log enough context, and report a clear retryable error to the user.
+- Never let scheduled callbacks, reactive subscriptions, dispatcher work items, or background tasks execute IO/network/process/dialog operations without a local `try/catch` around the operation body.
+- Validate paths and existence before reading, writing, deleting, moving, or opening files/directories. Missing, moved, locked, malformed, or permission-denied resources are normal user states, not fatal exceptions.
+
+## ML And Native Runtime Safety
+
+- Treat ML model loading/inference that touches native libraries such as ONNX Runtime, DirectML, CUDA, OpenVINO, Skia, or vendor GPU drivers as unsafe by default. Managed `try/catch` cannot protect the app from native process crashes.
+- Never auto-load, pre-load, validate, warm up, or run user/project ML models during app startup, project load, window open, tab render, background refresh, autosave, or reactive property changes.
+- Only load or run ML models after an explicit user action such as `Check model`, `Run current`, `Run all`, or a documented shortcut. If metadata can be read safely without native inference, keep that path clearly separate from engine initialization.
+- Failed or crashing model loads must not block users from opening the app or project. Prefer isolated probes, clear status/error reporting, cancellation, and retryable user actions over eager model initialization.
+
 ## UI Style Rules
 
 - Reuse the shared `ye-panel`, `ye-panel-header`, `ye-panel-body`, `ye-panel-meta`, and `ye-panel-stack` classes for compact inspector/settings/result panels. The task annotation Shapes/Labels panes are the reference style.
 - Keep operational panels dense and restrained: small headers, clear left accent, low-contrast borders, and no nested card stacks.
 - Keep GoldenLayout tab labels and routine table text regular or medium weight. Avoid bold tab names and avoid heavy bolding in data panes unless it marks a true section header or important state.
+- In row actions, primary/navigation actions such as `Open` must be visually larger and more prominent than destructive actions such as `Delete` or `Remove`; keep clear spacing between them and do not use attached button groups for mixed primary/destructive actions.
+- Compact row-level two-step confirmation states must use icon-only confirm/cancel buttons with tooltips so they fit without crowding.
 - On the prerequisites page, keep the header row ordered as title/status, `Check at startup`, then action buttons, with the startup toggle visually close to `Check all`.
 - Prerequisite rows should be expanded by default so details and dependency blockers are visible without extra clicks.
 

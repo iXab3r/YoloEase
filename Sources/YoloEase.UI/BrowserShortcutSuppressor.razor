@@ -1,0 +1,51 @@
+@namespace YoloEase.UI
+@using PoeShared.Blazor.Services
+@inherits PoeShared.Blazor.BlazorReactiveComponent
+
+@code {
+    private JsBrowserShortcutSuppressionRef? browserShortcutSuppressionRef;
+
+    [Inject]
+    protected IJsPoeBlazorUtils JsPoeBlazorUtils { get; init; } = default!;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (!firstRender || browserShortcutSuppressionRef != null)
+        {
+            return;
+        }
+
+        try
+        {
+            browserShortcutSuppressionRef = await JsPoeBlazorUtils.SuppressWellKnownBrowserShortcuts();
+            Log.Info("Suppressed well-known browser shortcuts for Blazor window");
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to suppress well-known browser shortcuts for Blazor window", e);
+        }
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (browserShortcutSuppressionRef is { } registration)
+        {
+            try
+            {
+                await registration.DisposeAsync();
+            }
+            catch (Exception e)
+            {
+                Log.Warn("Failed to dispose browser shortcut suppression registration", e);
+            }
+            finally
+            {
+                browserShortcutSuppressionRef = null;
+            }
+        }
+
+        await base.DisposeAsync();
+    }
+}

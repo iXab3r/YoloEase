@@ -26,16 +26,15 @@ The app is project-based. A user opens a `.yeproj` file, and that project become
 - generated datasets
 - training history and automation state
 
-The app is moving from a CVAT-centered design toward a built-in offline annotation workspace, but the overall training pipeline still expects CVAT-shaped annotation exports so the downstream dataset creation flow stays stable.
+The app is now oriented around the built-in offline annotation workspace. The overall training pipeline still expects CVAT-shaped annotation exports so the downstream dataset creation flow stays stable.
 
-## Current Annotation Modes
+## Current Annotation Backend
 
-There are two annotation backends:
+YoloEase keeps the backend seam internally, but the user-facing app now operates in offline mode only:
 
-- `CVAT` mode: uses an external CVAT server for projects, tasks, jobs, labels, and annotation editing
 - `Offline` mode: keeps annotation state inside the project workspace on disk and exposes a built-in project tab inside the app
 
-Offline mode is intended to be portable. The `.yeproj` file is the entry point, and the offline workspace lives in a sibling folder next to that file. Copy both and you copy the full project state.
+Offline mode is intended to be portable. The `.yeproj` file is the entry point, and the offline workspace lives in a sibling folder next to that file. Copy both and you copy the full project state. Legacy project files that still say `CVAT` are opened as offline projects while preserving their stored project workspace path where possible.
 
 ## High-Level Workflow
 
@@ -49,14 +48,14 @@ The app selects the next batch of files that should be annotated. This can be dr
 
 ### 3. Annotation
 
-Historically this step was done through CVAT. The new offline direction keeps the same mental model:
+Historically this step was done through CVAT. The offline backend keeps the same mental model:
 
 - tasks
 - jobs
 - labels with colors
 - task status changes such as new, in progress, completed
 
-At the moment, offline mode already manages labels, task metadata, jobs, files, and task state. The actual in-app drawing/editing experience is still a placeholder.
+Offline mode manages labels, task metadata, jobs, files, and task state inside project storage.
 
 ### 4. Dataset Preparation
 
@@ -66,7 +65,7 @@ Annotated tasks are exported in a CVAT-style format. That export is then convert
 
 The prepared dataset can be augmented, split into train/validation sets, and passed into YOLO training. The app also keeps track of training progress and generated model outputs.
 
-Training runs through a managed Python toolchain under the application's data directory. The prerequisites workflow owns Python, the virtual environment, PyTorch, Ultralytics, CVAT CLI, and related packages so training does not depend on global PATH state. When a compatible NVIDIA driver is detected, the managed environment can install CUDA-enabled PyTorch wheels and training selects the first CUDA device automatically; otherwise CPU training remains valid.
+Training runs through a managed Python toolchain under the application's data directory. The prerequisites workflow owns Python, the virtual environment, PyTorch, Ultralytics, ONNX Runtime, and related packages so training does not depend on global PATH state. When a compatible NVIDIA driver is detected, the managed environment can install CUDA-enabled PyTorch wheels and training selects the first CUDA device automatically; otherwise CPU training remains valid.
 
 ### 6. Prediction-Assisted Iteration
 
@@ -96,7 +95,7 @@ The main desktop application. This contains:
 - the app shell and tabs
 - project settings UI
 - data source and local file handling
-- annotation backend integration
+- offline annotation backend integration
 - training workflow UI
 - augmentation features
 - YOLO integration
@@ -109,7 +108,7 @@ Important subareas inside this project:
 - `TrainingTimeline`: automation and progress flow for retraining
 - `Augmentations`: dataset augmentation UI and logic
 - `Yolo`: training and prediction integration
-- `Cvat`: external CVAT integration and helper tooling
+- `Cvat`: legacy CVAT-compatible helpers and contracts kept for migration and CVAT-shaped export compatibility
 - `Scripts`: Python helpers for annotation conversion and related tasks
 
 ### `Sources/YoloEase.Cvat.Shared`
@@ -145,7 +144,7 @@ This keeps the system understandable and makes it easier to preserve the existin
 
 ## Boundaries And Current Constraints
 
-- The app is still in transition from CVAT-first to backend-switchable.
+- The app is offline-first and no longer exposes a CVAT backend selection mechanism.
 - The rest of the pipeline still benefits from CVAT-compatible exports.
 - Offline annotation editing is not feature-complete yet; task-state flow exists first.
 - Sync currently copies source files into project storage, and that behavior is intentionally preserved for now.

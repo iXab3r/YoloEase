@@ -3,6 +3,7 @@
 @using PoeShared.Services
 @using JetBrains.Annotations
 @using PoeShared
+@using YoloEase.UI.Services
 @inherits YoloEaseComponent<MainWindowViewModel>
 
 
@@ -139,6 +140,7 @@
     public bool IsBusy { get; [UsedImplicitly] private set; }
 
     [Inject] public INotificationService NotificationService { get; init; }
+    [Inject] public IVideoFrameExtractor VideoFrameExtractor { get; init; }
     
     private static void SetFrame(VideoFileSplitRow row, int frameNth)
     {
@@ -163,7 +165,7 @@
         progressTracker.Reset();
         
         rowsSource.Clear();
-        rowsSource.AddRange( videoFiles.Select(x => new VideoFileSplitRow(x, progressTracker.GetOrAdd(x.Name))));
+        rowsSource.AddRange(videoFiles.Select(x => new VideoFileSplitRow(x, progressTracker.GetOrAdd(x.Name), VideoFrameExtractor)));
 
         IsVisible = true;
     }

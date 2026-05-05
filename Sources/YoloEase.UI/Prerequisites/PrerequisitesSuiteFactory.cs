@@ -1,7 +1,7 @@
 namespace YoloEase.UI.Prerequisites;
 
 /// <summary>
-/// Builds the ordered prerequisite suite for managed Python, packages, YOLO, CVAT CLI, and GPU detection.
+/// Builds the ordered prerequisite suite for managed Python, packages, YOLO, and GPU detection.
 /// </summary>
 public sealed class PrerequisitesSuiteFactory
 {
@@ -75,7 +75,7 @@ public sealed class PrerequisitesSuiteFactory
         {
             Name = "packages",
             Title = "Python packages",
-            Details = "Installs and verifies Ultralytics, CVAT SDK/CLI, OpenCV, ONNX Runtime, NumPy, Matplotlib, and Shapely."
+            Details = "Installs and verifies Ultralytics, OpenCV, ONNX Runtime, NumPy, Matplotlib, and Shapely."
         }
         .WithEvaluation(installer.CheckPackagesAsync)
         .WithRemediation(installer.InstallPackagesAsync)
@@ -92,17 +92,6 @@ public sealed class PrerequisitesSuiteFactory
         .WithRemediation(installer.InstallPackagesAsync)
         .DependsOn(packages);
         suite.AddCheck(yolo);
-
-        var cvatCli = new CheckItem
-        {
-            Name = "cvat-cli",
-            Title = "CVAT CLI",
-            Details = "Verifies the cvat-cli executable used for CVAT annotation download and task operations."
-        }
-        .WithEvaluation(installer.CheckCvatCliAsync)
-        .WithRemediation(installer.InstallPackagesAsync)
-        .DependsOn(packages);
-        suite.AddCheck(cvatCli);
 
         suite.AddCheck(new CheckItem
         {

@@ -1,0 +1,460 @@
+@using System.Windows.Threading
+@using Microsoft.Web.WebView2.Core
+@using PoeShared.Blazor.Scaffolding
+@using PoeShared.Blazor.Services
+@using PoeShared.Blazor.Wpf
+@using PoeShared.Dialogs.Services
+@using PoeShared.Services
+@using YoloEase.UI.Core
+@inherits YoloEaseComponent<YoloEaseProject>
+
+<section class="ye-section data-sources-section">
+    <div class="ye-section-header">
+        <h4>Data sources<span class="text-danger">*</span> (@Track(x => x.DataSources.InputDirectories.Count))</h4>
+        <div class="ye-actions">
+            <ReactiveButton Class="btn btn-primary btn-sm" Command="@(async () => await AddVideo())">Add Video...</ReactiveButton>
+            <ReactiveButton Class="btn btn-primary btn-sm" Command="@(async () => await AddDataFolderDirectory())">Add Folder...</ReactiveButton>
+        </div>
+    </div>
+
+    <div class="data-source-drop-zone" @ref="dropZoneElement">
+        <i class="fa fa-cloud-upload"></i>
+        <div>
+            <strong>Drop folders, images, or videos here</strong>
+            <span>Folders are added directly. Files are copied into project storage. Videos open the frame splitter.</span>
+        </div>
+    </div>
+
+    <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.DataSources.InputDirectories)})">
+        <YeTable HasItems="@(DataContext.DataSources.InputDirectories.Count > 0)">
+            <Header>
+            <tr>
+                <th>Source</th>
+                <th class="text-end">Actions</th>
+            </tr>
+            </Header>
+            <Rows>
+            @foreach (var source in DataContext.DataSources.InputDirectories.Items.OrderBy(x => x.FullName))
+            {
+                var localSource = source;
+                var sourceExists = DoesDataSourceExist(localSource);
+                <tr class="@(!sourceExists ? "data-source-row-missing" : string.Empty)">
+                    <td class="ye-path">
+                        <span>@GetDataSourcePath(localSource)</span>
+                        @if (!sourceExists)
+                        {
+                            <span class="badge text-bg-warning ms-2" title="This saved data source no longer exists. It will be skipped until you restore or remove it.">Missing</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <div class="ye-row-actions">
+                            <ReactiveButton Class="btn btn-outline-secondary btn-sm ye-action-open" IsEnabled="@sourceExists" Command="@(async () => await OpenDataSource(localSource))">
+                                <i class="fa fa-folder-open"></i>
+                                Open
+                            </ReactiveButton>
+                            <div class="ye-two-step-group ye-two-step-group--compact">
+                                @if (IsPendingDataSourceRemoval(localSource))
+                                {
+                                    <ReactiveButton Class="btn btn-danger btn-sm ye-two-step-confirm" title="Confirm remove source" Command="@(async () => await ConfirmRemoveDataSource(localSource))">
+                                        <i class="fa fa-check"></i>
+                                    </ReactiveButton>
+                                    <button type="button" class="btn btn-secondary btn-sm ye-two-step-cancel" title="Cancel remove" @onclick="CancelRemoveDataSource">
+                                        <i class="fa fa-times"></i>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-outline-danger btn-sm ye-two-step-primary" @onclick="() => BeginRemoveDataSource(localSource)">
+                                        Remove
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            }
+            </Rows>
+            <EmptyContent>
+                <div class="alert alert-secondary mb-0">Start by adding data sources - folders with images, video files, etc</div>
+            </EmptyContent>
+        </YeTable>
+    </ReactiveSection>
+</section>
+
+@code {
+    private readonly IScheduler uiScheduler;
+    private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4",
+        ".m4v",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".wmv",
+        ".webm",
+        ".mpg",
+        ".mpeg",
+    };
+
+    private string? pendingDataSourceRemovalPath;
+    private ElementReference dropZoneElement;
+
+    public DataSourcesPanel([Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler)
+    {
+        this.uiScheduler = uiScheduler;
+    }
+
+    [Inject]
+    protected IFolderBrowserDialog? FolderBrowserDialog { get; init; }
+
+    [Inject]
+    protected IOpenFileDialog? OpenFileDialog { get; init; }
+
+    [Inject]
+    protected INotificationService NotificationService { get; init; } = default!;
+
+    [Inject]
+    protected ICoreWebView2Accessor CoreWebView2Accessor { get; init; } = default!;
+
+    [Inject]
+    protected IJsPoeBlazorUtils JsPoeBlazorUtils { get; init; } = default!;
+
+    [Inject]
+    protected IFactory<IBlazorWindow, System.Windows.Threading.Dispatcher> BlazorWindowFactory { get; init; } = default!;
+
+    [Inject]
+    protected IBlazorWindowAccessor BlazorWindowAccessor { get; init; } = default!;
+
+    protected override async Task OnAfterFirstRenderAsync()
+    {
+        await base.OnAfterFirstRenderAsync();
+
+        try
+        {
+            CoreWebView2Accessor.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            await JsPoeBlazorUtils.RegisterFileDropTarget(dropZoneElement);
+            Log.Info("Registered data-source file drop target");
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to register data-source drop handler", e);
+            ShowError("Failed to enable drag-and-drop for data sources.");
+        }
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        try
+        {
+            CoreWebView2Accessor.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to detach data-source drop handler", e);
+        }
+
+        await base.DisposeAsync();
+    }
+
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            if (e.AdditionalObjects == null)
+            {
+                return;
+            }
+
+            var paths = e.AdditionalObjects
+                .OfType<CoreWebView2File>()
+                .Select(x => x.Path)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (paths.Length <= 0)
+            {
+                return;
+            }
+
+            InvokeAsync(async () =>
+            {
+                try
+                {
+                    await HandleDroppedPaths(paths);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("Failed to process dropped data-source paths", ex);
+                    ShowError(ex.Message);
+                }
+            }).AndForget();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("Failed to read dropped data-source paths", ex);
+            ShowError(ex.Message);
+        }
+    }
+
+    private Task AddDataFolderDirectory()
+    {
+        uiScheduler.Schedule(() =>
+        {
+            try
+            {
+                var selectedDirectory = FolderBrowserDialog?.ShowDialog();
+                if (selectedDirectory != null)
+                {
+                    DataContext.DataSources.InputDirectories.AddOrUpdate(selectedDirectory);
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Warn("Failed to add data-source folder", e);
+                ShowError(e.Message);
+            }
+        });
+
+        return Task.CompletedTask;
+    }
+
+    private Task AddVideo()
+    {
+        uiScheduler.Schedule(async () =>
+        {
+            try
+            {
+                var videoFile = OpenFileDialog?.ShowDialog();
+                if (videoFile == null)
+                {
+                    return;
+                }
+
+                OpenFileDialog!.InitialDirectory = videoFile.DirectoryName;
+                OpenFileDialog.InitialFileName = videoFile.Name;
+
+                await VideoSplitterWindowLauncher.Open(DataContext, videoFile, BlazorWindowAccessor, BlazorWindowFactory);
+            }
+            catch (Exception e)
+            {
+                Log.Warn("Failed to add video data source", e);
+                ShowError(e.Message);
+            }
+        });
+
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleDroppedPaths(IReadOnlyList<string> paths)
+    {
+        var folders = paths
+            .Where(Directory.Exists)
+            .Select(x => new DirectoryInfo(x))
+            .ToArray();
+        var files = paths
+            .Where(File.Exists)
+            .Select(x => new FileInfo(x))
+            .ToArray();
+        if (files.Any(IsProjectFile))
+        {
+            Log.Info("Ignoring dropped YoloEase project file in data-source handler");
+            return;
+        }
+
+        Log.Info($"Processing dropped data-source paths: {folders.Length} folders, {files.Length} files");
+
+        foreach (var folder in folders)
+        {
+            DataContext.DataSources.InputDirectories.AddOrUpdate(folder);
+            Log.Info($"Added dropped data-source folder {folder.FullName}");
+        }
+
+        var videoFiles = files.Where(IsVideoFile).ToArray();
+        var regularFiles = files.Except(videoFiles).ToArray();
+        DirectoryInfo? importedFilesDirectory = null;
+        if (regularFiles.Length > 0)
+        {
+            importedFilesDirectory = await ImportDroppedFiles(regularFiles);
+            DataContext.DataSources.InputDirectories.AddOrUpdate(importedFilesDirectory);
+        }
+
+        foreach (var videoFile in videoFiles)
+        {
+            Log.Info($"Opening dropped video in frame splitter {videoFile.FullName}");
+            await VideoSplitterWindowLauncher.Open(DataContext, videoFile, BlazorWindowAccessor, BlazorWindowFactory);
+        }
+
+        var messageParts = new List<string>();
+        if (folders.Length > 0)
+        {
+            messageParts.Add($"added {"folder".ToQuantity(folders.Length)}");
+        }
+
+        if (regularFiles.Length > 0 && importedFilesDirectory != null)
+        {
+            messageParts.Add($"imported {"file".ToQuantity(regularFiles.Length)}");
+        }
+
+        if (videoFiles.Length > 0)
+        {
+            messageParts.Add($"opened {"video".ToQuantity(videoFiles.Length)}");
+        }
+
+        if (messageParts.Count > 0)
+        {
+            NotificationService.Open(new NotificationConfig
+            {
+                NotificationType = NotificationType.Success,
+                Duration = 4,
+                Message = string.Join(", ", messageParts),
+            }).AndForget();
+        }
+    }
+
+    private async Task<DirectoryInfo> ImportDroppedFiles(IReadOnlyList<FileInfo> files)
+    {
+        var storageDirectory = DataContext.Assets.StorageDirectory ?? DataContext.StorageDirectory;
+        if (storageDirectory == null)
+        {
+            throw new InvalidOperationException("Save the project before dropping individual files into project storage.");
+        }
+
+        var localSourcesDirectory = new DirectoryInfo(Path.Combine(storageDirectory.FullName, "local-sources"));
+        var importDirectory = new DirectoryInfo(Path.Combine(localSourcesDirectory.FullName, DateTime.Now.ToString("yyyyMMdd-HHmmss")));
+        importDirectory.Create();
+
+        foreach (var file in files)
+        {
+            file.Refresh();
+            if (!file.Exists)
+            {
+                continue;
+            }
+
+            var targetFile = GetUniqueTargetFile(importDirectory, file.Name);
+            await using var source = file.Open(FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            await using var target = targetFile.Open(FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            await source.CopyToAsync(target);
+            Log.Info($"Imported dropped file {file.FullName} -> {targetFile.FullName}");
+        }
+
+        return importDirectory;
+    }
+
+    private static FileInfo GetUniqueTargetFile(DirectoryInfo directory, string fileName)
+    {
+        var safeFileName = Path.GetFileName(fileName);
+        var candidate = new FileInfo(Path.Combine(directory.FullName, safeFileName));
+        if (!candidate.Exists)
+        {
+            return candidate;
+        }
+
+        var name = Path.GetFileNameWithoutExtension(safeFileName);
+        var extension = Path.GetExtension(safeFileName);
+        for (var i = 1; i < int.MaxValue; i++)
+        {
+            candidate = new FileInfo(Path.Combine(directory.FullName, $"{name} ({i}){extension}"));
+            if (!candidate.Exists)
+            {
+                return candidate;
+            }
+        }
+
+        throw new IOException($"Failed to create unique dropped file name for {fileName}");
+    }
+
+    private static bool IsVideoFile(FileInfo file)
+    {
+        return VideoExtensions.Contains(file.Extension);
+    }
+
+    private static bool IsProjectFile(FileInfo file)
+    {
+        return string.Equals(file.Extension, ".yeproj", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string GetDataSourcePath(DirectoryInfo directoryInfo)
+    {
+        if (DataContext.StorageDirectory != null &&
+            PathUtils.IsParentDir(DataContext.StorageDirectory.FullName, directoryInfo.FullName))
+        {
+            return Path.GetRelativePath(DataContext.StorageDirectory.FullName, directoryInfo.FullName).TakeMidChars(64);
+        }
+
+        return directoryInfo.FullName.TakeMidChars(96);
+    }
+
+    private static bool DoesDataSourceExist(DirectoryInfo directoryInfo)
+    {
+        try
+        {
+            directoryInfo.Refresh();
+            return directoryInfo.Exists;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task OpenDataSource(DirectoryInfo directoryInfo)
+    {
+        try
+        {
+            directoryInfo.Refresh();
+            if (!directoryInfo.Exists)
+            {
+                ShowError($"Data source does not exist: {directoryInfo.FullName}");
+                return;
+            }
+
+            await ProcessUtils.OpenFolder(directoryInfo);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to open data source {directoryInfo.FullName}", e);
+            ShowError($"Failed to open data source: {e.Message}");
+        }
+    }
+
+    private bool IsPendingDataSourceRemoval(DirectoryInfo directoryInfo)
+    {
+        return string.Equals(pendingDataSourceRemovalPath, directoryInfo.FullName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void BeginRemoveDataSource(DirectoryInfo directoryInfo)
+    {
+        pendingDataSourceRemovalPath = directoryInfo.FullName;
+    }
+
+    private void CancelRemoveDataSource()
+    {
+        pendingDataSourceRemovalPath = null;
+    }
+
+    private Task ConfirmRemoveDataSource(DirectoryInfo directoryInfo)
+    {
+        try
+        {
+            DataContext.DataSources.InputDirectories.Remove(directoryInfo);
+            pendingDataSourceRemovalPath = null;
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void ShowError(string message)
+    {
+        NotificationService.Open(new NotificationConfig
+        {
+            NotificationType = NotificationType.Error,
+            Duration = 8,
+            Message = message,
+        }).AndForget();
+    }
+}

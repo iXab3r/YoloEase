@@ -1,8 +1,22 @@
+@using System.Globalization
+
 <div class="@RootClass">
     @if (TopBar != null)
     {
         <div class="ye-tab-topbar">
             @TopBar
+            @if (ProgressVisible)
+            {
+                <div class="@ProgressStripClass"
+                     role="progressbar"
+                     aria-label="@ProgressAriaLabel"
+                     aria-valuemin="0"
+                     aria-valuemax="100"
+                     aria-valuenow="@ProgressAriaValue"
+                     title="@ProgressTooltip">
+                    <div class="ye-tab-progress-bar" style="@ProgressStyle"></div>
+                </div>
+            }
         </div>
     }
 
@@ -27,12 +41,31 @@
     [Parameter]
     public bool ScrollBody { get; set; } = true;
 
+    [Parameter]
+    public bool ProgressVisible { get; set; }
+
+    [Parameter]
+    public bool ProgressIndeterminate { get; set; }
+
+    [Parameter]
+    public double? ProgressValue { get; set; }
+
+    [Parameter]
+    public string? ProgressText { get; set; }
+
+    [Parameter]
+    public string? ProgressValueText { get; set; }
+
+    [Parameter]
+    public string? ProgressClass { get; set; }
+
     private string RootClass => string.Join(
         " ",
         new[]
         {
             "ye-tab-page",
             TopBar == null ? null : "has-topbar",
+            ProgressVisible ? "has-tab-progress" : null,
             Class
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
@@ -44,4 +77,50 @@
             ScrollBody ? null : "ye-tab-body-no-scroll",
             BodyClass
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private string ProgressStripClass => string.Join(
+        " ",
+        new[]
+        {
+            "ye-tab-progress-strip",
+            ProgressIndeterminate || ProgressValue == null ? "is-indeterminate" : null,
+            ProgressClass
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private string ProgressStyle
+    {
+        get
+        {
+            if (ProgressIndeterminate || ProgressValue == null)
+            {
+                return string.Empty;
+            }
+
+            var value = Math.Clamp(ProgressValue.Value, 0, 100).ToString("F1", CultureInfo.InvariantCulture);
+            return $"width: {value}%;";
+        }
+    }
+
+    private string? ProgressAriaValue => ProgressIndeterminate || ProgressValue == null
+        ? null
+        : Math.Clamp(ProgressValue.Value, 0, 100).ToString("F0", CultureInfo.InvariantCulture);
+
+    private string ProgressAriaLabel => string.IsNullOrWhiteSpace(ProgressText)
+        ? "Operation progress"
+        : ProgressText.Trim();
+
+    private string ProgressTooltip
+    {
+        get
+        {
+            var text = ProgressAriaLabel;
+            var valueText = ProgressValueText;
+            if (string.IsNullOrWhiteSpace(valueText) && ProgressValue != null && !ProgressIndeterminate)
+            {
+                valueText = $"{Math.Clamp(ProgressValue.Value, 0, 100):F0}%";
+            }
+
+            return string.IsNullOrWhiteSpace(valueText) ? text : $"{text} ({valueText})";
+        }
+    }
 }

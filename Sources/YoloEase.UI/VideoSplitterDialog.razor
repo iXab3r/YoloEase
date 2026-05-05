@@ -1,93 +1,111 @@
-﻿@using System.Globalization
 @using System.Threading
+@using PoeShared.Blazor.Wpf
 @using PoeShared.Dialogs.Services
 @using PoeShared.Services
-@using YoloEase.Cvat.Shared.Services
-@using AntDesign
-@inherits YoloEaseComponent<MainWindowViewModel>
+@using YoloEase.UI.Services
+@inherits YoloEaseComponent<VideoSplitterWindowContext>
 
-@{
-    var fileToShow = VideoFile;
-}
+<BrowserShortcutSuppressor />
 
-<Modal @ref="@modalRef" Title="@("Extract frames from the video")"
-       Centered="true"
-       Visible="@IsVisible"
-       OnOk="@(() => SplitVideo())"
-       OnCancel="@(() => Hide())">
-    <div class="flex">
-        <ReactiveSection Trackers="@(new() {progressTracker.WhenAnyValue(x => x.ProgressPercent), this.WhenAnyValue(x => x.IsBusy)})">
-
-            @if (fileToShow != null && FrameCount > 0)
-            {
-                <div class="align-self-center">
-                    <small>@fileToShow.Name</small>
-
-                    <div class="alert bg-secondary">
-                        <h6>Range of frames to extract</h6>
-                        <Slider TValue="@(double)"
-                                DefaultValue="@(FrameNth)"
-                                Disabled="@IsBusy"
-                                Marks="@MarksFormFrameNth"
-                                Min="@(MarksFormFrameNth[0].Key)"
-                                Max="@(MarksFormFrameNth[1].Key)"
-                                OnChange="@(e => { FrameNth = (int) e; })"/>
-
-                        <h6>Range of frames to extract</h6>
-                        <Slider TValue="@((double, double))"
-                                DefaultValue="@((StartFrameIdx, EndFrameIdx))"
-                                Disabled="@IsBusy"
-                                Marks="@Marks"
-                                Min="@(Marks[0].Key)"
-                                Max="@(Marks[1].Key)"
-                                OnChange="@(e => { StartFrameIdx = (int) e.Item1; EndFrameIdx = (int) e.Item2; })"/>
-
-                        <h6>@($"You are going to get ~{ExpectedFrameCount} frames using these settings")</h6>
-                    </div>
-
-                    <ProgressBar Value="@progressTracker.ProgressPercent"></ProgressBar>
-                </div>
-            }
-        </ReactiveSection>
+<div class="video-splitter-window d-grid h-100 p-3 gap-3" style="grid-template-rows: auto 1fr auto;">
+    <div class="ye-tab-title-row">
+        <span class="ye-tab-title">Extract frames</span>
+        <span class="ye-tab-subtitle">@DataContext.VideoFile.Name</span>
     </div>
-</Modal>
+
+    <ReactiveSection Trackers="@(new() {progressTracker.WhenAnyValue(x => x.ProgressPercent), this.WhenAnyValue(x => x.IsBusy), this.WhenAnyValue(x => x.LoadError), this.WhenAnyValue(x => x.FrameCount)})">
+        @if (!string.IsNullOrWhiteSpace(LoadError))
+        {
+            <div class="alert alert-danger mb-0">@LoadError</div>
+        }
+        else if (FrameCount <= 0)
+        {
+            <div class="d-flex align-items-center gap-2 text-secondary">
+                <span class="spinner-border spinner-border-sm"></span>
+                <span>Reading video metadata...</span>
+            </div>
+        }
+        else
+        {
+            <div class="d-grid gap-3 align-content-start">
+                <div>
+                    <small class="text-secondary">@DataContext.VideoFile.FullName</small>
+                </div>
+
+                <div class="alert bg-secondary mb-0">
+                    <h6>Frame step</h6>
+                    <Slider TValue="@(double)"
+                            DefaultValue="@(FrameNth)"
+                            Disabled="@IsBusy"
+                            Marks="@MarksFormFrameNth"
+                            Min="@(MarksFormFrameNth[0].Key)"
+                            Max="@(MarksFormFrameNth[1].Key)"
+                            OnChange="@(e => { FrameNth = Math.Max(1, (int) e); })"/>
+
+                    <h6>Range of frames to extract</h6>
+                    <Slider TValue="@((double, double))"
+                            DefaultValue="@((StartFrameIdx, EndFrameIdx))"
+                            Disabled="@IsBusy"
+                            Marks="@Marks"
+                            Min="@(Marks[0].Key)"
+                            Max="@(Marks[1].Key)"
+                            OnChange="@(e => { StartFrameIdx = (int) e.Item1; EndFrameIdx = (int) e.Item2; })"/>
+
+                    <h6 class="mb-0">@($"You are going to get ~{ExpectedFrameCount} frames using these settings")</h6>
+                </div>
+
+                <ProgressBar Value="@progressTracker.ProgressPercent"></ProgressBar>
+            </div>
+        }
+    </ReactiveSection>
+
+    <div class="d-flex justify-content-end gap-2">
+        <ReactiveButton Class="btn btn-outline-secondary" Command="@(async () => await CloseWindow())">
+            Cancel
+        </ReactiveButton>
+        <ReactiveButton Class="@(FrameCount > 0 ? "btn btn-primary" : "btn btn-secondary")"
+                        IsEnabled="@(!IsBusy && FrameCount > 0 && string.IsNullOrWhiteSpace(LoadError))"
+                        Command="@(async () => await SplitVideo())">
+            @if (IsBusy)
+            {
+                <span class="spinner-border spinner-border-sm"></span>
+            }
+            Extract frames
+        </ReactiveButton>
+    </div>
+</div>
 
 @code {
     private static readonly Binder<VideoSplitterDialog> Binder = new();
 
     private readonly ComplexProgressTracker progressTracker = new ComplexProgressTracker();
-    private Modal modalRef;
-    private CancellationTokenSource taskTokenSource = new CancellationTokenSource();
     private readonly SharedResourceLatch isBusyLatch = new SharedResourceLatch();
+    private CancellationTokenSource taskTokenSource = new CancellationTokenSource();
     private static int FrameDivider = 60;
 
     static VideoSplitterDialog()
     {
-        Binder.Bind(x => ((double) (x.EndFrameIdx - x.StartFrameIdx) / (x.FrameNth > 0 ? x.FrameNth : 1)))
+        Binder.Bind(x => VideoFrameSelection.GetExpectedFrameCount(x.FrameCount, x.StartFrameIdx, x.EndFrameIdx, x.FrameNth))
             .To(x => x.ExpectedFrameCount);
 
         Binder.Bind(x => x.isBusyLatch.IsBusy).To(x => x.IsBusy);
 
-        Binder.Bind(x => new SliderMark[] {new(0, "0"), new(x.FrameCount, $"{x.FrameCount}")})
+        Binder.Bind(x => new SliderMark[] {new(0, "0"), new(Math.Max(0, x.FrameCount - 1), $"{Math.Max(0, x.FrameCount - 1)}")})
             .To(x => x.Marks);
 
-        Binder.Bind(x => new SliderMark[] {new(1, "1"), new(x.FrameCount / FrameDivider, $"{x.FrameCount / FrameDivider}")})
+        Binder.Bind(x => new SliderMark[] {new(1, "1"), new(Math.Max(1, x.FrameCount / FrameDivider), $"{Math.Max(1, x.FrameCount / FrameDivider)}")})
             .To(x => x.MarksFormFrameNth);
     }
 
     public VideoSplitterDialog()
     {
-
-        ChangeTrackers.Add(this.WhenAnyValue(x => x.IsVisible));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.Marks));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.IsBusy));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.LoadError));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.FrameCount));
 
         Binder.Attach(this).AddTo(Anchors);
     }
-
-    public bool IsVisible { get; private set; }
-
-    public FileInfo VideoFile { get; private set; }
 
     public int FrameCount { get; private set; }
 
@@ -101,51 +119,66 @@
 
     public bool IsBusy { get; private set; }
 
-    public SliderMark[] Marks { get; private set; }
-    public SliderMark[] MarksFormFrameNth { get; private set; }
+    public string? LoadError { get; private set; }
 
-    [Inject] public INotificationService NotificationService { get; init; }
+    public SliderMark[] Marks { get; private set; } = [new(0, "0"), new(0, "0")];
+
+    public SliderMark[] MarksFormFrameNth { get; private set; } = [new(1, "1"), new(1, "1")];
+
+    [Inject] public INotificationService NotificationService { get; init; } = default!;
+    [Inject] public IVideoFrameExtractor VideoFrameExtractor { get; init; } = default!;
+    [Inject] public IBlazorWindowAccessor BlazorWindowAccessor { get; init; } = default!;
 
     protected override async Task OnAfterFirstRenderAsync()
     {
         await base.OnAfterFirstRenderAsync();
-
-        modalRef.OkButtonProps = new ButtonProps()
-        {
-        };
+        await ProbeVideo();
     }
 
-    public async Task Show(FileInfo videoFile)
+    public override async ValueTask DisposeAsync()
     {
-        IsVisible = true;
-        VideoFile = videoFile;
-        FrameCount = VideoToFramesSplitter.GetFrameCount(VideoFile);
-        StartFrameIdx = 0;
-        EndFrameIdx = FrameCount;
-    }
-
-    private async Task Hide()
-    {
-        IsVisible = false;
-        VideoFile = default;
         taskTokenSource.Cancel(false);
+        taskTokenSource.Dispose();
+        await base.DisposeAsync();
+    }
+
+    private async Task ProbeVideo()
+    {
+        using var isBusy = isBusyLatch.Rent();
+
+        try
+        {
+            LoadError = null;
+            var probe = await VideoFrameExtractor.ProbeAsync(DataContext.VideoFile, taskTokenSource.Token);
+            FrameCount = checked((int) probe.FrameCount);
+            StartFrameIdx = 0;
+            EndFrameIdx = Math.Max(0, FrameCount - 1);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to read video metadata: {DataContext.VideoFile.FullName}", e);
+            LoadError = e.Message;
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task CloseWindow()
+    {
+        taskTokenSource.Cancel(false);
+        BlazorWindowAccessor.Window.Close();
+        return Task.CompletedTask;
     }
 
     private async Task SplitVideo()
     {
         using var isBusy = isBusyLatch.Rent();
 
-        modalRef.OkButtonProps.Disabled = true;
-        modalRef.OkButtonProps.Loading = true;
-        using var enabledOkButton = Disposable.Create(() =>
-        {
-            modalRef.OkButtonProps.Disabled = false;
-            modalRef.OkButtonProps.Loading = false;
-        });
-        StateHasChanged();
-
-        var inputFilePath = VideoFile.FullName;
-
+        var inputFilePath = DataContext.VideoFile.FullName;
+        taskTokenSource.Cancel(false);
+        taskTokenSource.Dispose();
         taskTokenSource = new CancellationTokenSource();
         progressTracker.Reset();
 
@@ -153,72 +186,84 @@
         using var progressAnchors = progressTracker.WhenAnyValue(x => x.ProgressPercent)
             .Subscribe(progress => { Log.Debug($"Decoding video file, {progress}%"); });
 
-        var inputFile = new FileInfo(inputFilePath);
-        
-        var storageDirectory = DataContext.YoloEaseProject.Assets.StorageDirectory;
-        var videoFileName = Path.GetFileNameWithoutExtension(inputFile.FullName);
-        var localSources = new DirectoryInfo(Path.Combine(storageDirectory.FullName, "local-sources"));
-        var outputDirectory = new DirectoryInfo(Path.Combine(localSources.FullName, videoFileName, $"{StartFrameIdx}-{EndFrameIdx} x{FrameNth}"));
-        
-       await Task.Run(async () =>
+        try
         {
-            await VideoToFramesSplitter.Process(
-                inputFile,
-                outputDirectory,
-                (mat, frameIdx) => frameIdx % FrameNth == 0,
+            var inputFile = new FileInfo(inputFilePath);
+            var project = DataContext.Project;
+            var storageDirectory = project.Assets.StorageDirectory ?? project.StorageDirectory;
+            if (storageDirectory == null)
+            {
+                throw new InvalidOperationException("Project storage directory is not ready yet");
+            }
+
+            var videoFileName = Path.GetFileNameWithoutExtension(inputFile.FullName);
+            var localSources = new DirectoryInfo(Path.Combine(storageDirectory.FullName, "local-sources"));
+            var outputDirectory = new DirectoryInfo(Path.Combine(localSources.FullName, videoFileName, $"{StartFrameIdx}-{EndFrameIdx} x{FrameNth}"));
+
+            await VideoFrameExtractor.ExtractAsync(
+                new VideoFrameExtractionRequest(inputFile, outputDirectory, StartFrameIdx, EndFrameIdx, FrameNth),
                 progressTracker.GetOrAdd("Decoding"),
                 taskTokenSource.Token);
-        });
 
-        var files = outputDirectory.GetFiles();
+            var files = outputDirectory.GetFiles();
+            var alreadyAddedFiles = project
+                .Assets
+                .Files
+                .Items
+                .Select(x => x.Name)
+                .ToHashSet();
 
-        var alreadyAddedFiles = DataContext.YoloEaseProject
-            .Assets
-            .Files
-            .Items
-            .Select(x => x.Name)
-            .ToHashSet();
+            var filesToRemove = files
+                .Where(x => alreadyAddedFiles.Contains(x.Name))
+                .ToArray();
 
-        var filesToRemove = files
-            .Where(x => alreadyAddedFiles.Contains(x.Name))
-            .ToArray();
-
-        foreach (var file in filesToRemove)
-        {
-            Log.Info($"Removing file that is already added: {file.FullName}");
-            file.Delete();
-        }
-
-        var filesLeft = outputDirectory.GetFiles();
-        if (filesLeft.IsEmpty())
-        {
-            NotificationService.Open(new NotificationConfig()
+            foreach (var file in filesToRemove)
             {
-                NotificationType = NotificationType.Warning,
-                Duration = 10,
-                Message = "Seems that all possible frames are already extracted from this video file, try to change settings, e.g. frame range"
-            }).AndForget();
-        }
-        else
-        {
+                Log.Info($"Removing file that is already added: {file.FullName}");
+                file.Delete();
+            }
+
+            var filesLeft = outputDirectory.GetFiles();
+            if (filesLeft.IsEmpty())
+            {
+                NotificationService.Open(new NotificationConfig
+                {
+                    NotificationType = NotificationType.Warning,
+                    Duration = 10,
+                    Message = "Seems that all possible frames are already extracted from this video file, try to change settings, e.g. frame range"
+                }).AndForget();
+                return;
+            }
+
             await ProcessUtils.OpenFolder(outputDirectory);
 
-            DataContext
-                .YoloEaseProject
+            project
                 .DataSources
                 .InputDirectories
                 .AddOrUpdate(outputDirectory);
 
-            NotificationService.Open(new NotificationConfig()
+            NotificationService.Open(new NotificationConfig
             {
                 NotificationType = NotificationType.Success,
                 Duration = 3,
                 Message = $"Processed and added {"frame".ToQuantity(filesLeft.Count())}"
             }).AndForget();
-            
-            await Hide();
+
+            await CloseWindow();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to split video file: {inputFilePath}", e);
+            NotificationService.Open(new NotificationConfig
+            {
+                NotificationType = NotificationType.Error,
+                Duration = 8,
+                Message = e.Message,
+            }).AndForget();
         }
     }
-
-
 }

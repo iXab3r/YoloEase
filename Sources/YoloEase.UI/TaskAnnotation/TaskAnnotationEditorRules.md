@@ -1,7 +1,10 @@
 # Task Annotation Editor Rules
 
-These rules describe the intended behavior of `TaskAnnotationWindow.razor`.
+These rules describe the intended behavior of `TaskAnnotation/TaskAnnotationWindow.razor`.
 Update this file whenever editor interaction rules change.
+
+The window shell should stay small: render chrome is split into `TaskAnnotationToolbar`, `TaskAnnotationCanvas`,
+`TaskAnnotationInspector`, and `TaskAnnotationBottomBar`, all driven through `ITaskAnnotationWindowContext`.
 
 ## Shape Activation
 
@@ -18,6 +21,8 @@ Update this file whenever editor interaction rules change.
 - `N` starts rectangle creation when labels exist.
 - `Ctrl+1` through `Ctrl+9` select a label by visible label index.
 - `Ctrl+N` cycles to the next visible label.
+- `Alt+1` through `Alt+9` run the corresponding auto-annotation model on the current frame.
+- `Shift+Alt+1` through `Shift+Alt+9` run the corresponding auto-annotation model on all task frames.
 - Label shortcuts apply to `EffectiveShapes` when any exist; otherwise they change the active label for the next shape.
 - `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste the effective shape set.
 - `Delete` / `Backspace` delete `EffectiveShapes`.
@@ -58,11 +63,28 @@ Update this file whenever editor interaction rules change.
 - The editor layout must keep the main canvas and bottom bar in separate CSS grid rows; only inspector label and shape lists should scroll.
 - The bottom bar shows image size plus cursor and active selection coordinates.
 - The bottom bar should stay slim enough that it does not visually compete with the canvas.
-- Task editor layout follows a GoldenLayout-style split: left main editor pane, right vertical stack of Shapes and Labels panes. Do not reintroduce the Issues tab.
+- Task editor layout follows a GoldenLayout-style split: left main editor pane, right tabbed inspector with Shapes, Labels, and Models tabs. Do not reintroduce the Issues tab.
+- The Shapes tab may filter the list by all/manual/model-generated sources, and model-generated shapes should remain visibly tagged by source.
+
+## Auto-Annotation
+
+- Auto-annotation runs are launched from the editor Models tab, toolbar menu, or `Alt+1..9` shortcuts.
+- ONNX/YoloDotNet engine initialization touches native runtime libraries and is unsafe by default. Never auto-load, pre-load, validate, warm up, or run models when the app starts, a project loads, the task window opens, the Models tab renders, settings change, autosave runs, or background refresh executes.
+- Model validation and inference require explicit user action: `Check model`, `Run current`, `Run all`, toolbar/menu commands, or the documented auto-annotation shortcuts.
+- Broken or incompatible models must stay visible with clear status/error text and must not prevent the editor or project from opening.
+- V1 runs one explicit model entry at a time. Do not add a run-all-enabled pipeline command without a product decision.
+- Custom ONNX models are copied into project storage under `models/auto-annotation/<sha256>/`.
+- `Latest` model entries resolve to the newest trained ONNX model at run time and should show the resolved file before or after validation.
+- Generated shapes use `Source = automatic:<modelEntryId>`.
+- Rerunning a model replaces only shapes from the same model entry and frame after that frame succeeds.
+- Manual edits to model-generated shapes convert them back to `Source = manual`.
+- Enabled model labels must resolve to project labels before a run. Disabled labels may stay unmapped and are skipped.
+- Autosave and editing mutations are paused during auto-annotation; one undo step should restore the pre-run state for completed frame merges.
 
 ## Persistence
 
 - Saved annotations include `Kind`, `BoundingBox`, `LabelId`, `FrameIndex`, `RotationDegrees`, and `Source`.
+- Prediction confidence and resolved model hash are session/run-summary data in v1; they are not persisted into the CVAT XML shape schema.
 - Offline task annotations use the CVAT XML shape format in `assets/training/annotations.project.{projectId}.task.{taskId}.xml`.
 - Legacy offline JSON annotation state may be read as a fallback, but new editor saves should write CVAT XML.
 - Offline CVAT XML and remote CVAT upload should preserve rotation for rectangle shapes.

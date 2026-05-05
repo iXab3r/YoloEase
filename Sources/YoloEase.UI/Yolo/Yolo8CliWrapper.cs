@@ -505,6 +505,10 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 
                 x.Add($"model=\"{settings.Model}\"", escape: false);
                 x.Add($"format=\"{settings.Format}\"", escape: false);
+                if (settings.Opset != null)
+                {
+                    x.Add($"opset=\"{settings.Opset}\"", escape: false);
+                }
             })
             .WithWorkingDirectory(outputDirectory.FullName);
 

@@ -3,12 +3,14 @@
 @using MouseEventArgs = Microsoft.AspNetCore.Components.Web.MouseEventArgs
 @inherits YoloEaseComponent<MainWindowViewModel>
 
+<BrowserShortcutSuppressor />
+
 <span class="yolo-titlebar d-flex align-items-center gap-2 flex-grow-1 w-100 min-w-0">
     <span class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
         <span class="yolo-titlebar-title d-flex align-items-center flex-grow-1 min-w-0 user-select-none"
               @onmousedown="HandleMouseDown">
             <span class="yolo-titlebar-app-icon">
-                <i class="fa fa-crosshairs"></i>
+                <img src="/assets/images/MainIcon.png" alt="" draggable="false" />
             </span>
             <span class="text-truncate">
                 @BlazorWindowAccessor.Window.Title
@@ -31,6 +33,11 @@
                             CommandEx="@DataContext.LoadProjectCommand">
                 <i class="fa fa-folder-open"></i>
                 Load
+            </ReactiveButton>
+            <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
+                            CommandEx="@DataContext.CloseProjectCommand">
+                <i class="fa fa-times-circle"></i>
+                Close project
             </ReactiveButton>
         }
     </span>

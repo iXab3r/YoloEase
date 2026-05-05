@@ -25,4 +25,10 @@
       <ProjectReference Include="..\YoloEase.UI\YoloEase.UI.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <None Update="TestData\Models\tiny-yolov8-detect-opset17.onnx">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
 </Project>

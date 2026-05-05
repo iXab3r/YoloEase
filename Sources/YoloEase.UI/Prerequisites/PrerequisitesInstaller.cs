@@ -286,14 +286,14 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
 
     public async Task<bool?> CheckPackagesAsync(CheckItem check, CancellationToken cancellationToken)
     {
-        check.AppendOutput("Checking required Python packages: cv2, numpy, matplotlib, shapely, onnx, onnxruntime, cvat_sdk, ultralytics, torch");
+        check.AppendOutput("Checking required Python packages: cv2, numpy, matplotlib, shapely, onnx, onnxruntime, ultralytics, torch");
         if (!toolchain.VenvPythonExecutable.Exists)
         {
             check.AppendOutput($"Expected at {toolchain.VenvPythonExecutable.FullName}");
             return false;
         }
 
-        const string code = "import cv2, numpy, matplotlib, shapely, onnx, onnxruntime, cvat_sdk, ultralytics, torch; print('packages ok'); print('torch', torch.__version__); print('onnx', onnx.__version__); print('onnxruntime', onnxruntime.__version__)";
+        const string code = "import cv2, numpy, matplotlib, shapely, onnx, onnxruntime, ultralytics, torch; print('packages ok'); print('torch', torch.__version__); print('onnx', onnx.__version__); print('onnxruntime', onnxruntime.__version__)";
         var result = await commandRunner.RunAsync(
             Cli.Wrap(toolchain.VenvPythonExecutable.FullName).WithArguments(x =>
             {

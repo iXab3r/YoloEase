@@ -1,5 +1,6 @@
 using YoloEase.UI.Augmentations;
 using YoloEase.UI.Services;
+using YoloEase.UI.TaskAnnotation;
 
 namespace YoloEase.UI.Core;
 
@@ -18,6 +19,7 @@ public class YoloEaseProject : RefreshableReactiveObject
         Binder.Bind(x => x.StorageDirectory).To(x => x.TrainingDataset.StorageDirectory);
         Binder.Bind(x => x.StorageDirectory).To(x => x.Assets.StorageDirectory);
         Binder.Bind(x => x.StorageDirectory).To(x => x.Predictions.StorageDirectory);
+        Binder.Bind(x => x.StorageDirectory).To(x => x.AutoAnnotation.StorageDirectory);
         Binder.Bind(x => x.StorageDirectory).To(x => x.yoloModelCachingService.StorageDirectory);
     }
 
@@ -26,6 +28,7 @@ public class YoloEaseProject : RefreshableReactiveObject
         IYoloModelCachingService yoloModelCachingService,
         IFactory<DataSourcesProvider> fileSystemAssetsAccessor,
         IFactory<Yolo8PredictAccessor> predictAccessorFactory,
+        IFactory<AutoAnnotationAccessor> autoAnnotationAccessorFactory,
         IFactory<AugmentationsAccessor, AnnotationsAccessor> augmentationsAccessorFactory,
         IFactory<LocalStorageAssetsAccessor, DataSourcesProvider> localStorageDatasetAccessorFactory,
         IFactory<Yolo8DatasetAccessor, IFileAssetsAccessor> trainingDatasetAccessorFactory,
@@ -36,6 +39,7 @@ public class YoloEaseProject : RefreshableReactiveObject
         RemoteProject = annotationProjectAccessor.AddTo(Anchors);
         DataSources = fileSystemAssetsAccessor.Create().AddTo(Anchors);
         Predictions = predictAccessorFactory.Create().AddTo(Anchors);
+        AutoAnnotation = autoAnnotationAccessorFactory.Create().AddTo(Anchors);
         Assets = localStorageDatasetAccessorFactory.Create(DataSources).AddTo(Anchors);
         TrainingDataset = trainingDatasetAccessorFactory.Create(Assets).AddTo(Anchors);
         TrainingBatch = batchAccessorFactory.Create(annotationProjectAccessor, Assets).AddTo(Anchors);
@@ -57,6 +61,8 @@ public class YoloEaseProject : RefreshableReactiveObject
     public Yolo8DatasetAccessor TrainingDataset { get; }
     
     public Yolo8PredictAccessor Predictions { get; }
+
+    public AutoAnnotationAccessor AutoAnnotation { get; }
     
     public TrainingBatchAccessor TrainingBatch { get; }
     

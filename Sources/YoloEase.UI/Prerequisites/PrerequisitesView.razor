@@ -4,7 +4,12 @@
 
 <TabPageLayout Class="@($"prerequisites-page{(Compact ? " prerequisites-page-compact" : string.Empty)}")"
                BodyClass="prerequisites-body"
-               ScrollBody="false">
+               ScrollBody="false"
+               ProgressVisible="@Track(x => x.IsOperationBusy)"
+               ProgressValue="@Track(x => x.OperationProgressPercent)"
+               ProgressText="@Track(x => x.OperationStatusText)"
+               ProgressValueText="@Track(x => x.OperationProgressText)"
+               ProgressClass="@Track(x => x.OperationProgressClass)">
     <TopBar>
         <div class="prerequisites-toolbar">
             <div class="prerequisites-heading">
@@ -65,19 +70,6 @@
     </TopBar>
 
     <ChildContent>
-        <div class="@($"prerequisites-progress-strip {DataContext.OperationProgressVisibilityClass}")"
-             role="progressbar"
-             aria-valuemin="0"
-             aria-valuemax="100"
-             aria-valuenow="@DataContext.OperationProgressPercent">
-            <div class="@($"prerequisites-progress-bar {DataContext.OperationProgressClass}")"
-                 style="@DataContext.OperationProgressStyle"></div>
-            <div class="prerequisites-progress-inline">
-                <span>@Track(x => x.OperationStatusText)</span>
-                <span>@Track(x => x.OperationProgressText)</span>
-            </div>
-        </div>
-
         <div class="prerequisites-workspace">
             <nav class="prerequisites-fast-lane" aria-label="Prerequisites">
                 @foreach (var check in DataContext.Suite.Checks.Items)

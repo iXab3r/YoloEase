@@ -19,7 +19,7 @@
                 }
                 else
                 {
-                    <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-primary" Command="@DataContext.Start">
+                    <ReactiveButton MinExecutionTime="TimeSpan.Zero" Class="btn btn-primary" IsEnabled="@(DataContext.Project != null)" Command="@DataContext.Start">
                         <i class="fa fa-play-circle"></i>
                         Start automatic training
                     </ReactiveButton>
@@ -73,6 +73,18 @@
     </TopBar>
 
     <ChildContent>
+    @if (DataContext.Project == null)
+    {
+        <div class="trainer-workspace">
+            <div class="trainer-main">
+                <div class="alert alert-secondary m-2">
+                    No project loaded.
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
     <div class="trainer-workspace">
     <div class="trainer-main">
         <div class="trainer-timeline-scroll scroller overflow-x-hidden overflow-y-auto">
@@ -113,7 +125,7 @@
         <div class="trainer-bottom-content">
             <div class="d-flex gap-2">
                 <ReactiveButton
-                    Class="@Track(x => x.Project.TrainingBatch.UnannotatedFiles.Count > 0 ? "btn btn-primary" : "btn btn-secondary")"
+                    Class="@Track(x => x.HasUnannotatedFiles ? "btn btn-primary" : "btn btn-secondary")"
                     Command="@(CreateNextTaskAndOpen)">
                     <i class="fa fa-file"></i>
                     Create Task
@@ -122,10 +134,10 @@
 
             <div class="w-25 mx-2">
                 <ProgressBar
-                    Maximum="@Track(x => x.Project.Assets.Files.Count)"
-                    Value="@Track(x => x.Project.Assets.Files.Count - x.Project.TrainingBatch.UnannotatedFiles.Count)">
+                    Maximum="@Track(x => x.ProjectFileCount)"
+                    Value="@Track(x => x.AnnotatedFileCount)">
                     <div class="mx-2">
-                        @Track(x => $"{x.Project.Assets.Files.Count - x.Project.TrainingBatch.UnannotatedFiles.Count} / {x.Project.Assets.Files.Count}")
+                        @Track(x => $"{x.AnnotatedFileCount} / {x.ProjectFileCount}")
                     </div>
                 </ProgressBar>
             </div>
@@ -139,10 +151,10 @@
 
             <div class="w-25 mx-2">
                 <ProgressBar
-                    Maximum="@Track(x => x.Project.RemoteProject.Tasks.Count)"
-                    Value="@(Track(x => x.Project.RemoteProject.Tasks.Count - x.Project.TrainingBatch.UnannotatedTasks.Count))">
+                    Maximum="@Track(x => x.ProjectTaskCount)"
+                    Value="@(Track(x => x.AnnotatedTaskCount))">
                     <div class="mx-2">
-                        @Track(x => $"{x.Project.RemoteProject.Tasks.Count - x.Project.TrainingBatch.UnannotatedTasks.Count} / {x.Project.RemoteProject.Tasks.Count}")
+                        @Track(x => $"{x.AnnotatedTaskCount} / {x.ProjectTaskCount}")
                     </div>
                 </ProgressBar>
             </div>
@@ -164,17 +176,17 @@
                     </div>
 
                     <div class="flex-grow-1">
-                        <Table TItem="AnnotationTaskInfo" DataSource="@(Track(x => (x.TaskFilter == AutomaticTrainerTaskFilter.All ? x.Project.TrainingBatch.Tasks : x.Project.TrainingBatch.UnannotatedTasks).Collection))">
+                        <Table TItem="AnnotationTaskInfo" DataSource="@(Track(x => x.FilteredTasks))">
                             <PropertyColumn Property="x => x.Name" Title="Name">
                                 @Track(context, x => x.Name)
                             </PropertyColumn>
                             <ActionColumn>
-                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id))">
+                                <ReactiveButton Class="btn btn-link" Command="@(async () => await NavigateToTask(context.Id))">
                                     <i class="fa fa-play-circle-o"></i>
                                 </ReactiveButton>
                             </ActionColumn>
                             <ActionColumn>
-                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id))">
+                                <ReactiveButton Class="btn btn-link" Command="@(async () => await NavigateToTask(context.Id))">
                                     <i class="fa fa-link"></i>
                                 </ReactiveButton>
                             </ActionColumn>
@@ -202,8 +214,8 @@
                 </div>
             </Modal>
             <ReactiveButton
-                IsEnabled="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0))"
-                Class="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0 ? "btn btn-primary" : "btn btn-secondary"))"
+                IsEnabled="@(Track(x => x.HasUnannotatedTasks))"
+                Class="@(Track(x => x.HasUnannotatedTasks ? "btn btn-primary" : "btn btn-secondary"))"
                 Command="@(async () => await OpenFirstUnfinishedTask())">
                 <i class="fa fa-link"></i>
                 Annotate Task
@@ -220,6 +232,7 @@
         </div>
     </div>
     </div>
+    }
     </ChildContent>
 </TabPageLayout>
 
@@ -240,8 +253,14 @@
     {
         try
         {
+            var project = DataContext.Project ?? throw new InvalidOperationException("No project is loaded");
             var task = await DataContext.CreateNextTask();
-            await TaskAnnotationWindowLauncher.Open(DataContext.Project, task, BlazorWindowAccessor, BlazorWindowFactory);
+            if (!ReferenceEquals(DataContext.Project, project))
+            {
+                return;
+            }
+
+            await TaskAnnotationWindowLauncher.Open(project, task, BlazorWindowAccessor, BlazorWindowFactory);
         }
         catch (Exception e)
         {
@@ -253,7 +272,8 @@
     {
         try
         {
-            var task = DataContext.Project.TrainingBatch.UnannotatedTasks.Items
+            var project = DataContext.Project ?? throw new InvalidOperationException("No project is loaded");
+            var task = project.TrainingBatch.UnannotatedTasks.Items
                 .OrderBy(x => x.CreatedAt ?? x.UpdatedAt ?? DateTimeOffset.MaxValue)
                 .ThenBy(x => x.Id)
                 .FirstOrDefault();
@@ -262,7 +282,12 @@
                 throw new InvalidOperationException("No unfinished tasks to annotate");
             }
 
-            await TaskAnnotationWindowLauncher.Open(DataContext.Project, task, BlazorWindowAccessor, BlazorWindowFactory);
+            if (!ReferenceEquals(DataContext.Project, project))
+            {
+                return;
+            }
+
+            await TaskAnnotationWindowLauncher.Open(project, task, BlazorWindowAccessor, BlazorWindowFactory);
         }
         catch (Exception e)
         {
@@ -280,13 +305,30 @@
         pendingDeleteTaskId = null;
     }
 
+    private async Task NavigateToTask(int taskId)
+    {
+        try
+        {
+            var project = DataContext.Project ?? throw new InvalidOperationException("No project is loaded");
+            await project.RemoteProject.NavigateToTask(taskId);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
     private async Task ConfirmDeleteTask(int taskId)
     {
         try
         {
-            await DataContext.Project.RemoteProject.DeleteTask(taskId);
+            var project = DataContext.Project ?? throw new InvalidOperationException("No project is loaded");
+            await project.RemoteProject.DeleteTask(taskId);
             pendingDeleteTaskId = null;
-            await DataContext.Project.Refresh();
+            if (ReferenceEquals(DataContext.Project, project))
+            {
+                await project.Refresh();
+            }
         }
         catch (Exception e)
         {

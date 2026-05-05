@@ -1,346 +1,39 @@
-@using System.Globalization
-@using System.Threading
-@using AntDesign
-@using Microsoft.JSInterop
-@using PoeShared.Blazor.Scaffolding
-@using PoeShared.Blazor.Wpf
-@using YoloEase.UI.Core
-@using YoloEase.UI.Dto
-@using YoloEase.UI.Scaffolding
-@inherits PoeShared.Blazor.BlazorReactiveComponent<TaskWindowContext>
+using System.Globalization;
+using System.Linq;
+using System.Reactive.Disposables;
+using System.Threading;
+using AntDesign;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.JSInterop;
+using PoeShared.Blazor.Scaffolding;
+using PoeShared.Blazor.Wpf;
+using PoeShared.Logging;
+using YoloEase.UI.Core;
+using YoloEase.UI.Dto;
+using YoloEase.UI.Scaffolding;
 
-<div class="task-editor-window"
-     tabindex="0"
-     @ref="editorElement"
-     @onkeydown="HandleKeyDown">
-    <main class="task-editor-main task-editor-golden-layout">
-        <aside class="task-editor-toolbar" aria-label="Annotation tools">
-            <button type="button"
-                    class="@GetToolClass(EditorTool.Select)"
-                    title="Select / pan"
-                    @onclick="() => SelectTool(EditorTool.Select)">
-                <i class="fa fa-mouse-pointer"></i>
-            </button>
-            <button type="button"
-                    class="@GetToolClass(EditorTool.Pan)"
-                    title="Pan"
-                    @onclick="() => SelectTool(EditorTool.Pan)">
-                <i class="fa fa-arrows"></i>
-            </button>
-            @if (HasLabels)
-            {
-                <button type="button"
-                        class="@GetToolClass(EditorTool.Rectangle)"
-                        title="Rectangle (N)"
-                        @onclick="StartRectangleTool">
-                    <span class="task-editor-rectangle-glyph" aria-hidden="true"></span>
-                </button>
-            }
-            <span class="task-editor-tool-separator"></span>
-            <button type="button"
-                    class="task-editor-tool"
-                    title="Cut (Ctrl+X)"
-                    disabled="@(!CanCopySelection)"
-                    @onclick="CutSelection">
-                <i class="fa fa-scissors"></i>
-            </button>
-            <button type="button"
-                    class="task-editor-tool"
-                    title="Copy (Ctrl+C)"
-                    disabled="@(!CanCopySelection)"
-                    @onclick="CopySelection">
-                <i class="fa fa-copy"></i>
-            </button>
-            <button type="button"
-                    class="@GetToolClass(EditorTool.Paste)"
-                    title="Paste (Ctrl+V)"
-                    disabled="@(!CanPasteClipboard)"
-                    @onclick="BeginPaste">
-                <i class="fa fa-clipboard"></i>
-            </button>
-            <span class="task-editor-tool-separator"></span>
-            <button type="button"
-                    class="task-editor-tool"
-                    title="Undo"
-                    disabled="@(!CanUndo)"
-                    @onclick="Undo">
-                <i class="fa fa-undo"></i>
-            </button>
-            <button type="button"
-                    class="task-editor-tool"
-                    title="Redo"
-                    disabled="@(!CanRedo)"
-                    @onclick="Redo">
-                <i class="fa fa-repeat"></i>
-            </button>
-            <button type="button"
-                    class="task-editor-tool"
-                    title="Reset zoom"
-                    @onclick="ResetZoom">
-                <i class="fa fa-compress"></i>
-            </button>
-        </aside>
+namespace YoloEase.UI.TaskAnnotation;
 
-        <section class="task-editor-canvas" aria-label="Image editor">
-            <nav class="task-editor-frame-nav" aria-label="Frame navigation">
-                <button type="button" class="task-editor-icon-button" title="First frame" @onclick="GoFirst">
-                    <i class="fa fa-fast-backward"></i>
-                </button>
-                <button type="button" class="task-editor-icon-button" title="Step back (C)" @onclick="GoPreviousStep">
-                    <i class="fa fa-step-backward"></i>
-                </button>
-                <button type="button" class="task-editor-icon-button" title="Back (D)" @onclick="GoPrevious">
-                    <i class="fa fa-chevron-left"></i>
-                </button>
-                <span class="task-editor-frame-index">@CurrentFrameLabel</span>
-                <button type="button" class="task-editor-icon-button" title="Next (F)" @onclick="GoNext">
-                    <i class="fa fa-chevron-right"></i>
-                </button>
-                <button type="button" class="task-editor-icon-button" title="Step forward (V)" @onclick="GoNextStep">
-                    <i class="fa fa-step-forward"></i>
-                </button>
-                <button type="button" class="task-editor-icon-button" title="Last frame" @onclick="GoLast">
-                    <i class="fa fa-fast-forward"></i>
-                </button>
-            </nav>
-
-            <div class="task-editor-viewport"
-                 @ref="editorViewport">
-                <div class="task-editor-image-layer" style="@ImageLayerStyle">
-                    @if (!string.IsNullOrWhiteSpace(currentImageDataUrl))
-                    {
-                        <img class="task-editor-image"
-                             src="@currentImageDataUrl"
-                             draggable="false"
-                             alt="@CurrentFileLabel" />
-                    }
-                    else
-                    {
-                        <div class="task-editor-image-placeholder">
-                            <div class="task-editor-placeholder-mark">
-                                <i class="fa fa-image"></i>
-                            </div>
-                            <div class="fw-semibold">Image unavailable</div>
-                            <div class="text-muted small">@CurrentFileLabel</div>
-                        </div>
-                    }
-
-                    @if (ShouldShowCreationGuide)
-                    {
-                        <div class="task-editor-guide task-editor-guide-vertical" style="@GetVerticalGuideStyle()"></div>
-                        <div class="task-editor-guide task-editor-guide-horizontal" style="@GetHorizontalGuideStyle()"></div>
-                        <div class="task-editor-guide-cross" style="@GetGuideCrossStyle()"></div>
-                    }
-
-                    @foreach (var shape in CurrentFrameShapes)
-                    {
-                        var label = GetLabel(shape.LabelId);
-                        <div class="@GetShapeClass(shape)"
-                             style="@GetShapeStyle(shape, label)">
-                            @if (ShouldShowShapeDetails(shape))
-                            {
-                                <span class="task-editor-shape-caption">
-                                    <span>@FormatShapeLabel(label)</span>
-                                    <span>@FormatRect(shape)</span>
-                                </span>
-                            }
-                            @if (ShouldShowShapeHandles(shape))
-                            {
-                                <span class="task-editor-rotate-stem"></span>
-                                <span class="@GetRotateHandleClass(shape)"></span>
-                                @foreach (var handle in ResizeHandles)
-                                {
-                                    <span class="@GetHandleClass(shape, handle)" style="@GetHandleStyle(handle)"></span>
-                                }
-                            }
-                        </div>
-                    }
-
-                    @if (ShouldShowSelectionBounds)
-                    {
-                        <div class="task-editor-selection-bounds" style="@GetSelectionBoundsStyle()">
-                            <span class="task-editor-rotate-stem"></span>
-                            <span class="@GetSelectionRotateHandleClass()"></span>
-                            @foreach (var handle in ResizeHandles)
-                            {
-                                <span class="@GetSelectionHandleClass(handle)" style="@GetHandleStyle(handle)"></span>
-                            }
-                        </div>
-                    }
-
-                    @foreach (var shape in PendingPasteShapes)
-                    {
-                        var label = GetLabel(shape.LabelId);
-                        <div class="@GetPasteShapeClass(shape)"
-                             style="@GetShapeStyle(shape, label)">
-                            <span class="task-editor-shape-caption">
-                                <span>@FormatShapeLabel(label)</span>
-                                <span>@FormatRect(shape)</span>
-                            </span>
-                        </div>
-                    }
-
-                    @if (draftRectangle != null)
-                    {
-                        <div class="task-editor-object-rect is-draft"
-                             style="@GetDraftShapeStyle()">
-                            <span class="task-editor-shape-size">@FormatRect(draftRectangle)</span>
-                        </div>
-                    }
-                </div>
-
-                <div class="@GetHitLayerClass()"
-                     @onmousedown="HandleCanvasMouseDown"
-                     @onmousemove="HandleCanvasMouseMove"
-                     @onmouseup="HandleCanvasMouseUp"
-                     @onmouseleave="HandleCanvasMouseLeave"
-                     @onwheel="HandleCanvasWheel"
-                     @onwheel:preventDefault="true"
-                     @oncontextmenu:preventDefault="true"></div>
-            </div>
-
-            <div class="task-editor-view-hud">
-                <span>@($"{ZoomPercent}%")</span>
-                <span>@($"x {viewOffsetX:F0}")</span>
-                <span>@($"y {viewOffsetY:F0}")</span>
-            </div>
-        </section>
-
-        <aside class="task-editor-inspector">
-            <section class="task-editor-gl-pane task-editor-shapes-pane">
-                <header class="task-editor-gl-header">
-                    <span>Shapes</span>
-                    <span class="task-editor-gl-count">@CurrentFrameShapes.Count</span>
-                </header>
-                <div class="task-editor-gl-body">
-                    @if (CurrentFrameShapes.Count <= 0)
-                    {
-                        <div class="task-editor-empty">No objects on this frame.</div>
-                    }
-                    else
-                    {
-                        <div class="task-editor-object-list">
-                            @foreach (var shape in CurrentFrameShapes)
-                            {
-                                var label = GetLabel(shape.LabelId);
-                                <button type="button"
-                                        class="@GetObjectListItemClass(shape)"
-                                        @onclick="args => SelectShapeFromList(shape.Id, args)"
-                                        @onmouseenter="() => SetHoveredShape(shape.Id)"
-                                        @onmouseleave="() => ClearHoveredShape(shape.Id)">
-                                    <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
-                                    <span class="text-truncate">@label.Name</span>
-                                    <span class="task-editor-object-meta">@FormatRect(shape)</span>
-                                </button>
-                            }
-                        </div>
-                    }
-                </div>
-            </section>
-
-            <section class="task-editor-gl-pane task-editor-label-section">
-                <header class="task-editor-gl-header">
-                    <span>Labels</span>
-                    <span class="task-editor-shortcuts">Ctrl+N · Ctrl+1..9</span>
-                </header>
-                <div class="task-editor-gl-body">
-                    @if (!HasLabels)
-                    {
-                        <div class="task-editor-empty">No labels configured.</div>
-                    }
-                    else
-                    {
-                        <div class="task-editor-label-list">
-                            @foreach (var labelInfo in OrderedLabels.Select((Label, Index) => new { Label, Index }))
-                            {
-                                var label = labelInfo.Label;
-                                <button type="button"
-                                        class="@GetLabelPillClass(label)"
-                                        @onclick="() => SelectLabel(label.Id)">
-                                    <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
-                                    <span class="text-truncate">@label.Name</span>
-                                    <span class="task-editor-label-shortcut">@GetLabelShortcutText(labelInfo.Index)</span>
-                                </button>
-                            }
-                        </div>
-                    }
-                </div>
-            </section>
-        </aside>
-    </main>
-
-    <footer class="task-editor-bottombar">
-        <div class="task-editor-job-state">
-            <span class="@GetStatusClass(TaskInfo.Status)">@FormatStatus(TaskInfo.Status)</span>
-            <span class="task-editor-bottom-meta">@($"{editorShapes.Count} objects")</span>
-            @if (isDirty)
-            {
-                <span class="task-editor-bottom-meta">Unsaved changes</span>
-            }
-            @if (isAutoSaving)
-            {
-                <span class="task-editor-bottom-meta">Saving...</span>
-            }
-            else if (lastSavedAt != null)
-            {
-                <span class="task-editor-bottom-meta">@($"Saved {lastSavedAt.Value.LocalDateTime:T}")</span>
-            }
-        </div>
-
-        <div class="task-editor-bottom-telemetry" aria-label="Editor position">
-            <span>@ImageSizeStatus</span>
-            <span>@CursorPositionStatus</span>
-            <span>@SelectionPositionStatus</span>
-        </div>
-
-        <div class="task-editor-bottom-actions">
-            @if (CanRemoveCurrentFrame)
-            {
-                <div class="btn-group btn-group-sm ye-two-step-group ye-two-step-group--wide">
-                    @if (pendingRemoveFrameIndex == EffectiveFrameIndex)
-                    {
-                        <ReactiveButton Class="btn btn-danger btn-sm ye-two-step-confirm"
-                                        Command="@(async () => await RemoveCurrentFrame())">
-                            <i class="fa fa-trash"></i>
-                            Remove image
-                        </ReactiveButton>
-                        <button type="button" class="btn btn-outline-secondary btn-sm ye-two-step-cancel" @onclick="CancelRemoveCurrentFrame">
-                            Cancel
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button" class="btn btn-outline-danger btn-sm ye-two-step-primary" @onclick="BeginRemoveCurrentFrame">
-                            <i class="fa fa-trash"></i>
-                            Remove image
-                        </button>
-                    }
-                </div>
-            }
-            <ReactiveButton Class="btn btn-primary btn-sm"
-                            Command="@(async () => await FinishJob())">
-                <i class="fa fa-check"></i>
-                Finish Job
-            </ReactiveButton>
-            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseWindow">
-                Close
-            </button>
-        </div>
-    </footer>
-</div>
-
-@code {
+public partial class TaskAnnotationWindow
+{
     private const int FrameStep = 10;
+    private const string ModelMappingHelpText =
+        "Model label mapping controls how detections from this ONNX model become project labels. Each row is one label reported by the model. Enable rows you want to import, disable rows you want to ignore, and choose the project label that should receive those detections. Enabled rows without a project label block runs so detections are not saved under the wrong class. The same ONNX model can be added multiple times with different mappings and thresholds.";
     private const double ViewPadding = 32;
     private const double MinZoom = 0.05;
     private const double MaxZoom = 24;
     private const double WheelZoomFactor = 1.12;
     private const double MinShapeSize = 4;
     private const double HitTolerancePixels = 8;
+    private const double FreeformSelectionPointSpacingPixels = 4;
     private const double RotateHandleOffset = 28;
     private const double RotationSnapDegrees = 15;
+    private const int ImagePreloadRadius = 2;
+    private const int MaxCachedImageDataUrls = 24;
     private const string JsModulePath = "./assets/js/taskAnnotationEditor.js";
     private static readonly TimeSpan AutoSaveInterval = TimeSpan.FromSeconds(5);
+    private static readonly IFluentLog Log = typeof(TaskAnnotationWindow).PrepareLogger();
 
     private static readonly EditorHandle[] ResizeHandles =
     {
@@ -354,6 +47,326 @@
         EditorHandle.West,
     };
 
+    ElementReference ITaskAnnotationWindowContext.EditorViewport
+    {
+        get => editorViewport;
+        set => editorViewport = value;
+    }
+
+    AnnotationTaskInfo ITaskAnnotationWindowContext.TaskInfo => TaskInfo;
+
+    IReadOnlyList<EditorHandle> ITaskAnnotationWindowContext.ResizeHandles => TaskAnnotationWindow.ResizeHandles;
+
+    IReadOnlyList<EditorShape> ITaskAnnotationWindowContext.CurrentFrameShapes => CurrentFrameShapes;
+
+    IReadOnlyList<EditorShape> ITaskAnnotationWindowContext.ListedCurrentFrameShapes => ListedCurrentFrameShapes;
+
+    IReadOnlyList<EditorShape> ITaskAnnotationWindowContext.PendingPasteShapes => PendingPasteShapes;
+
+    IReadOnlyList<AutoAnnotationSuggestion> ITaskAnnotationWindowContext.CurrentFrameSuggestions => VisibleCurrentFrameSuggestions;
+
+    IReadOnlyList<AnnotationLabelInfo> ITaskAnnotationWindowContext.OrderedLabels => OrderedLabels;
+
+    IReadOnlyList<AutoAnnotationModelConfig> ITaskAnnotationWindowContext.AutoAnnotationModels => AutoAnnotationModels;
+
+    AutoAnnotationModelConfig? ITaskAnnotationWindowContext.FirstRunnableModel => FirstRunnableModel;
+
+    TaskEditorInspectorTab ITaskAnnotationWindowContext.ActiveInspectorTab
+    {
+        get => activeInspectorTab;
+        set => activeInspectorTab = value;
+    }
+
+    TaskEditorSourceFilter ITaskAnnotationWindowContext.ShapeSourceFilter
+    {
+        get => shapeSourceFilter;
+        set => shapeSourceFilter = value;
+    }
+
+    EditorRect? ITaskAnnotationWindowContext.DraftRectangle => draftRectangle;
+
+    EditorRect? ITaskAnnotationWindowContext.SelectionMarquee => selectionMarquee;
+
+    IReadOnlyList<EditorPoint> ITaskAnnotationWindowContext.FreeformSelectionPoints => freeformSelectionPoints;
+
+    bool ITaskAnnotationWindowContext.HasLabels => HasLabels;
+
+    bool ITaskAnnotationWindowContext.ShouldShowCreationGuide => ShouldShowCreationGuide;
+
+    bool ITaskAnnotationWindowContext.ShouldShowSelectionBounds => ShouldShowSelectionBounds;
+
+    bool ITaskAnnotationWindowContext.CanCopySelection => CanCopySelection;
+
+    bool ITaskAnnotationWindowContext.CanPasteClipboard => CanPasteClipboard;
+
+    bool ITaskAnnotationWindowContext.CanUndo => CanUndo;
+
+    bool ITaskAnnotationWindowContext.CanRedo => CanRedo;
+
+    bool ITaskAnnotationWindowContext.CanRunAutoAnnotation => CanRunAutoAnnotation;
+
+    bool ITaskAnnotationWindowContext.IsAutoAnnotating => isAutoAnnotating;
+
+    bool ITaskAnnotationWindowContext.IsModelOperationActive => IsModelOperationActive;
+
+    bool ITaskAnnotationWindowContext.IsDirty => isDirty;
+
+    bool ITaskAnnotationWindowContext.IsAutoSaving => isAutoSaving;
+
+    bool ITaskAnnotationWindowContext.CanRemoveCurrentFrame => CanRemoveCurrentFrame;
+
+    bool ITaskAnnotationWindowContext.ShowSuggestions => showSuggestions;
+
+    bool ITaskAnnotationWindowContext.ShowLabels => showLabels;
+
+    int ITaskAnnotationWindowContext.EffectiveFrameIndex => EffectiveFrameIndex;
+
+    int ITaskAnnotationWindowContext.PendingRemoveFrameIndex => pendingRemoveFrameIndex;
+
+    int ITaskAnnotationWindowContext.ObjectCount => editorShapes.Count;
+
+    int ITaskAnnotationWindowContext.SuggestionCount => autoAnnotationSuggestions.Count;
+
+    int ITaskAnnotationWindowContext.CurrentFrameSuggestionCount => CurrentFrameSuggestionCount;
+
+    int ITaskAnnotationWindowContext.ZoomPercent => ZoomPercent;
+
+    double ITaskAnnotationWindowContext.ViewOffsetX => viewOffsetX;
+
+    double ITaskAnnotationWindowContext.ViewOffsetY => viewOffsetY;
+
+    DateTimeOffset? ITaskAnnotationWindowContext.LastSavedAt => lastSavedAt;
+
+    string? ITaskAnnotationWindowContext.CurrentImageDataUrl => currentImageDataUrl;
+
+    string ITaskAnnotationWindowContext.CurrentFrameLabel => CurrentFrameLabel;
+
+    string ITaskAnnotationWindowContext.CurrentFileLabel => CurrentFileLabel;
+
+    string ITaskAnnotationWindowContext.ImageLayerStyle => ImageLayerStyle;
+
+    string ITaskAnnotationWindowContext.ImageSizeStatus => ImageSizeStatus;
+
+    string ITaskAnnotationWindowContext.CursorPositionStatus => CursorPositionStatus;
+
+    string ITaskAnnotationWindowContext.SelectionPositionStatus => SelectionPositionStatus;
+
+    string ITaskAnnotationWindowContext.AutoAnnotationProgressLabel => AutoAnnotationProgressLabel;
+
+    string? ITaskAnnotationWindowContext.AutoAnnotationStatusText => autoAnnotationStatusText;
+
+    string ITaskAnnotationWindowContext.ModelOperationProgressText => ModelOperationProgressText;
+
+    string ITaskAnnotationWindowContext.ModelOperationProgressPercentLabel => ModelOperationProgressPercentLabel;
+
+    string? ITaskAnnotationWindowContext.PendingRemoveModelId => pendingRemoveModelId;
+
+    string ITaskAnnotationWindowContext.GetToolClass(EditorTool tool) => GetToolClass(tool);
+
+    string ITaskAnnotationWindowContext.GetSuggestionsToolClass() => GetSuggestionsToolClass();
+
+    string ITaskAnnotationWindowContext.GetLabelsToolClass() => GetLabelsToolClass();
+
+    string ITaskAnnotationWindowContext.GetInspectorTabClass(TaskEditorInspectorTab tab) => GetInspectorTabClass(tab);
+
+    string ITaskAnnotationWindowContext.GetModelOperationProgressClass() => GetModelOperationProgressClass();
+
+    string ITaskAnnotationWindowContext.GetModelOperationProgressBarStyle() => GetModelOperationProgressBarStyle();
+
+    string ITaskAnnotationWindowContext.GetSourceFilterClass(TaskEditorSourceFilter filter) => GetSourceFilterClass(filter);
+
+    string ITaskAnnotationWindowContext.GetShapeSourceClass(EditorShape shape) => GetShapeSourceClass(shape);
+
+    string ITaskAnnotationWindowContext.GetModelStatusClass(AutoAnnotationModelConfig model) => GetModelStatusClass(model);
+
+    string ITaskAnnotationWindowContext.GetMappingRowClass(AutoAnnotationLabelMapping mapping) => GetMappingRowClass(mapping);
+
+    string ITaskAnnotationWindowContext.GetHitLayerClass() => GetHitLayerClass();
+
+    string ITaskAnnotationWindowContext.GetShapeClass(EditorShape shape) => GetShapeClass(shape);
+
+    string ITaskAnnotationWindowContext.GetPasteShapeClass(EditorShape shape) => GetPasteShapeClass(shape);
+
+    string ITaskAnnotationWindowContext.GetSuggestionClass(AutoAnnotationSuggestion suggestion) => GetSuggestionClass(suggestion);
+
+    string ITaskAnnotationWindowContext.GetObjectListItemClass(EditorShape shape) => GetObjectListItemClass(shape);
+
+    string ITaskAnnotationWindowContext.GetLabelPillClass(AnnotationLabelInfo label) => GetLabelPillClass(label);
+
+    string ITaskAnnotationWindowContext.GetShapeStyle(EditorShape shape, AnnotationLabelInfo label) => GetShapeStyle(shape, label);
+
+    string ITaskAnnotationWindowContext.GetSuggestionStyle(AutoAnnotationSuggestion suggestion, AnnotationLabelInfo label) => GetSuggestionStyle(suggestion, label);
+
+    string ITaskAnnotationWindowContext.GetDraftShapeStyle() => GetDraftShapeStyle();
+
+    string ITaskAnnotationWindowContext.GetSelectionMarqueeStyle() => GetSelectionMarqueeStyle();
+
+    string ITaskAnnotationWindowContext.GetFreeformSelectionPolylinePoints() => GetFreeformSelectionPolylinePoints();
+
+    string ITaskAnnotationWindowContext.GetVerticalGuideStyle() => GetVerticalGuideStyle();
+
+    string ITaskAnnotationWindowContext.GetHorizontalGuideStyle() => GetHorizontalGuideStyle();
+
+    string ITaskAnnotationWindowContext.GetGuideCrossStyle() => GetGuideCrossStyle();
+
+    string ITaskAnnotationWindowContext.GetRotateHandleClass(EditorShape shape) => GetRotateHandleClass(shape);
+
+    string ITaskAnnotationWindowContext.GetHandleClass(EditorShape shape, EditorHandle handle) => GetHandleClass(shape, handle);
+
+    string ITaskAnnotationWindowContext.GetSelectionBoundsStyle() => GetSelectionBoundsStyle();
+
+    string ITaskAnnotationWindowContext.GetSelectionRotateHandleClass() => GetSelectionRotateHandleClass();
+
+    string ITaskAnnotationWindowContext.GetSelectionHandleClass(EditorHandle handle) => GetSelectionHandleClass(handle);
+
+    AnnotationLabelInfo ITaskAnnotationWindowContext.GetLabel(int labelId) => GetLabel(labelId);
+
+    bool ITaskAnnotationWindowContext.ShouldShowShapeDetails(EditorShape shape) => ShouldShowShapeDetails(shape);
+
+    bool ITaskAnnotationWindowContext.ShouldShowShapeHandles(EditorShape shape) => ShouldShowShapeHandles(shape);
+
+    bool ITaskAnnotationWindowContext.CanModifySuggestions => CanModifySuggestions;
+
+    bool ITaskAnnotationWindowContext.CanRunModel(AutoAnnotationModelConfig model) => CanRunModel(model);
+
+    bool ITaskAnnotationWindowContext.ShouldShowModelLoadButton(AutoAnnotationModelConfig model) => ShouldShowModelLoadButton(model);
+
+    void ITaskAnnotationWindowContext.SelectTool(EditorTool tool) => SelectTool(tool);
+
+    void ITaskAnnotationWindowContext.StartRectangleTool() => StartRectangleTool();
+
+    void ITaskAnnotationWindowContext.CutSelection() => CutSelection();
+
+    void ITaskAnnotationWindowContext.CopySelection() => CopySelection();
+
+    void ITaskAnnotationWindowContext.BeginPaste() => BeginPaste();
+
+    void ITaskAnnotationWindowContext.Undo() => Undo();
+
+    void ITaskAnnotationWindowContext.Redo() => Redo();
+
+    void ITaskAnnotationWindowContext.ResetZoom() => ResetZoom();
+
+    void ITaskAnnotationWindowContext.ToggleShowSuggestions() => ToggleShowSuggestions();
+
+    void ITaskAnnotationWindowContext.ToggleShowLabels() => ToggleShowLabels();
+
+    void ITaskAnnotationWindowContext.GoFirst() => GoFirst();
+
+    void ITaskAnnotationWindowContext.GoPreviousStep() => GoPreviousStep();
+
+    void ITaskAnnotationWindowContext.GoPrevious() => GoPrevious();
+
+    void ITaskAnnotationWindowContext.GoNext() => GoNext();
+
+    void ITaskAnnotationWindowContext.GoNextStep() => GoNextStep();
+
+    void ITaskAnnotationWindowContext.GoLast() => GoLast();
+
+    void ITaskAnnotationWindowContext.HandleCanvasMouseDown(MouseEventArgs args) => HandleCanvasMouseDown(args);
+
+    void ITaskAnnotationWindowContext.HandleCanvasMouseMove(MouseEventArgs args) => HandleCanvasMouseMove(args);
+
+    void ITaskAnnotationWindowContext.HandleCanvasMouseUp(MouseEventArgs args) => HandleCanvasMouseUp(args);
+
+    void ITaskAnnotationWindowContext.HandleCanvasMouseLeave(MouseEventArgs args) => HandleCanvasMouseLeave(args);
+
+    void ITaskAnnotationWindowContext.HandleCanvasWheel(WheelEventArgs args) => HandleCanvasWheel(args);
+
+    void ITaskAnnotationWindowContext.SelectShapeFromList(string shapeId, MouseEventArgs args) => SelectShapeFromList(shapeId, args);
+
+    void ITaskAnnotationWindowContext.SetHoveredShape(string shapeId) => SetHoveredShape(shapeId);
+
+    void ITaskAnnotationWindowContext.ClearHoveredShape(string shapeId) => ClearHoveredShape(shapeId);
+
+    void ITaskAnnotationWindowContext.SetHoveredSuggestion(string suggestionId) => SetHoveredSuggestion(suggestionId);
+
+    void ITaskAnnotationWindowContext.ClearHoveredSuggestion(string suggestionId) => ClearHoveredSuggestion(suggestionId);
+
+    void ITaskAnnotationWindowContext.SelectLabel(int labelId) => SelectLabel(labelId);
+
+    void ITaskAnnotationWindowContext.AddLatestAutoAnnotationModel() => AddLatestAutoAnnotationModel();
+
+    Task ITaskAnnotationWindowContext.ImportAutoAnnotationModel() => ImportAutoAnnotationModel();
+
+    void ITaskAnnotationWindowContext.DuplicateAutoAnnotationModel(AutoAnnotationModelConfig model) => DuplicateAutoAnnotationModel(model);
+
+    void ITaskAnnotationWindowContext.BeginRemoveAutoAnnotationModel(AutoAnnotationModelConfig model) => BeginRemoveAutoAnnotationModel(model);
+
+    void ITaskAnnotationWindowContext.CancelRemoveAutoAnnotationModel() => CancelRemoveAutoAnnotationModel();
+
+    void ITaskAnnotationWindowContext.RemoveAutoAnnotationModel(AutoAnnotationModelConfig model) => RemoveAutoAnnotationModel(model);
+
+    void ITaskAnnotationWindowContext.MoveAutoAnnotationModel(AutoAnnotationModelConfig model, int delta) => MoveAutoAnnotationModel(model, delta);
+
+    Task ITaskAnnotationWindowContext.ValidateAutoAnnotationModel(AutoAnnotationModelConfig model) => ValidateAutoAnnotationModel(model);
+
+    Task ITaskAnnotationWindowContext.RunFirstAutoAnnotation(bool allFrames) => RunFirstAutoAnnotation(allFrames);
+
+    Task ITaskAnnotationWindowContext.RunAutoAnnotation(AutoAnnotationModelConfig model, bool allFrames) => RunAutoAnnotation(model, allFrames);
+
+    void ITaskAnnotationWindowContext.CancelAutoAnnotationRun() => CancelAutoAnnotationRun();
+
+    void ITaskAnnotationWindowContext.SetModelEnabled(AutoAnnotationModelConfig model, ChangeEventArgs args) => SetModelEnabled(model, args);
+
+    void ITaskAnnotationWindowContext.SetModelCreateSuggestions(AutoAnnotationModelConfig model, ChangeEventArgs args) => SetModelCreateSuggestions(model, args);
+
+    void ITaskAnnotationWindowContext.UpdateModelConfidence(AutoAnnotationModelConfig model, ChangeEventArgs args) => UpdateModelConfidence(model, args);
+
+    void ITaskAnnotationWindowContext.UpdateModelIoU(AutoAnnotationModelConfig model, ChangeEventArgs args) => UpdateModelIoU(model, args);
+
+    void ITaskAnnotationWindowContext.SetAllModelMappingsEnabled(AutoAnnotationModelConfig model, bool isEnabled) => SetAllModelMappingsEnabled(model, isEnabled);
+
+    void ITaskAnnotationWindowContext.SetMappingEnabled(AutoAnnotationModelConfig model, AutoAnnotationLabelMapping mapping, ChangeEventArgs args) => SetMappingEnabled(model, mapping, args);
+
+    void ITaskAnnotationWindowContext.SetMappingProjectLabel(AutoAnnotationModelConfig model, AutoAnnotationLabelMapping mapping, ChangeEventArgs args) => SetMappingProjectLabel(model, mapping, args);
+
+    void ITaskAnnotationWindowContext.AcceptSuggestion(string suggestionId) => AcceptSuggestion(suggestionId);
+
+    void ITaskAnnotationWindowContext.AcceptCurrentFrameSuggestions() => AcceptCurrentFrameSuggestions();
+
+    void ITaskAnnotationWindowContext.ClearCurrentFrameSuggestions() => ClearCurrentFrameSuggestions();
+
+    void ITaskAnnotationWindowContext.BeginRemoveCurrentFrame() => BeginRemoveCurrentFrame();
+
+    void ITaskAnnotationWindowContext.CancelRemoveCurrentFrame() => CancelRemoveCurrentFrame();
+
+    Task ITaskAnnotationWindowContext.RemoveCurrentFrame() => RemoveCurrentFrame();
+
+    Task ITaskAnnotationWindowContext.FinishJob() => FinishJob();
+
+    Task ITaskAnnotationWindowContext.CloseWindow() => CloseWindow();
+
+    string ITaskAnnotationWindowContext.FormatShapeSource(EditorShape shape) => FormatShapeSource(shape);
+
+    string ITaskAnnotationWindowContext.FormatSuggestionSource(AutoAnnotationSuggestion suggestion) => FormatSuggestionSource(suggestion);
+
+    string ITaskAnnotationWindowContext.FormatSuggestionConfidence(AutoAnnotationSuggestion suggestion) => FormatSuggestionConfidence(suggestion);
+
+    string ITaskAnnotationWindowContext.FormatModelStatus(AutoAnnotationModelConfig model) => FormatModelStatus(model);
+
+    string ITaskAnnotationWindowContext.FormatResolvedModel(AutoAnnotationModelConfig model) => FormatResolvedModel(model);
+
+    string ITaskAnnotationWindowContext.FormatModelHeaderName(AutoAnnotationModelConfig model) => FormatModelHeaderName(model);
+
+    string ITaskAnnotationWindowContext.FormatModelShortcut(int modelIndex) => FormatModelShortcut(modelIndex);
+
+    string ITaskAnnotationWindowContext.ModelMappingHelpText => ModelMappingHelpText;
+
+    string ITaskAnnotationWindowContext.FormatRect(EditorShape shape) => FormatRect(shape);
+
+    string ITaskAnnotationWindowContext.FormatRect(EditorRect rectangle) => FormatRect(rectangle);
+
+    string ITaskAnnotationWindowContext.FormatShapeLabel(AnnotationLabelInfo label) => FormatShapeLabel(label);
+
+    string ITaskAnnotationWindowContext.FormatStatus(AnnotationTaskStatus status) => FormatStatus(status);
+
+    string ITaskAnnotationWindowContext.GetStatusClass(AnnotationTaskStatus status) => GetStatusClass(status);
+
+    string ITaskAnnotationWindowContext.GetHandleStyle(EditorHandle handle) => GetHandleStyle(handle);
+
+    string ITaskAnnotationWindowContext.GetLabelShortcutText(int labelIndex) => GetLabelShortcutText(labelIndex);
+
     private ElementReference editorElement;
     private ElementReference editorViewport;
     private DotNetObjectReference<TaskAnnotationWindow>? dotNetRef;
@@ -362,15 +375,21 @@
 
     private readonly List<EditorShape[]> history = new();
     private readonly Dictionary<string, string> imageDataUrlCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> imageDataUrlCacheAccess = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> selectedShapeIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<EditorPoint> freeformSelectionPoints = new();
     private readonly List<EditorShape> clipboardShapes = new();
+    private readonly List<AutoAnnotationSuggestion> autoAnnotationSuggestions = new();
     private readonly SemaphoreSlim saveLock = new(1, 1);
+    private readonly SemaphoreSlim imageDataUrlCacheLock = new(1, 1);
 
     private IReadOnlyList<AnnotationFrameInfo> frames = Array.Empty<AnnotationFrameInfo>();
     private List<EditorShape> editorShapes = new();
     private EditorRect? draftRectangle;
+    private EditorRect? selectionMarquee;
     private DragState? dragState;
     private EditorPoint? rectangleAnchor;
+    private EditorPoint? selectionAnchor;
     private EditorPoint? cursorImagePoint;
     private string? currentImageDataUrl;
     private int currentFrameIndex;
@@ -386,16 +405,35 @@
     private bool hasUserViewTransform;
     private bool isDirty;
     private bool isAutoSaving;
+    private bool isAutoAnnotating;
+    private bool isModelLoading;
+    private bool showSuggestions = true;
+    private bool showLabels = true;
     private EditorTool activeTool = EditorTool.Select;
+    private TaskEditorInspectorTab activeInspectorTab = TaskEditorInspectorTab.Shapes;
+    private TaskEditorSourceFilter shapeSourceFilter = TaskEditorSourceFilter.All;
     private string? hoveredShapeId;
+    private string? hoveredSuggestionId;
     private string? flashingShapeId;
+    private string? autoAnnotationStatusText;
+    private double? autoAnnotationProgressPercent;
+    private string? activeModelOperationId;
+    private string? modelOperationStatusText;
+    private double? modelOperationProgressPercent;
+    private AutoAnnotationRunResult? lastAutoAnnotationRunResult;
     private EditorPoint? pendingPasteCursor;
     private EditorHandle hoveredHandle = EditorHandle.None;
     private int selectionFlashVersion;
     private int editorRevision;
+    private long imageDataUrlCacheVersion;
     private int pendingRemoveFrameIndex = -1;
+    private string? pendingRemoveModelId;
     private DateTimeOffset? lastSavedAt;
     private CancellationTokenSource? autoSaveCancellationTokenSource;
+    private CancellationTokenSource? autoAnnotationCancellationTokenSource;
+    private CancellationTokenSource? imagePreloadCancellationTokenSource;
+    private SelectionGesture selectionGesture = SelectionGesture.None;
+    private bool selectionGestureAdditive;
 
     [Inject]
     protected INotificationService NotificationService { get; init; } = default!;
@@ -422,15 +460,35 @@
 
     private int ZoomPercent => (int)Math.Round(viewScale * 100);
 
-    private bool CanUndo => historyIndex > 0;
+    private bool CanUndo => !isAutoAnnotating && historyIndex > 0;
 
-    private bool CanRedo => historyIndex >= 0 && historyIndex < history.Count - 1;
+    private bool CanRedo => !isAutoAnnotating && historyIndex >= 0 && historyIndex < history.Count - 1;
 
-    private bool CanCopySelection => EffectiveShapes.Any();
+    private bool CanCopySelection => !isAutoAnnotating && EffectiveShapes.Any();
 
-    private bool CanPasteClipboard => clipboardShapes.Count > 0;
+    private bool CanPasteClipboard => !isAutoAnnotating && clipboardShapes.Count > 0;
 
-    private bool CanRemoveCurrentFrame => Project.RemoteProject.Mode == AnnotationBackendMode.Offline && FrameCount > 0 && CurrentFrame != null;
+    private bool CanRemoveCurrentFrame => !isAutoAnnotating && Project.RemoteProject.Mode == AnnotationBackendMode.Offline && FrameCount > 0 && CurrentFrame != null;
+
+    private IReadOnlyList<AutoAnnotationModelConfig> AutoAnnotationModels => Project.AutoAnnotation.Models.Items
+        .OrderBy(x => x.Order)
+        .ToArray();
+
+    private AutoAnnotationModelConfig? FirstRunnableModel => AutoAnnotationModels.FirstOrDefault(x => x.IsEnabled);
+
+    private bool CanRunAutoAnnotation => !isAutoAnnotating && HasLabels && FirstRunnableModel != null && FrameCount > 0;
+
+    private bool IsModelOperationActive => isAutoAnnotating || isModelLoading;
+
+    private string AutoAnnotationProgressLabel => autoAnnotationProgressPercent == null
+        ? "Auto-annotating..."
+        : $"Auto-annotating {autoAnnotationProgressPercent.Value:F0}%";
+
+    private string ModelOperationProgressText => modelOperationStatusText ?? "Model operation";
+
+    private string ModelOperationProgressPercentLabel => modelOperationProgressPercent == null
+        ? string.Empty
+        : $"{modelOperationProgressPercent.Value:F0}%";
 
     private IReadOnlyList<AnnotationLabelInfo> OrderedLabels => Project.RemoteProject.Labels.Items
         .OrderBy(x => x.Name)
@@ -445,6 +503,10 @@
     private IReadOnlyList<EditorShape> CurrentFrameShapes => editorShapes
         .Where(x => x.FrameIndex == EffectiveFrameIndex)
         .OrderBy(x => x.Id)
+        .ToArray();
+
+    private IReadOnlyList<EditorShape> ListedCurrentFrameShapes => CurrentFrameShapes
+        .Where(IsShapeVisibleInShapeList)
         .ToArray();
 
     private IReadOnlyList<EditorShape> SelectedCurrentFrameShapes => CurrentFrameShapes
@@ -478,6 +540,19 @@
     private IReadOnlyList<EditorShape> PendingPasteShapes => IsPasting && pendingPasteCursor != null
         ? CreatePasteShapes(pendingPasteCursor, assignNewIds: false).ToArray()
         : Array.Empty<EditorShape>();
+
+    private IReadOnlyList<AutoAnnotationSuggestion> CurrentFrameSuggestions => autoAnnotationSuggestions
+        .Where(x => x.FrameIndex == EffectiveFrameIndex)
+        .OrderBy(x => x.Id)
+        .ToArray();
+
+    private IReadOnlyList<AutoAnnotationSuggestion> VisibleCurrentFrameSuggestions => showSuggestions
+        ? CurrentFrameSuggestions
+        : Array.Empty<AutoAnnotationSuggestion>();
+
+    private int CurrentFrameSuggestionCount => autoAnnotationSuggestions.Count(x => x.FrameIndex == EffectiveFrameIndex);
+
+    private bool CanModifySuggestions => !IsModelOperationActive && CurrentFrameSuggestionCount > 0;
 
     private string ImageSizeStatus => $"Image {imageWidth}x{imageHeight}";
 
@@ -523,6 +598,12 @@
         autoSaveCancellationTokenSource?.Cancel();
         autoSaveCancellationTokenSource?.Dispose();
         autoSaveCancellationTokenSource = null;
+        autoAnnotationCancellationTokenSource?.Cancel();
+        autoAnnotationCancellationTokenSource?.Dispose();
+        autoAnnotationCancellationTokenSource = null;
+        imagePreloadCancellationTokenSource?.Cancel();
+        imagePreloadCancellationTokenSource?.Dispose();
+        imagePreloadCancellationTokenSource = null;
 
         if (resizeObserver != null)
         {
@@ -537,6 +618,7 @@
 
         dotNetRef?.Dispose();
         saveLock.Dispose();
+        imageDataUrlCacheLock.Dispose();
         await base.DisposeAsync();
     }
 
@@ -570,6 +652,8 @@
             editorShapes = (await Project.RemoteProject.RetrieveTaskAnnotations(TaskInfo.Id))
                 .Select(EditorShape.FromAnnotation)
                 .ToList();
+            autoAnnotationSuggestions.Clear();
+            hoveredSuggestionId = null;
 
             EnsureActiveLabel();
             history.Clear();
@@ -620,7 +704,7 @@
             return;
         }
 
-        if (!force && (!isDirty || dragState != null || activeTool is EditorTool.Rectangle or EditorTool.Paste))
+        if (!force && (!isDirty || isAutoAnnotating || dragState != null || selectionGesture != SelectionGesture.None || activeTool is EditorTool.Rectangle or EditorTool.Paste))
         {
             return;
         }
@@ -670,8 +754,10 @@
         currentImageDataUrl = null;
         selectedShapeIds.Clear();
         hoveredShapeId = null;
+        hoveredSuggestionId = null;
         hoveredHandle = EditorHandle.None;
         draftRectangle = null;
+        ClearSelectionGesture();
         rectangleAnchor = null;
         cursorImagePoint = null;
         dragState = null;
@@ -685,10 +771,14 @@
         {
             try
             {
-                var imageSize = ImageUtils.GetImageSize(imageFile);
-                imageWidth = imageSize.Width;
-                imageHeight = imageSize.Height;
-                currentImageDataUrl = await GetImageDataUrl(imageFile);
+                if (frame is not { Width: > 0, Height: > 0 })
+                {
+                    var imageSize = ImageUtils.GetImageSize(imageFile);
+                    imageWidth = imageSize.Width;
+                    imageHeight = imageSize.Height;
+                }
+
+                currentImageDataUrl = await GetImageDataUrl(imageFile, CancellationToken.None);
             }
             catch (Exception e)
             {
@@ -700,11 +790,18 @@
         {
             ResetZoom();
         }
+
+        StartImagePreload(EffectiveFrameIndex);
     }
 
     private FileInfo? ResolveCurrentImageFile()
     {
-        var frameName = CurrentFrame?.Name;
+        return CurrentFrame == null ? null : ResolveFrameImageFile(CurrentFrame);
+    }
+
+    private FileInfo? ResolveFrameImageFile(AnnotationFrameInfo frame)
+    {
+        var frameName = frame.Name;
         if (string.IsNullOrWhiteSpace(frameName))
         {
             return null;
@@ -722,14 +819,24 @@
             x.Name.Equals(fileName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private async Task<string> GetImageDataUrl(FileInfo imageFile)
+    private async Task<string> GetImageDataUrl(FileInfo imageFile, CancellationToken cancellationToken)
     {
-        if (imageDataUrlCache.TryGetValue(imageFile.FullName, out var cached))
+        var cacheKey = imageFile.FullName;
+        await imageDataUrlCacheLock.WaitAsync(cancellationToken);
+        try
         {
-            return cached;
+            if (imageDataUrlCache.TryGetValue(cacheKey, out var cached))
+            {
+                TouchImageDataUrlCache(cacheKey);
+                return cached;
+            }
+        }
+        finally
+        {
+            imageDataUrlCacheLock.Release();
         }
 
-        var imageBytes = await File.ReadAllBytesAsync(imageFile.FullName);
+        var imageBytes = await File.ReadAllBytesAsync(imageFile.FullName, cancellationToken);
         var mimeType = imageFile.Extension.ToLowerInvariant() switch
         {
             ".jpg" or ".jpeg" => "image/jpeg",
@@ -738,12 +845,130 @@
             _ => "image/png",
         };
         var dataUrl = $"data:{mimeType};base64,{Convert.ToBase64String(imageBytes)}";
-        imageDataUrlCache[imageFile.FullName] = dataUrl;
-        return dataUrl;
+
+        await imageDataUrlCacheLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (imageDataUrlCache.TryGetValue(cacheKey, out var cached))
+            {
+                TouchImageDataUrlCache(cacheKey);
+                return cached;
+            }
+
+            imageDataUrlCache[cacheKey] = dataUrl;
+            TouchImageDataUrlCache(cacheKey);
+            TrimImageDataUrlCache();
+            return dataUrl;
+        }
+        finally
+        {
+            imageDataUrlCacheLock.Release();
+        }
+    }
+
+    private void StartImagePreload(int centerFrameIndex)
+    {
+        imagePreloadCancellationTokenSource?.Cancel();
+        imagePreloadCancellationTokenSource?.Dispose();
+        imagePreloadCancellationTokenSource = new CancellationTokenSource();
+        PreloadAdjacentFrameImages(centerFrameIndex, imagePreloadCancellationTokenSource.Token).AndForget();
+    }
+
+    private async Task PreloadAdjacentFrameImages(int centerFrameIndex, CancellationToken cancellationToken)
+    {
+        try
+        {
+            foreach (var frameIndex in GetImagePreloadIndexes(centerFrameIndex))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var frame = frames[frameIndex];
+                var imageFile = ResolveFrameImageFile(frame);
+                if (imageFile?.Exists != true)
+                {
+                    continue;
+                }
+
+                await GetImageDataUrl(imageFile, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to preload task annotation images around frame {centerFrameIndex}", e);
+        }
+    }
+
+    private IEnumerable<int> GetImagePreloadIndexes(int centerFrameIndex)
+    {
+        for (var offset = 1; offset <= ImagePreloadRadius; offset++)
+        {
+            var next = centerFrameIndex + offset;
+            if (next >= 0 && next < FrameCount)
+            {
+                yield return next;
+            }
+
+            var previous = centerFrameIndex - offset;
+            if (previous >= 0 && previous < FrameCount)
+            {
+                yield return previous;
+            }
+        }
+    }
+
+    private void TrimImageDataUrlCache()
+    {
+        while (imageDataUrlCache.Count > MaxCachedImageDataUrls)
+        {
+            var cacheKey = imageDataUrlCacheAccess
+                .OrderBy(x => x.Value)
+                .Select(x => x.Key)
+                .FirstOrDefault();
+            if (cacheKey == null)
+            {
+                return;
+            }
+
+            imageDataUrlCache.Remove(cacheKey);
+            imageDataUrlCacheAccess.Remove(cacheKey);
+        }
+    }
+
+    private void TouchImageDataUrlCache(string cacheKey)
+    {
+        imageDataUrlCacheAccess[cacheKey] = ++imageDataUrlCacheVersion;
+    }
+
+    private void ClearImageDataUrlCache()
+    {
+        imagePreloadCancellationTokenSource?.Cancel();
+        imageDataUrlCacheLock.Wait();
+        try
+        {
+            imageDataUrlCache.Clear();
+            imageDataUrlCacheAccess.Clear();
+        }
+        finally
+        {
+            imageDataUrlCacheLock.Release();
+        }
     }
 
     private void HandleKeyDown(KeyboardEventArgs args)
     {
+        if (isAutoAnnotating)
+        {
+            if (args.Key == "Escape")
+            {
+                CancelAutoAnnotationRun();
+            }
+
+            return;
+        }
+
         if (args.Key == "Escape")
         {
             CancelActiveOperation(clearSelection: true);
@@ -752,7 +977,7 @@
 
         if (args.CtrlKey || args.MetaKey)
         {
-            var key = args.Key?.ToUpperInvariant();
+            var key = GetShortcutKey(args);
             if (key == "A")
             {
                 SelectAllCurrentFrameShapes();
@@ -811,11 +1036,22 @@
 
         if (args.AltKey)
         {
+            if (TryRunAutoAnnotationByShortcut(args.Key, args.Code, args.ShiftKey))
+            {
+                return;
+            }
+
             return;
         }
 
-        switch (args.Key?.ToUpperInvariant())
+        switch (GetShortcutKey(args))
         {
+            case "M":
+                SelectTool(EditorTool.RectangleSelection);
+                break;
+            case "L":
+                SelectTool(EditorTool.FreeformSelection);
+                break;
             case "N":
                 StartRectangleTool();
                 break;
@@ -831,11 +1067,19 @@
             case "V":
                 GoNextStep();
                 break;
+            case "R":
+                ResetZoom();
+                break;
         }
     }
 
     private void HandleCanvasMouseDown(MouseEventArgs args)
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
         editorElement.FocusAsync().AndForget();
 
         var screenPoint = new EditorPoint(args.OffsetX, args.OffsetY);
@@ -852,6 +1096,18 @@
         if (activeTool == EditorTool.Rectangle && args.Button == 0)
         {
             HandleRectangleClick(imagePoint);
+            return;
+        }
+
+        if (activeTool == EditorTool.RectangleSelection && args.Button == 0)
+        {
+            BeginRectangleSelection(imagePoint, args.CtrlKey || args.ShiftKey || args.MetaKey);
+            return;
+        }
+
+        if (activeTool == EditorTool.FreeformSelection && args.Button == 0)
+        {
+            BeginFreeformSelection(imagePoint, args.CtrlKey || args.ShiftKey || args.MetaKey);
             return;
         }
 
@@ -916,6 +1172,11 @@
 
     private void HandleCanvasMouseMove(MouseEventArgs args)
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
         var screenPoint = new EditorPoint(args.OffsetX, args.OffsetY);
         var imagePoint = ScreenToImage(screenPoint);
         cursorImagePoint = ClampToImage(imagePoint);
@@ -928,6 +1189,18 @@
         if (activeTool == EditorTool.Rectangle && rectangleAnchor != null)
         {
             draftRectangle = EditorRect.FromPoints(rectangleAnchor, cursorImagePoint).Clamp(imageWidth, imageHeight);
+        }
+
+        if (selectionGesture == SelectionGesture.Rectangle && selectionAnchor != null)
+        {
+            selectionMarquee = EditorRect.FromPoints(selectionAnchor, cursorImagePoint).Clamp(imageWidth, imageHeight);
+            return;
+        }
+
+        if (selectionGesture == SelectionGesture.Freeform && freeformSelectionPoints.Count > 0)
+        {
+            AddFreeformSelectionPoint(cursorImagePoint);
+            return;
         }
 
         if (dragState == null)
@@ -958,6 +1231,17 @@
 
     private void HandleCanvasMouseUp(MouseEventArgs args)
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
+        if (selectionGesture != SelectionGesture.None)
+        {
+            CompleteSelectionGesture();
+            return;
+        }
+
         if (dragState == null)
         {
             return;
@@ -975,6 +1259,7 @@
                 foreach (var shape in changedShapes)
                 {
                     shape.Source = "manual";
+                    shape.Confidence = null;
                 }
 
                 PushHistorySnapshot(markDirty: true);
@@ -989,6 +1274,12 @@
         hoveredShapeId = null;
         hoveredHandle = EditorHandle.None;
 
+        if (selectionGesture != SelectionGesture.None)
+        {
+            CompleteSelectionGesture();
+            return;
+        }
+
         if (dragState?.Mode == DragMode.Pan)
         {
             dragState = null;
@@ -997,6 +1288,11 @@
 
     private void HandleCanvasWheel(WheelEventArgs args)
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
         var screenPoint = new EditorPoint(args.OffsetX, args.OffsetY);
         var imagePoint = ScreenToImage(screenPoint);
         var nextScale = args.DeltaY < 0 ? viewScale * WheelZoomFactor : viewScale / WheelZoomFactor;
@@ -1061,6 +1357,165 @@
         draftRectangle = null;
         activeTool = EditorTool.Select;
         PushHistorySnapshot(markDirty: true);
+    }
+
+    private void BeginRectangleSelection(EditorPoint imagePoint, bool additive)
+    {
+        if (!IsInsideImage(imagePoint))
+        {
+            if (!additive)
+            {
+                selectedShapeIds.Clear();
+            }
+
+            ClearSelectionGesture();
+            return;
+        }
+
+        var point = ClampToImage(imagePoint);
+        selectionGesture = SelectionGesture.Rectangle;
+        selectionGestureAdditive = additive;
+        selectionAnchor = point;
+        selectionMarquee = EditorRect.FromPoints(point, point).Clamp(imageWidth, imageHeight);
+        freeformSelectionPoints.Clear();
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+        dragState = null;
+        if (!additive)
+        {
+            selectedShapeIds.Clear();
+        }
+    }
+
+    private void BeginFreeformSelection(EditorPoint imagePoint, bool additive)
+    {
+        if (!IsInsideImage(imagePoint))
+        {
+            if (!additive)
+            {
+                selectedShapeIds.Clear();
+            }
+
+            ClearSelectionGesture();
+            return;
+        }
+
+        var point = ClampToImage(imagePoint);
+        selectionGesture = SelectionGesture.Freeform;
+        selectionGestureAdditive = additive;
+        selectionAnchor = null;
+        selectionMarquee = null;
+        freeformSelectionPoints.Clear();
+        freeformSelectionPoints.Add(point);
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+        dragState = null;
+        if (!additive)
+        {
+            selectedShapeIds.Clear();
+        }
+    }
+
+    private void AddFreeformSelectionPoint(EditorPoint point)
+    {
+        if (freeformSelectionPoints.Count <= 0)
+        {
+            freeformSelectionPoints.Add(point);
+            return;
+        }
+
+        var previous = freeformSelectionPoints[^1];
+        if (Distance(previous, point) < ScreenDistanceToImageUnits(FreeformSelectionPointSpacingPixels))
+        {
+            return;
+        }
+
+        freeformSelectionPoints.Add(point);
+    }
+
+    private void CompleteSelectionGesture()
+    {
+        switch (selectionGesture)
+        {
+            case SelectionGesture.Rectangle:
+                ApplyRectangleSelection(selectionMarquee, selectionGestureAdditive);
+                break;
+            case SelectionGesture.Freeform:
+                ApplyFreeformSelection(freeformSelectionPoints, selectionGestureAdditive);
+                break;
+        }
+
+        ClearSelectionGesture();
+    }
+
+    private void ClearSelectionGesture()
+    {
+        selectionGesture = SelectionGesture.None;
+        selectionGestureAdditive = false;
+        selectionAnchor = null;
+        selectionMarquee = null;
+        freeformSelectionPoints.Clear();
+    }
+
+    private void ApplyRectangleSelection(EditorRect? selectionRectangle, bool additive)
+    {
+        if (selectionRectangle == null)
+        {
+            return;
+        }
+
+        var minimumSize = ScreenDistanceToImageUnits(2);
+        if (selectionRectangle.Width < minimumSize && selectionRectangle.Height < minimumSize)
+        {
+            return;
+        }
+
+        var shapes = CurrentFrameShapes
+            .Where(shape => Intersects(selectionRectangle, new EditorRect(shape.X, shape.Y, shape.Width, shape.Height)))
+            .ToArray();
+        ApplyShapeSelection(shapes, additive);
+    }
+
+    private void ApplyFreeformSelection(IReadOnlyList<EditorPoint> polygon, bool additive)
+    {
+        if (polygon.Count < 3)
+        {
+            return;
+        }
+
+        var bounds = EditorRect.FromPoints(
+            new EditorPoint(polygon.Min(x => x.X), polygon.Min(x => x.Y)),
+            new EditorPoint(polygon.Max(x => x.X), polygon.Max(x => x.Y)));
+        var minimumSize = ScreenDistanceToImageUnits(2);
+        if (bounds.Width < minimumSize && bounds.Height < minimumSize)
+        {
+            return;
+        }
+
+        var shapes = CurrentFrameShapes
+            .Where(shape => IsPointInsidePolygon(shape.Center, polygon))
+            .ToArray();
+        ApplyShapeSelection(shapes, additive);
+    }
+
+    private void ApplyShapeSelection(IReadOnlyList<EditorShape> shapes, bool additive)
+    {
+        if (!additive)
+        {
+            selectedShapeIds.Clear();
+        }
+
+        foreach (var shape in shapes)
+        {
+            selectedShapeIds.Add(shape.Id);
+        }
+
+        hoveredShapeId = shapes.FirstOrDefault()?.Id;
+        hoveredHandle = EditorHandle.None;
+        if (hoveredShapeId != null)
+        {
+            FlashShapeSelection(hoveredShapeId).AndForget();
+        }
     }
 
     private void MoveDraggedShapes(EditorPoint imagePoint)
@@ -1243,12 +1698,17 @@
     private async Task SetFrameIndex(int frameIndex)
     {
         currentFrameIndex = FrameCount <= 0 ? 0 : Math.Clamp(frameIndex, 0, FrameCount - 1);
-        await LoadCurrentFrameImage(resetView: true);
+        await LoadCurrentFrameImage(resetView: false);
         await InvokeAsync(StateHasChanged);
     }
 
     private void SelectTool(EditorTool tool)
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
         if (tool == EditorTool.Rectangle && !HasLabels)
         {
             tool = EditorTool.Select;
@@ -1257,12 +1717,18 @@
         activeTool = tool;
         draftRectangle = null;
         rectangleAnchor = null;
+        ClearSelectionGesture();
         dragState = null;
         pendingPasteCursor = null;
     }
 
     private void StartRectangleTool()
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
         if (!HasLabels)
         {
             return;
@@ -1292,6 +1758,7 @@
         {
             shape.LabelId = labelId;
             shape.Source = "manual";
+            shape.Confidence = null;
         }
 
         PushHistorySnapshot(markDirty: true);
@@ -1361,6 +1828,7 @@
     private void SetHoveredShape(string shapeId)
     {
         hoveredShapeId = shapeId;
+        hoveredSuggestionId = null;
     }
 
     private void ClearHoveredShape(string shapeId)
@@ -1368,6 +1836,21 @@
         if (hoveredShapeId == shapeId)
         {
             hoveredShapeId = null;
+        }
+    }
+
+    private void SetHoveredSuggestion(string suggestionId)
+    {
+        hoveredSuggestionId = suggestionId;
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+    }
+
+    private void ClearHoveredSuggestion(string suggestionId)
+    {
+        if (hoveredSuggestionId == suggestionId)
+        {
+            hoveredSuggestionId = null;
         }
     }
 
@@ -1392,10 +1875,12 @@
 
         draftRectangle = null;
         rectangleAnchor = null;
+        ClearSelectionGesture();
         dragState = null;
         activeTool = EditorTool.Select;
         pendingPasteCursor = null;
         hoveredHandle = EditorHandle.None;
+        hoveredSuggestionId = null;
 
         if (clearSelection)
         {
@@ -1406,6 +1891,11 @@
 
     private void DeleteEffectiveShape()
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
         var shapeIds = EffectiveShapes.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (shapeIds.Count <= 0)
         {
@@ -1452,6 +1942,11 @@
 
     private void BeginPaste()
     {
+        if (isAutoAnnotating)
+        {
+            return;
+        }
+
         if (!CanPasteClipboard)
         {
             return;
@@ -1517,6 +2012,7 @@
             clone.X = Clamp(shape.X + deltaX, 0, Math.Max(0, imageWidth - shape.Width));
             clone.Y = Clamp(shape.Y + deltaY, 0, Math.Max(0, imageHeight - shape.Height));
             clone.Source = "manual";
+            clone.Confidence = null;
             yield return clone;
         }
     }
@@ -1567,6 +2063,20 @@
         FitImageToView();
     }
 
+    private void ToggleShowSuggestions()
+    {
+        showSuggestions = !showSuggestions;
+        if (!showSuggestions)
+        {
+            hoveredSuggestionId = null;
+        }
+    }
+
+    private void ToggleShowLabels()
+    {
+        showLabels = !showLabels;
+    }
+
     private void FitImageToView()
     {
         var width = Math.Max(1, viewportWidth);
@@ -1582,7 +2092,7 @@
 
     private void UpdateHover(EditorPoint imagePoint)
     {
-        if (activeTool == EditorTool.Rectangle)
+        if (activeTool is EditorTool.Rectangle or EditorTool.RectangleSelection or EditorTool.FreeformSelection)
         {
             hoveredShapeId = null;
             hoveredHandle = EditorHandle.None;
@@ -1601,13 +2111,14 @@
             return EditorHit.None;
         }
 
-        var tolerance = Math.Max(3, HitTolerancePixels / Math.Max(MinZoom, viewScale));
+        var tolerance = ScreenDistanceToImageUnits(HitTolerancePixels);
+        var rotateHandleOffset = ScreenDistanceToImageUnits(RotateHandleOffset);
 
         if (includeHandles)
         {
             if (SelectedCurrentFrameShapes.Count > 1 && SelectedSelectionBounds is { } groupBounds)
             {
-                var groupHandle = groupBounds.HitHandle(imagePoint, tolerance, RotateHandleOffset);
+                var groupHandle = groupBounds.HitHandle(imagePoint, tolerance, rotateHandleOffset);
                 if (groupHandle != EditorHandle.None)
                 {
                     return new EditorHit(null, groupHandle, IsGroup: true);
@@ -1621,13 +2132,13 @@
             foreach (var shapeId in handleShapeIds)
             {
                 var handleShape = CurrentFrameShapes.FirstOrDefault(x => x.Id == shapeId);
-                var handle = handleShape?.HitHandle(imagePoint, tolerance, RotateHandleOffset) ?? EditorHandle.None;
+                var handle = handleShape?.HitHandle(imagePoint, tolerance, rotateHandleOffset) ?? EditorHandle.None;
                 if (handleShape != null && handle != EditorHandle.None)
                 {
                     return new EditorHit(handleShape, handle);
                 }
 
-                if (handleShape != null && handleShape.Contains(imagePoint, tolerance + RotateHandleOffset))
+                if (handleShape != null && handleShape.Contains(imagePoint, tolerance + rotateHandleOffset))
                 {
                     return new EditorHit(handleShape, EditorHandle.None);
                 }
@@ -1650,6 +2161,33 @@
         return new EditorPoint(
             (screenPoint.X - viewOffsetX) / viewScale,
             (screenPoint.Y - viewOffsetY) / viewScale);
+    }
+
+    private EditorPoint ImageToScreen(EditorPoint imagePoint)
+    {
+        return new EditorPoint(
+            viewOffsetX + imagePoint.X * viewScale,
+            viewOffsetY + imagePoint.Y * viewScale);
+    }
+
+    private EditorRect ImageToScreen(EditorRect imageRect)
+    {
+        var topLeft = ImageToScreen(new EditorPoint(imageRect.X, imageRect.Y));
+        return new EditorRect(
+            SnapScreenPixel(topLeft.X),
+            SnapScreenPixel(topLeft.Y),
+            Math.Max(0, SnapScreenPixel(imageRect.Width * viewScale)),
+            Math.Max(0, SnapScreenPixel(imageRect.Height * viewScale)));
+    }
+
+    private double ScreenDistanceToImageUnits(double screenPixels)
+    {
+        return Math.Max(3, screenPixels / Math.Max(MinZoom, viewScale));
+    }
+
+    private static double SnapScreenPixel(double value)
+    {
+        return Math.Round(value, MidpointRounding.AwayFromZero);
     }
 
     private EditorPoint ClampToImage(EditorPoint imagePoint)
@@ -1739,6 +2277,7 @@
         hoveredHandle = EditorHandle.None;
         draftRectangle = null;
         rectangleAnchor = null;
+        ClearSelectionGesture();
         dragState = null;
         pendingPasteCursor = null;
     }
@@ -1796,6 +2335,72 @@
         BlazorWindowAccessor.Window.Close();
     }
 
+    private void AcceptSuggestion(string suggestionId)
+    {
+        if (IsModelOperationActive)
+        {
+            return;
+        }
+
+        var suggestion = autoAnnotationSuggestions.FirstOrDefault(x => string.Equals(x.Id, suggestionId, StringComparison.OrdinalIgnoreCase));
+        if (suggestion == null)
+        {
+            return;
+        }
+
+        var shape = suggestion.ToManualShape();
+        editorShapes.Add(shape);
+        autoAnnotationSuggestions.Remove(suggestion);
+        hoveredSuggestionId = null;
+        selectedShapeIds.Clear();
+        selectedShapeIds.Add(shape.Id);
+        hoveredShapeId = shape.Id;
+        PushHistorySnapshot(markDirty: true);
+    }
+
+    private void AcceptCurrentFrameSuggestions()
+    {
+        if (IsModelOperationActive)
+        {
+            return;
+        }
+
+        var suggestions = CurrentFrameSuggestions.ToArray();
+        if (suggestions.Length <= 0)
+        {
+            return;
+        }
+
+        selectedShapeIds.Clear();
+        foreach (var suggestion in suggestions)
+        {
+            var shape = suggestion.ToManualShape();
+            editorShapes.Add(shape);
+            autoAnnotationSuggestions.Remove(suggestion);
+            selectedShapeIds.Add(shape.Id);
+        }
+
+        hoveredSuggestionId = null;
+        hoveredShapeId = selectedShapeIds.FirstOrDefault();
+        PushHistorySnapshot(markDirty: true);
+    }
+
+    private void ClearCurrentFrameSuggestions()
+    {
+        if (IsModelOperationActive)
+        {
+            return;
+        }
+
+        var removed = autoAnnotationSuggestions.RemoveAll(x => x.FrameIndex == EffectiveFrameIndex);
+        if (removed <= 0)
+        {
+            return;
+        }
+
+        hoveredSuggestionId = null;
+    }
+
     private void BeginRemoveCurrentFrame()
     {
         pendingRemoveFrameIndex = EffectiveFrameIndex;
@@ -1824,7 +2429,7 @@
                 currentFrameIndex = Math.Max(0, currentFrameIndex - 1);
             }
 
-            imageDataUrlCache.Clear();
+            ClearImageDataUrlCache();
             await LoadEditorData();
             currentFrameIndex = FrameCount <= 0 ? 0 : Math.Clamp(currentFrameIndex, 0, FrameCount - 1);
             await LoadCurrentFrameImage(resetView: true);
@@ -1836,6 +2441,501 @@
         {
             ShowError(e.Message);
         }
+    }
+
+    private void AddLatestAutoAnnotationModel()
+    {
+        Project.AutoAnnotation.AddLatestModel();
+    }
+
+    private async Task ImportAutoAnnotationModel()
+    {
+        try
+        {
+            var model = await Project.AutoAnnotation.ImportCustomModel();
+            if (model != null)
+            {
+                await ValidateAutoAnnotationModel(model);
+            }
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void DuplicateAutoAnnotationModel(AutoAnnotationModelConfig model)
+    {
+        Project.AutoAnnotation.DuplicateModel(model);
+    }
+
+    private void BeginRemoveAutoAnnotationModel(AutoAnnotationModelConfig model)
+    {
+        pendingRemoveModelId = model.Id;
+    }
+
+    private void CancelRemoveAutoAnnotationModel()
+    {
+        pendingRemoveModelId = null;
+    }
+
+    private void RemoveAutoAnnotationModel(AutoAnnotationModelConfig model)
+    {
+        if (!string.Equals(pendingRemoveModelId, model.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            pendingRemoveModelId = model.Id;
+            return;
+        }
+
+        Project.AutoAnnotation.RemoveModel(model);
+        pendingRemoveModelId = null;
+    }
+
+    private void MoveAutoAnnotationModel(AutoAnnotationModelConfig model, int delta)
+    {
+        Project.AutoAnnotation.MoveModel(model, delta);
+    }
+
+    private async Task ValidateAutoAnnotationModel(AutoAnnotationModelConfig model)
+    {
+        if (IsModelOperationActive)
+        {
+            return;
+        }
+
+        isModelLoading = true;
+        activeModelOperationId = model.Id;
+        modelOperationProgressPercent = 5;
+        modelOperationStatusText = $"Loading {model.DisplayName}...";
+        model.LastStatus = AutoAnnotationModelStatus.Running;
+        model.LastError = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            modelOperationProgressPercent = 20;
+            modelOperationStatusText = $"Resolving {model.DisplayName}...";
+            await InvokeAsync(StateHasChanged);
+            if (model.SourceKind == AutoAnnotationModelSourceKind.Latest)
+            {
+                await Project.TrainingDataset.Refresh();
+            }
+
+            modelOperationProgressPercent = 45;
+            modelOperationStatusText = $"Loading {model.DisplayName} engine...";
+            await InvokeAsync(StateHasChanged);
+            await Project.AutoAnnotation.ValidateModel(
+                model,
+                Project.TrainingDataset.TrainedModels.Items.ToArray(),
+                OrderedLabels,
+                CancellationToken.None);
+
+            modelOperationProgressPercent = 100;
+            modelOperationStatusText = $"{model.DisplayName}: {FormatModelStatus(model)}";
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception e)
+        {
+            if (model.LastStatus == AutoAnnotationModelStatus.Running)
+            {
+                model.LastStatus = AutoAnnotationModelStatus.LoadFailed;
+                model.LastError = e.Message;
+            }
+
+            modelOperationProgressPercent = 100;
+            modelOperationStatusText = $"{model.DisplayName}: failed";
+            ShowError(e.Message);
+        }
+        finally
+        {
+            isModelLoading = false;
+            activeModelOperationId = null;
+            modelOperationProgressPercent = null;
+            modelOperationStatusText = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool CanRunModel(AutoAnnotationModelConfig model)
+    {
+        return !IsModelOperationActive && HasLabels && FrameCount > 0 && model.IsEnabled;
+    }
+
+    private static bool ShouldShowModelLoadButton(AutoAnnotationModelConfig model)
+    {
+        return model.LastStatus is AutoAnnotationModelStatus.NotChecked
+            or AutoAnnotationModelStatus.MissingFile
+            or AutoAnnotationModelStatus.UnsupportedModel
+            or AutoAnnotationModelStatus.LoadFailed;
+    }
+
+    private Task RunFirstAutoAnnotation(bool allFrames)
+    {
+        return FirstRunnableModel == null ? Task.CompletedTask : RunAutoAnnotation(FirstRunnableModel, allFrames);
+    }
+
+    private async Task RunAutoAnnotation(AutoAnnotationModelConfig model, bool allFrames)
+    {
+        if (!CanRunModel(model))
+        {
+            return;
+        }
+
+        var framesToRun = BuildAutoAnnotationFrameInputs(allFrames).ToArray();
+        if (framesToRun.Length <= 0)
+        {
+            ShowError("No frame images are available for auto-annotation.");
+            return;
+        }
+
+        CancelActiveOperation(clearSelection: false);
+        selectedShapeIds.Clear();
+        autoAnnotationCancellationTokenSource?.Cancel();
+        autoAnnotationCancellationTokenSource?.Dispose();
+        autoAnnotationCancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = autoAnnotationCancellationTokenSource.Token;
+        isAutoAnnotating = true;
+        autoAnnotationProgressPercent = 0;
+        autoAnnotationStatusText = $"Auto-annotating with {model.DisplayName}...";
+        activeModelOperationId = model.Id;
+        modelOperationProgressPercent = 0;
+        modelOperationStatusText = autoAnnotationStatusText;
+        var createSuggestions = model.CreateSuggestions;
+        var mergedFrames = 0;
+        var replacedCount = 0;
+
+        try
+        {
+            if (model.SourceKind == AutoAnnotationModelSourceKind.Latest)
+            {
+                await Project.TrainingDataset.Refresh();
+            }
+
+            var progress = new Progress<AutoAnnotationRunProgress>(x =>
+            {
+                autoAnnotationProgressPercent = x.TotalFrames <= 0 ? null : 100.0 * x.CompletedFrames / x.TotalFrames;
+                autoAnnotationStatusText = $"{x.Model.DisplayName}: {x.CompletedFrames}/{x.TotalFrames} frames";
+                activeModelOperationId = x.Model.Id;
+                modelOperationProgressPercent = autoAnnotationProgressPercent;
+                modelOperationStatusText = $"{x.Model.DisplayName}: {x.Text} ({x.CompletedFrames}/{x.TotalFrames})";
+                InvokeAsync(StateHasChanged).AndForget();
+            });
+
+            var result = await Project.AutoAnnotation.Run(
+                new AutoAnnotationRunRequest
+                {
+                    Model = model,
+                    Frames = framesToRun,
+                    ProjectLabels = OrderedLabels,
+                    TrainedModels = Project.TrainingDataset.TrainedModels.Items.ToArray(),
+                },
+                progress,
+                async frameResult =>
+                {
+                    await InvokeAsync(() =>
+                    {
+                        replacedCount += createSuggestions
+                            ? MergeAutoAnnotationSuggestions(model, frameResult)
+                            : MergeAutoAnnotationFrameResult(model, frameResult);
+                        mergedFrames++;
+                        StateHasChanged();
+                    });
+                },
+                cancellationToken);
+
+            result.ReplacedCount = replacedCount;
+            lastAutoAnnotationRunResult = result;
+            autoAnnotationProgressPercent = 100;
+            if (createSuggestions)
+            {
+                model.LastRunSummary = $"{result.AddedCount} suggestions, {result.SkippedCount} skipped";
+                autoAnnotationStatusText = $"{model.DisplayName}: suggested {result.AddedCount}, replaced {result.ReplacedCount}, skipped {result.SkippedCount}";
+            }
+            else
+            {
+                autoAnnotationStatusText = $"{model.DisplayName}: added {result.AddedCount}, replaced {result.ReplacedCount}, skipped {result.SkippedCount}";
+            }
+
+            modelOperationProgressPercent = 100;
+            modelOperationStatusText = autoAnnotationStatusText;
+            if (mergedFrames > 0 && createSuggestions)
+            {
+                FocusNewAutoAnnotationSuggestionsForCurrentFrame(model);
+            }
+            else if (mergedFrames > 0)
+            {
+                PushHistorySnapshot(markDirty: true);
+                SelectNewAutoAnnotationsForCurrentFrame(model);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            autoAnnotationStatusText = $"{model.DisplayName}: canceled after {mergedFrames} frames";
+            modelOperationStatusText = autoAnnotationStatusText;
+            if (mergedFrames > 0 && !createSuggestions)
+            {
+                PushHistorySnapshot(markDirty: true);
+            }
+        }
+        catch (Exception e)
+        {
+            autoAnnotationStatusText = $"{model.DisplayName}: failed - {e.Message}";
+            modelOperationProgressPercent = 100;
+            modelOperationStatusText = $"{model.DisplayName}: failed";
+            if (mergedFrames > 0 && !createSuggestions)
+            {
+                PushHistorySnapshot(markDirty: true);
+            }
+            ShowError(e.Message);
+        }
+        finally
+        {
+            isAutoAnnotating = false;
+            autoAnnotationProgressPercent = null;
+            activeModelOperationId = null;
+            modelOperationProgressPercent = null;
+            modelOperationStatusText = null;
+            autoAnnotationCancellationTokenSource?.Dispose();
+            autoAnnotationCancellationTokenSource = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private IEnumerable<AutoAnnotationFrameInput> BuildAutoAnnotationFrameInputs(bool allFrames)
+    {
+        var indexes = allFrames
+            ? Enumerable.Range(0, FrameCount)
+            : new[] { EffectiveFrameIndex };
+
+        foreach (var frameIndex in indexes)
+        {
+            var frame = frames[frameIndex];
+            var imageFile = ResolveFrameImageFile(frame);
+            if (imageFile?.Exists != true)
+            {
+                continue;
+            }
+
+            yield return new AutoAnnotationFrameInput(
+                frameIndex,
+                imageFile,
+                frame.Width > 0 ? frame.Width : imageWidth,
+                frame.Height > 0 ? frame.Height : imageHeight);
+        }
+    }
+
+    private int MergeAutoAnnotationFrameResult(AutoAnnotationModelConfig model, AutoAnnotationFrameResult frameResult)
+    {
+        var source = AutoAnnotationAccessor.CreateShapeSource(model.Id);
+        var replaced = editorShapes.RemoveAll(x =>
+            x.FrameIndex == frameResult.FrameIndex &&
+            string.Equals(x.Source, source, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var prediction in frameResult.Predictions)
+        {
+            editorShapes.Add(new EditorShape
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Kind = CvatAnnotationShapeKind.Rectangle,
+                FrameIndex = prediction.FrameIndex,
+                LabelId = prediction.ProjectLabelId,
+                X = prediction.BoundingBox.X,
+                Y = prediction.BoundingBox.Y,
+                Width = prediction.BoundingBox.Width,
+                Height = prediction.BoundingBox.Height,
+                RotationDegrees = 0,
+                Source = prediction.Source,
+                Confidence = prediction.Confidence,
+            });
+        }
+
+        return replaced;
+    }
+
+    private int MergeAutoAnnotationSuggestions(AutoAnnotationModelConfig model, AutoAnnotationFrameResult frameResult)
+    {
+        return AutoAnnotationSuggestionOperations.ReplaceFrameSuggestions(autoAnnotationSuggestions, model, frameResult);
+    }
+
+    private void SelectNewAutoAnnotationsForCurrentFrame(AutoAnnotationModelConfig model)
+    {
+        var source = AutoAnnotationAccessor.CreateShapeSource(model.Id);
+        var shapes = CurrentFrameShapes
+            .Where(x => string.Equals(x.Source, source, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (shapes.Length <= 0)
+        {
+            return;
+        }
+
+        selectedShapeIds.Clear();
+        foreach (var shape in shapes)
+        {
+            selectedShapeIds.Add(shape.Id);
+        }
+
+        hoveredShapeId = shapes[0].Id;
+        FlashShapeSelection(shapes[0].Id).AndForget();
+    }
+
+    private void FocusNewAutoAnnotationSuggestionsForCurrentFrame(AutoAnnotationModelConfig model)
+    {
+        var suggestions = CurrentFrameSuggestions
+            .Where(x => string.Equals(x.ModelEntryId, model.Id, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (suggestions.Length <= 0)
+        {
+            return;
+        }
+
+        hoveredSuggestionId = suggestions[0].Id;
+        showSuggestions = true;
+    }
+
+    private void CancelAutoAnnotationRun()
+    {
+        autoAnnotationCancellationTokenSource?.Cancel();
+    }
+
+    private bool TryRunAutoAnnotationByShortcut(string? key, string? code, bool allFrames)
+    {
+        var digit = GetShortcutDigit(key, code);
+        if (digit == null)
+        {
+            return false;
+        }
+
+        var index = digit.Value - 1;
+        if (index < 0)
+        {
+            return false;
+        }
+
+        var models = AutoAnnotationModels;
+        if (index >= models.Count)
+        {
+            return true;
+        }
+
+        RunAutoAnnotation(models[index], allFrames).AndForget();
+        return true;
+    }
+
+    private static int? GetShortcutDigit(string? key, string? code)
+    {
+        if (key is { Length: 1 } && char.IsDigit(key[0]))
+        {
+            return key[0] - '0';
+        }
+
+        if (!string.IsNullOrWhiteSpace(code))
+        {
+            if (code.StartsWith("Digit", StringComparison.OrdinalIgnoreCase) &&
+                code.Length == "Digit".Length + 1 &&
+                char.IsDigit(code[^1]))
+            {
+                return code[^1] - '0';
+            }
+
+            if (code.StartsWith("Numpad", StringComparison.OrdinalIgnoreCase) &&
+                code.Length == "Numpad".Length + 1 &&
+                char.IsDigit(code[^1]))
+            {
+                return code[^1] - '0';
+            }
+        }
+
+        return null;
+    }
+
+    private static string? GetShortcutKey(KeyboardEventArgs args)
+    {
+        var key = args.Key?.ToUpperInvariant();
+        if (key is { Length: 1 } && (char.IsAsciiLetter(key[0]) || char.IsDigit(key[0])))
+        {
+            return key;
+        }
+
+        return GetShortcutKeyFromCode(args.Code) ?? key;
+    }
+
+    private static string? GetShortcutKeyFromCode(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+        {
+            return null;
+        }
+
+        if (code.StartsWith("Key", StringComparison.OrdinalIgnoreCase) &&
+            code.Length == "Key".Length + 1 &&
+            char.IsLetter(code[^1]))
+        {
+            return char.ToUpperInvariant(code[^1]).ToString();
+        }
+
+        if (code.StartsWith("Digit", StringComparison.OrdinalIgnoreCase) &&
+            code.Length == "Digit".Length + 1 &&
+            char.IsDigit(code[^1]))
+        {
+            return code[^1].ToString();
+        }
+
+        if (code.StartsWith("Numpad", StringComparison.OrdinalIgnoreCase) &&
+            code.Length == "Numpad".Length + 1 &&
+            char.IsDigit(code[^1]))
+        {
+            return code[^1].ToString();
+        }
+
+        return null;
+    }
+
+    private void SetModelEnabled(AutoAnnotationModelConfig model, ChangeEventArgs args)
+    {
+        model.IsEnabled = args.Value is bool value && value;
+    }
+
+    private void SetModelCreateSuggestions(AutoAnnotationModelConfig model, ChangeEventArgs args)
+    {
+        model.CreateSuggestions = args.Value is bool value && value;
+    }
+
+    private void UpdateModelConfidence(AutoAnnotationModelConfig model, ChangeEventArgs args)
+    {
+        model.ConfidenceThresholdPercentage = ParseFloat(args.Value, model.ConfidenceThresholdPercentage);
+    }
+
+    private void UpdateModelIoU(AutoAnnotationModelConfig model, ChangeEventArgs args)
+    {
+        model.IoUThresholdPercentage = ParseFloat(args.Value, model.IoUThresholdPercentage);
+    }
+
+    private void SetAllModelMappingsEnabled(AutoAnnotationModelConfig model, bool isEnabled)
+    {
+        foreach (var mapping in model.LabelMappings.Items)
+        {
+            mapping.IsEnabled = isEnabled;
+        }
+    }
+
+    private void SetMappingEnabled(AutoAnnotationModelConfig model, AutoAnnotationLabelMapping mapping, ChangeEventArgs args)
+    {
+        mapping.IsEnabled = args.Value is bool value && value;
+    }
+
+    private void SetMappingProjectLabel(AutoAnnotationModelConfig model, AutoAnnotationLabelMapping mapping, ChangeEventArgs args)
+    {
+        var labelIdText = args.Value?.ToString();
+        if (!int.TryParse(labelIdText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var labelId))
+        {
+            mapping.ProjectLabelId = null;
+            mapping.ProjectLabelName = null;
+            return;
+        }
+
+        var label = OrderedLabels.FirstOrDefault(x => x.Id == labelId);
+        mapping.ProjectLabelId = label?.Id;
+        mapping.ProjectLabelName = label?.Name;
     }
 
     private void EnsureActiveLabel()
@@ -1864,6 +2964,168 @@
         return tool == activeTool ? "task-editor-tool is-active" : "task-editor-tool";
     }
 
+    private string GetSuggestionsToolClass()
+    {
+        var classes = "task-editor-tool";
+        if (showSuggestions)
+        {
+            classes += " is-active";
+        }
+
+        if (autoAnnotationSuggestions.Count > 0)
+        {
+            classes += " has-suggestions";
+        }
+
+        return classes;
+    }
+
+    private string GetLabelsToolClass()
+    {
+        return showLabels ? "task-editor-tool is-active" : "task-editor-tool";
+    }
+
+    private string GetInspectorTabClass(TaskEditorInspectorTab tab)
+    {
+        return activeInspectorTab == tab ? "task-editor-tab is-active" : "task-editor-tab";
+    }
+
+    private string GetModelOperationProgressClass()
+    {
+        var classes = "task-editor-model-progress";
+        if (IsModelOperationActive)
+        {
+            classes += " is-active";
+        }
+        else
+        {
+            classes += " is-hidden";
+        }
+
+        if (modelOperationProgressPercent is >= 100)
+        {
+            classes += " is-complete";
+        }
+
+        return classes;
+    }
+
+    private string GetModelOperationProgressBarStyle()
+    {
+        var progress = Math.Clamp(modelOperationProgressPercent ?? 0, 0, 100);
+        return $"width:{progress.ToString("F0", CultureInfo.InvariantCulture)}%;";
+    }
+
+    private string GetSourceFilterClass(TaskEditorSourceFilter filter)
+    {
+        return shapeSourceFilter == filter ? "is-active" : string.Empty;
+    }
+
+    private bool IsShapeVisibleInShapeList(EditorShape shape)
+    {
+        return shapeSourceFilter switch
+        {
+            TaskEditorSourceFilter.Manual => !AutoAnnotationAccessor.IsAutomaticSource(shape.Source),
+            TaskEditorSourceFilter.Automatic => AutoAnnotationAccessor.IsAutomaticSource(shape.Source),
+            _ => true,
+        };
+    }
+
+    private string GetShapeSourceClass(EditorShape shape)
+    {
+        return AutoAnnotationAccessor.IsAutomaticSource(shape.Source)
+            ? "task-editor-source-pill is-model"
+            : "task-editor-source-pill";
+    }
+
+    private string FormatShapeSource(EditorShape shape)
+    {
+        var modelEntryId = AutoAnnotationAccessor.GetModelEntryIdFromSource(shape.Source);
+        if (modelEntryId == null)
+        {
+            return "Manual";
+        }
+
+        var model = AutoAnnotationModels.FirstOrDefault(x => x.Id.Equals(modelEntryId, StringComparison.OrdinalIgnoreCase));
+        var confidence = shape.Confidence == null ? string.Empty : $" {shape.Confidence.Value * 100:F0}%";
+        return model == null ? $"Unknown{confidence}" : $"{model.DisplayName}{confidence}";
+    }
+
+    private string FormatSuggestionSource(AutoAnnotationSuggestion suggestion)
+    {
+        var model = AutoAnnotationModels.FirstOrDefault(x => x.Id.Equals(suggestion.ModelEntryId, StringComparison.OrdinalIgnoreCase));
+        var modelName = model?.DisplayName ?? suggestion.ModelDisplayName;
+        return string.IsNullOrWhiteSpace(modelName) ? "Suggestion" : $"{modelName} suggestion";
+    }
+
+    private static string FormatSuggestionConfidence(AutoAnnotationSuggestion suggestion)
+    {
+        return $"{suggestion.Confidence * 100:F0}%";
+    }
+
+    private string GetModelStatusClass(AutoAnnotationModelConfig model)
+    {
+        return model.LastStatus switch
+        {
+            AutoAnnotationModelStatus.Ready => "task-editor-model-status is-ready",
+            AutoAnnotationModelStatus.Running => "task-editor-model-status is-running",
+            AutoAnnotationModelStatus.NeedsMapping => "task-editor-model-status is-warning",
+            AutoAnnotationModelStatus.NotChecked => "task-editor-model-status",
+            _ => "task-editor-model-status is-error",
+        };
+    }
+
+    private static string FormatModelStatus(AutoAnnotationModelConfig model)
+    {
+        return model.LastStatus switch
+        {
+            AutoAnnotationModelStatus.NotChecked => "Not checked",
+            AutoAnnotationModelStatus.Ready => "Ready",
+            AutoAnnotationModelStatus.NeedsMapping => "Needs mapping",
+            AutoAnnotationModelStatus.MissingFile => "Missing file",
+            AutoAnnotationModelStatus.UnsupportedModel => "Unsupported",
+            AutoAnnotationModelStatus.LoadFailed => "Load failed",
+            AutoAnnotationModelStatus.LastRunFailed => "Run failed",
+            AutoAnnotationModelStatus.Running => "Running",
+            _ => model.LastStatus.ToString(),
+        };
+    }
+
+    private static string FormatResolvedModel(AutoAnnotationModelConfig model)
+    {
+        if (string.IsNullOrWhiteSpace(model.LastResolvedModelPath))
+        {
+            return model.SourceKind == AutoAnnotationModelSourceKind.Latest ? "Latest not resolved yet" : "Not resolved yet";
+        }
+
+        var hash = string.IsNullOrWhiteSpace(model.LastResolvedModelHash)
+            ? string.Empty
+            : $" · {model.LastResolvedModelHash[..Math.Min(8, model.LastResolvedModelHash.Length)]}";
+        return $"{Path.GetFileName(model.LastResolvedModelPath)}{hash}";
+    }
+
+    private static string FormatModelHeaderName(AutoAnnotationModelConfig model)
+    {
+        return (string.IsNullOrWhiteSpace(model.DisplayName) ? "Model" : model.DisplayName).TakeMidChars(16);
+    }
+
+    private static string FormatModelShortcut(int modelIndex)
+    {
+        return modelIndex is >= 0 and < 9 ? $"Alt+{modelIndex + 1}" : $"{modelIndex + 1}";
+    }
+
+    private string GetMappingRowClass(AutoAnnotationLabelMapping mapping)
+    {
+        if (!mapping.IsEnabled)
+        {
+            return "task-editor-model-map-row is-disabled";
+        }
+
+        var hasProjectLabel = mapping.ProjectLabelId != null &&
+                              OrderedLabels.Any(x => x.Id == mapping.ProjectLabelId);
+        return hasProjectLabel ? "task-editor-model-map-row" : "task-editor-model-map-row is-error";
+    }
+
     private string GetHitLayerClass()
     {
         var classes = "task-editor-hit-layer";
@@ -1887,9 +3149,14 @@
             return $"{classes} is-rotate";
         }
 
-        if (activeTool == EditorTool.Rectangle)
+        if (activeTool == EditorTool.Rectangle || activeTool == EditorTool.RectangleSelection)
         {
             return $"{classes} is-crosshair";
+        }
+
+        if (activeTool == EditorTool.FreeformSelection)
+        {
+            return $"{classes} is-lasso";
         }
 
         if (activeTool == EditorTool.Paste)
@@ -1913,6 +3180,11 @@
     private string GetShapeClass(EditorShape shape)
     {
         var classes = "task-editor-object-rect";
+        if (AutoAnnotationAccessor.IsAutomaticSource(shape.Source))
+        {
+            classes += " is-model";
+        }
+
         if (selectedShapeIds.Contains(shape.Id))
         {
             classes += " is-selected";
@@ -1936,14 +3208,26 @@
         return $"{GetShapeClass(shape)} is-paste-preview";
     }
 
-    private string GetObjectListItemClass(EditorShape shape)
+    private string GetSuggestionClass(AutoAnnotationSuggestion suggestion)
     {
-        if (selectedShapeIds.Contains(shape.Id))
+        var classes = "task-editor-suggestion";
+        if (suggestion.Id == hoveredSuggestionId)
         {
-            return "task-editor-object-row is-selected";
+            classes += " is-hovered";
         }
 
-        return shape.Id == hoveredShapeId ? "task-editor-object-row is-hovered" : "task-editor-object-row";
+        return classes;
+    }
+
+    private string GetObjectListItemClass(EditorShape shape)
+    {
+        var sourceClass = AutoAnnotationAccessor.IsAutomaticSource(shape.Source) ? " is-model" : string.Empty;
+        if (selectedShapeIds.Contains(shape.Id))
+        {
+            return $"task-editor-object-row is-selected{sourceClass}";
+        }
+
+        return shape.Id == hoveredShapeId ? $"task-editor-object-row is-hovered{sourceClass}" : $"task-editor-object-row{sourceClass}";
     }
 
     private string GetLabelPillClass(AnnotationLabelInfo label)
@@ -1972,59 +3256,130 @@
 
     private string GetShapeStyle(EditorShape shape, AnnotationLabelInfo label)
     {
+        var screenRect = ImageToScreen(new EditorRect(shape.X, shape.Y, shape.Width, shape.Height));
         return string.Format(
             CultureInfo.InvariantCulture,
             "left:{0}px;top:{1}px;width:{2}px;height:{3}px;border-color:{4};background:{5};--shape-color:{4};--shape-caption-scale:{6};transform:rotate({7}deg);",
-            shape.X,
-            shape.Y,
-            shape.Width,
-            shape.Height,
+            screenRect.X,
+            screenRect.Y,
+            screenRect.Width,
+            screenRect.Height,
             label.Color,
             ToRgba(label.Color, 0.22),
             GetShapeCaptionScale(),
             shape.RotationDegrees);
     }
 
+    private string GetSuggestionStyle(AutoAnnotationSuggestion suggestion, AnnotationLabelInfo label)
+    {
+        var box = suggestion.BoundingBox;
+        var screenRect = ImageToScreen(new EditorRect(box.X, box.Y, box.Width, box.Height));
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "left:{0}px;top:{1}px;width:{2}px;height:{3}px;border-color:{4};background:{5};--shape-color:{4};--shape-caption-scale:{6};",
+            screenRect.X,
+            screenRect.Y,
+            screenRect.Width,
+            screenRect.Height,
+            label.Color,
+            ToRgba(label.Color, 0.12),
+            GetShapeCaptionScale());
+    }
+
     private string GetDraftShapeStyle()
     {
+        var screenRect = draftRectangle == null ? null : ImageToScreen(draftRectangle);
         return draftRectangle == null
             ? string.Empty
             : string.Format(
                 CultureInfo.InvariantCulture,
                 "left:{0}px;top:{1}px;width:{2}px;height:{3}px;--shape-caption-scale:{4};",
-                draftRectangle.X,
-                draftRectangle.Y,
-                draftRectangle.Width,
-                draftRectangle.Height,
+                screenRect!.X,
+                screenRect.Y,
+                screenRect.Width,
+                screenRect.Height,
                 GetShapeCaptionScale());
     }
 
-    private double GetShapeCaptionScale()
+    private string GetSelectionMarqueeStyle()
     {
-        return viewScale < 1
-            ? 1 / Math.Sqrt(Math.Max(viewScale, MinZoom))
-            : 1;
+        var screenRect = selectionMarquee == null ? null : ImageToScreen(selectionMarquee);
+        return selectionMarquee == null
+            ? string.Empty
+            : string.Format(
+                CultureInfo.InvariantCulture,
+                "left:{0}px;top:{1}px;width:{2}px;height:{3}px;",
+                screenRect!.X,
+                screenRect.Y,
+                screenRect.Width,
+                screenRect.Height);
+    }
+
+    private string GetFreeformSelectionPolylinePoints()
+    {
+        return string.Join(
+            " ",
+            freeformSelectionPoints.Select(point =>
+            {
+                var screenPoint = ImageToScreen(point);
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0},{1}",
+                    SnapScreenPixel(screenPoint.X),
+                    SnapScreenPixel(screenPoint.Y));
+            }));
+    }
+
+    private static double GetShapeCaptionScale()
+    {
+        return 1;
     }
 
     private string GetVerticalGuideStyle()
     {
-        return cursorImagePoint == null
-            ? string.Empty
-            : string.Format(CultureInfo.InvariantCulture, "left:{0}px;height:{1}px;", cursorImagePoint.X, imageHeight);
+        if (cursorImagePoint == null)
+        {
+            return string.Empty;
+        }
+
+        var screenPoint = ImageToScreen(cursorImagePoint);
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "left:{0}px;top:{1}px;height:{2}px;",
+            SnapScreenPixel(screenPoint.X),
+            SnapScreenPixel(viewOffsetY),
+            Math.Max(0, SnapScreenPixel(imageHeight * viewScale)));
     }
 
     private string GetHorizontalGuideStyle()
     {
-        return cursorImagePoint == null
-            ? string.Empty
-            : string.Format(CultureInfo.InvariantCulture, "top:{0}px;width:{1}px;", cursorImagePoint.Y, imageWidth);
+        if (cursorImagePoint == null)
+        {
+            return string.Empty;
+        }
+
+        var screenPoint = ImageToScreen(cursorImagePoint);
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "left:{0}px;top:{1}px;width:{2}px;",
+            SnapScreenPixel(viewOffsetX),
+            SnapScreenPixel(screenPoint.Y),
+            Math.Max(0, SnapScreenPixel(imageWidth * viewScale)));
     }
 
     private string GetGuideCrossStyle()
     {
-        return cursorImagePoint == null
-            ? string.Empty
-            : string.Format(CultureInfo.InvariantCulture, "left:{0}px;top:{1}px;", cursorImagePoint.X, cursorImagePoint.Y);
+        if (cursorImagePoint == null)
+        {
+            return string.Empty;
+        }
+
+        var screenPoint = ImageToScreen(cursorImagePoint);
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "left:{0}px;top:{1}px;",
+            SnapScreenPixel(screenPoint.X),
+            SnapScreenPixel(screenPoint.Y));
     }
 
     private static string GetHandleStyle(EditorHandle handle)
@@ -2062,15 +3417,16 @@
     private string GetSelectionBoundsStyle()
     {
         var bounds = SelectedSelectionBounds;
+        var screenRect = bounds == null ? null : ImageToScreen(new EditorRect(bounds.X, bounds.Y, bounds.Width, bounds.Height));
         return bounds == null
             ? string.Empty
             : string.Format(
                 CultureInfo.InvariantCulture,
                 "left:{0}px;top:{1}px;width:{2}px;height:{3}px;--shape-caption-scale:{4};",
-                bounds.X,
-                bounds.Y,
-                bounds.Width,
-                bounds.Height,
+                screenRect!.X,
+                screenRect.Y,
+                screenRect.Width,
+                screenRect.Height,
                 GetShapeCaptionScale());
     }
 
@@ -2172,6 +3528,14 @@
         return Math.Max(min, Math.Min(max, value));
     }
 
+    private static float ParseFloat(object? value, float fallback)
+    {
+        return value is string valueAsString &&
+               float.TryParse(valueAsString, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : fallback;
+    }
+
     private static double NormalizeRotation(double rotationDegrees)
     {
         var normalized = rotationDegrees % 360;
@@ -2201,6 +3565,45 @@
             center.Y + dx * sin + dy * cos);
     }
 
+    private static bool Intersects(EditorRect left, EditorRect right)
+    {
+        return left.X <= right.Right &&
+               left.Right >= right.X &&
+               left.Y <= right.Bottom &&
+               left.Bottom >= right.Y;
+    }
+
+    private static bool IsPointInsidePolygon(EditorPoint point, IReadOnlyList<EditorPoint> polygon)
+    {
+        var inside = false;
+        for (var i = 0; i < polygon.Count; i++)
+        {
+            var j = i == 0 ? polygon.Count - 1 : i - 1;
+            var current = polygon[i];
+            var previous = polygon[j];
+
+            if ((current.Y > point.Y) == (previous.Y > point.Y))
+            {
+                continue;
+            }
+
+            var intersectX = (previous.X - current.X) * (point.Y - current.Y) / (previous.Y - current.Y) + current.X;
+            if (point.X < intersectX)
+            {
+                inside = !inside;
+            }
+        }
+
+        return inside;
+    }
+
+    private static double Distance(EditorPoint left, EditorPoint right)
+    {
+        var dx = left.X - right.X;
+        var dy = left.Y - right.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
     private static double RotationDistance(double leftDegrees, double rightDegrees)
     {
         var delta = Math.Abs(NormalizeRotation(leftDegrees) - NormalizeRotation(rightDegrees));
@@ -2227,12 +3630,28 @@
         }).AndForget();
     }
 
-    private enum EditorTool
+    public enum EditorTool
     {
         Select,
+        RectangleSelection,
+        FreeformSelection,
         Pan,
         Rectangle,
         Paste,
+    }
+
+    public enum TaskEditorInspectorTab
+    {
+        Shapes,
+        Labels,
+        Models,
+    }
+
+    public enum TaskEditorSourceFilter
+    {
+        All,
+        Manual,
+        Automatic,
     }
 
     private enum DragMode
@@ -2243,7 +3662,14 @@
         RotateShape,
     }
 
-    private enum EditorHandle
+    private enum SelectionGesture
+    {
+        None,
+        Rectangle,
+        Freeform,
+    }
+
+    public enum EditorHandle
     {
         None,
         NorthWest,
@@ -2257,7 +3683,7 @@
         Rotate,
     }
 
-    private sealed record EditorPoint(double X, double Y);
+    public sealed record EditorPoint(double X, double Y);
 
     private sealed record EditorHit(EditorShape? Shape, EditorHandle Handle, bool IsGroup = false)
     {
@@ -2519,7 +3945,7 @@
         }
     }
 
-    private sealed class EditorShape
+    public sealed class EditorShape
     {
         public string Id { get; init; } = Guid.NewGuid().ToString("N");
 
@@ -2541,6 +3967,8 @@
 
         public string? Source { get; set; }
 
+        public double? Confidence { get; set; }
+
         public EditorPoint Center => new(X + Width / 2.0, Y + Height / 2.0);
 
         public EditorShape Clone()
@@ -2557,6 +3985,7 @@
                 Height = Height,
                 RotationDegrees = RotationDegrees,
                 Source = Source,
+                Confidence = Confidence,
             };
         }
 
@@ -2574,6 +4003,7 @@
                 Height = Height,
                 RotationDegrees = RotationDegrees,
                 Source = Source,
+                Confidence = Confidence,
             };
         }
 
@@ -2597,7 +4027,8 @@
                    Math.Abs(Width - other.Width) < 0.001 &&
                    Math.Abs(Height - other.Height) < 0.001 &&
                    RotationDistance(RotationDegrees, other.RotationDegrees) < 0.001 &&
-                   string.Equals(Source, other.Source, StringComparison.Ordinal);
+                   string.Equals(Source, other.Source, StringComparison.Ordinal) &&
+                   NullableDoubleEquals(Confidence, other.Confidence);
         }
 
         public bool Contains(EditorPoint imagePoint, double tolerance)
@@ -2686,6 +4117,7 @@
                 Height = newHeight,
                 RotationDegrees = RotationDegrees,
                 Source = Source,
+                Confidence = Confidence,
             };
         }
 
@@ -2777,6 +4209,16 @@
             };
         }
 
+        private static bool NullableDoubleEquals(double? left, double? right)
+        {
+            if (left == null || right == null)
+            {
+                return left == right;
+            }
+
+            return Math.Abs(left.Value - right.Value) < 0.001;
+        }
+
         private EditorPoint ToLocal(EditorPoint imagePoint)
         {
             var center = Center;
@@ -2824,8 +4266,12 @@
         }
     }
 
-    private sealed record EditorRect(double X, double Y, double Width, double Height)
+    public sealed record EditorRect(double X, double Y, double Width, double Height)
     {
+        public double Right => X + Width;
+
+        public double Bottom => Y + Height;
+
         public static EditorRect FromPoints(EditorPoint start, EditorPoint end)
         {
             var left = Math.Min(start.X, end.X);

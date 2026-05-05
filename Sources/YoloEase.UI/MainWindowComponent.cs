@@ -1,8 +1,12 @@
 using System.Linq;
 using System.Reactive.Disposables;
+using AntDesign;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Web.WebView2.Core;
+using PoeShared.Blazor.Services;
 using PoeShared.Blazor.Controls.GoldenLayout;
+using PoeShared.Blazor.Wpf;
 using PoeShared.Common;
 using YoloEase.UI.Controls;
 using YoloEase.UI.Core;
@@ -22,6 +26,7 @@ public abstract class YoloEaseComponent<T> : PoeShared.Blazor.BlazorReactiveComp
 public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel>
 {
     private const string MainPanelId = "YoloEaseMainPanel";
+    private static readonly TimeSpan LayoutJsTimeout = TimeSpan.FromSeconds(3);
 
     private static readonly object LayoutMain = new
     {
@@ -47,14 +52,17 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
     private IGoldenLayoutFacade? goldenLayout;
     private IGoldenLayoutBlazorAdapter? goldenLayoutBlazorAdapter;
     private MainWindowViewModel? currentLayoutContext;
+    private ElementReference appContainerElement;
     private bool isInitializingLayout;
     private bool isLayoutLoading;
     private bool isSyncingLayout;
     private bool isPreparingLayoutTabs;
+    private bool isProjectDropTargetRegistered;
 
     public MainWindowComponent()
     {
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.YoloEaseProject));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsProjectShellAttached));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsAdvancedMode));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Tabs).Select(x => x.Connect()).Select(x => x.WhenValueChanged(x => x.IsVisible)));
     }
@@ -65,13 +73,28 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
     [Inject]
     private IServiceProvider Services { get; init; } = default!;
 
+    [Inject]
+    private ICoreWebView2Accessor CoreWebView2Accessor { get; init; } = default!;
+
+    [Inject]
+    private IJsPoeBlazorUtils JsPoeBlazorUtils { get; init; } = default!;
+
+    [Inject]
+    private INotificationService NotificationService { get; init; } = default!;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await base.OnAfterRenderAsync(firstRender);
 
-        if (DataContext?.YoloEaseProject == null)
+        if (firstRender)
+        {
+            await RegisterProjectDropTarget();
+        }
+
+        if (DataContext?.YoloEaseProject == null || !DataContext.IsProjectShellAttached)
         {
             await DisposeGoldenLayout();
+            DataContext?.NotifyProjectShellDetached();
             return;
         }
 
@@ -82,6 +105,104 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
         }
 
         await SyncGoldenLayoutTabs();
+    }
+
+    private async Task RegisterProjectDropTarget()
+    {
+        if (isProjectDropTargetRegistered)
+        {
+            return;
+        }
+
+        try
+        {
+            CoreWebView2Accessor.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            await JsPoeBlazorUtils.RegisterFileDropTarget(appContainerElement);
+            isProjectDropTargetRegistered = true;
+            Log.Info("Registered project file drop target");
+        }
+        catch (Exception e)
+        {
+            try
+            {
+                CoreWebView2Accessor.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+            }
+            catch (Exception detachException)
+            {
+                Log.Warn("Failed to detach project file drop handler after registration failure", detachException);
+            }
+
+            Log.Warn("Failed to register project file drop target", e);
+            ShowDropError("Failed to enable drag-and-drop for project files.");
+        }
+    }
+
+    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            if (e.AdditionalObjects == null)
+            {
+                return;
+            }
+
+            var projectFile = e.AdditionalObjects
+                .OfType<CoreWebView2File>()
+                .Select(x => x.Path)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(File.Exists)
+                .Select(x => new FileInfo(x))
+                .FirstOrDefault(IsProjectFile);
+            if (projectFile == null)
+            {
+                return;
+            }
+
+            InvokeAsync(() => OpenDroppedProject(projectFile)).AndForget();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("Failed to read dropped project file", ex);
+            ShowDropError($"Failed to read dropped project file: {ex.Message}");
+        }
+    }
+
+    private async Task OpenDroppedProject(FileInfo projectFile)
+    {
+        try
+        {
+            Log.Info($"Opening dropped project file {projectFile.FullName}");
+            if (await DataContext.OpenProjectFile(projectFile))
+            {
+                NotificationService.Open(new NotificationConfig
+                {
+                    NotificationType = NotificationType.Success,
+                    Duration = 4,
+                    Message = $"Opened project {projectFile.Name}",
+                }).AndForget();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to open dropped project file {projectFile.FullName}", e);
+            ShowDropError($"Failed to open dropped project: {e.Message}");
+        }
+    }
+
+    private static bool IsProjectFile(FileInfo file)
+    {
+        return string.Equals(file.Extension, ".yeproj", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ShowDropError(string message)
+    {
+        NotificationService.Open(new NotificationConfig
+        {
+            NotificationType = NotificationType.Error,
+            Duration = 8,
+            Message = message,
+        }).AndForget();
     }
 
     private async Task InitializeGoldenLayout()
@@ -95,14 +216,15 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
         await SetLayoutLoading(true);
         try
         {
+            Log.Debug("Initializing GoldenLayout workspace");
             await DisposeGoldenLayout();
 
             currentLayoutContext = DataContext;
             layoutSubscriptions = new CompositeDisposable();
-            goldenLayout = await GoldenLayoutInterop.Create(ElementRef);
+            goldenLayout = await WithLayoutTimeout(GoldenLayoutInterop.Create(ElementRef).AsTask(), "create GoldenLayout");
             goldenLayoutBlazorAdapter = Services.GetRequiredService<IGoldenLayoutBlazorAdapter>();
-            await goldenLayoutBlazorAdapter.Initialize(goldenLayout);
-            await goldenLayout.LoadLayout(LayoutMain);
+            await WithLayoutTimeout(goldenLayoutBlazorAdapter.Initialize(goldenLayout).AsTask(), "initialize GoldenLayout adapter");
+            await WithLayoutTimeout(goldenLayout.LoadLayout(LayoutMain).AsTask(), "load GoldenLayout layout");
 
             var hook = goldenLayout.AddHook().Publish();
             hook.Connect().AddTo(layoutSubscriptions);
@@ -127,6 +249,12 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
                 .AddTo(layoutSubscriptions);
 
             await SyncGoldenLayoutTabs();
+            Log.Debug("GoldenLayout workspace initialized");
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to initialize GoldenLayout workspace", e);
+            await DisposeGoldenLayout();
         }
         finally
         {
@@ -177,7 +305,7 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
                         await RemoveGoldenLayoutTab(tab.Id);
                     }
 
-                    await adapter.AddChild(
+                    await WithLayoutTimeout(adapter.AddChild(
                         MainPanelId,
                         new GLBlazorComponentState
                         {
@@ -187,7 +315,7 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
                             ReorderEnabled = true,
                         },
                         dataContext: tab.DataContext,
-                        bodyViewType: tab.ViewType);
+                        bodyViewType: tab.ViewType).AsTask(), $"add GoldenLayout tab {tab.Id}");
 
                     registeredTabContexts[tab.Id] = tab.DataContext;
                     registeredTabTitles[tab.Id] = tab.Title;
@@ -208,6 +336,11 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
                 await FocusGoldenLayoutTab(DataContext.ActiveTabId);
             }
         }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to sync GoldenLayout tabs; resetting workspace layout", e);
+            await DisposeGoldenLayout();
+        }
         finally
         {
             isSyncingLayout = false;
@@ -221,7 +354,7 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
         {
             if (goldenLayoutBlazorAdapter != null)
             {
-                await goldenLayoutBlazorAdapter.Remove(tabId);
+                await WithLayoutTimeout(goldenLayoutBlazorAdapter.Remove(tabId).AsTask(), $"remove GoldenLayout tab {tabId}");
             }
         }
         finally
@@ -238,7 +371,7 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
             return;
         }
 
-        await goldenLayout.FocusById(tabId);
+        await WithLayoutTimeout(goldenLayout.FocusById(tabId).AsTask(), $"focus GoldenLayout tab {tabId}");
     }
 
     private void HandleFocusChanged(string componentId)
@@ -275,6 +408,15 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
 
     public override async ValueTask DisposeAsync()
     {
+        try
+        {
+            CoreWebView2Accessor.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to detach project file drop handler", e);
+        }
+
         await DisposeGoldenLayout();
         await base.DisposeAsync();
     }
@@ -298,7 +440,15 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
         var layoutToDispose = goldenLayout;
         goldenLayout = null;
         currentLayoutContext = null;
-        await layoutToDispose.DisposeAsync();
+        try
+        {
+            Log.Debug("Disposing GoldenLayout workspace");
+            await WithLayoutTimeout(layoutToDispose.DisposeAsync().AsTask(), "dispose GoldenLayout");
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to dispose GoldenLayout workspace", e);
+        }
     }
 
     private async ValueTask SetLayoutLoading(bool value)
@@ -311,5 +461,29 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
         isLayoutLoading = value;
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
+    }
+
+    private static async Task<T> WithLayoutTimeout<T>(Task<T> task, string operation)
+    {
+        try
+        {
+            return await task.WaitAsync(LayoutJsTimeout);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException($"Timed out while trying to {operation}", e);
+        }
+    }
+
+    private static async Task WithLayoutTimeout(Task task, string operation)
+    {
+        try
+        {
+            await task.WaitAsync(LayoutJsTimeout);
+        }
+        catch (TimeoutException e)
+        {
+            throw new TimeoutException($"Timed out while trying to {operation}", e);
+        }
     }
 }

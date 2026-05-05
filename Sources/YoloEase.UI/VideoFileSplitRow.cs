@@ -2,7 +2,7 @@
 using AntDesign;
 using PoeShared.Logging;
 using PoeShared.Services;
-using YoloEase.Cvat.Shared.Services;
+using YoloEase.UI.Services;
 
 namespace YoloEase.UI;
 
@@ -16,25 +16,32 @@ public sealed class VideoFileSplitRow : DisposableReactiveObject, IHasError
     private static int FrameDivider = 60;
 
     private readonly SharedResourceLatch isBusyLatch = new SharedResourceLatch();
+    private readonly IVideoFrameExtractor videoFrameExtractor;
 
     static VideoFileSplitRow()
     {
-        Binder.Bind(x => ((double) (x.EndFrameIdx - x.StartFrameIdx) / (x.FrameNth > 0 ? x.FrameNth : 1)))
+        Binder.Bind(x => (long) VideoFrameSelection.GetExpectedFrameCount(x.FrameCount, x.StartFrameIdx, x.EndFrameIdx, x.FrameNth))
             .To(x => x.ExpectedFrameCount);
         
         Binder.Bind(x => x.isBusyLatch.IsBusy).To(x => x.IsBusy);
         
-        Binder.Bind(x => new SliderMark[] {new(0, "0"), new(x.FrameCount, $"{x.FrameCount}")})
+        Binder.Bind(x => new SliderMark[] {new(0, "0"), new(ToSliderValue(Math.Max(0, x.FrameCount - 1)), $"{Math.Max(0, x.FrameCount - 1)}")})
             .To(x => x.Marks);
 
-        Binder.Bind(x => new SliderMark[] {new(1, "1"), new(x.FrameCount / FrameDivider, $"{x.FrameCount / FrameDivider}")})
+        Binder.Bind(x => new SliderMark[] {new(1, "1"), new(ToSliderValue(Math.Max(1, x.FrameCount / FrameDivider)), $"{Math.Max(1, x.FrameCount / FrameDivider)}")})
             .To(x => x.MarksFormFrameNth);
     }
 
-    public VideoFileSplitRow(FileInfo fileInfo, IProgressReporter progressReporter)
+    private static int ToSliderValue(long value)
+    {
+        return checked((int) Math.Min(int.MaxValue, Math.Max(0, value)));
+    }
+
+    public VideoFileSplitRow(FileInfo fileInfo, IProgressReporter progressReporter, IVideoFrameExtractor videoFrameExtractor)
     {
         FileInfo = fileInfo;
         ProgressReporter = progressReporter;
+        this.videoFrameExtractor = videoFrameExtractor;
 
         Task.Run(FetchFrameInfo).AddTo(Anchors);
         Binder.Attach(this).AddTo(Anchors);
@@ -93,9 +100,10 @@ public sealed class VideoFileSplitRow : DisposableReactiveObject, IHasError
         
         try
         {
-            FrameCount = VideoToFramesSplitter.GetFrameCount(FileInfo);
+            var probe = await videoFrameExtractor.ProbeAsync(FileInfo);
+            FrameCount = probe.FrameCount;
             StartFrameIdx = 0;
-            EndFrameIdx = FrameCount;
+            EndFrameIdx = Math.Max(0, FrameCount - 1);
         }
         catch (Exception e)
         {

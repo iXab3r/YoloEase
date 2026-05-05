@@ -80,7 +80,9 @@ public class AnnotationsAccessor : RefreshableReactiveObject
         var localFiles = Assets.Files.Items.ToDictionary(x => x.Name, x => x, StringComparer.OrdinalIgnoreCase);
         if (tasks.Length > 0 && localFiles.Count <= 0)
         {
-            throw new InvalidOperationException("Local files list is empty");
+            Log.Warn($"Skipping annotation file binding for {tasks.Length} completed task(s) because the project has no local files. Data sources may be missing or still refreshing.");
+            annotationsSource.EditDiff(tasks.Select(CreateEmpty).ToArray());
+            return;
         }
 
         var projectId = RemoteProject.ProjectId;
@@ -119,8 +121,9 @@ public class AnnotationsAccessor : RefreshableReactiveObject
 
             var directories = filesMapping
                 .Where(x => x.LocalFile != null)
-                .Select(x => x.LocalFile.Directory)
+                .Select(x => x.LocalFile!.Directory)
                 .Where(x => x != null)
+                .Select(x => x!)
                 .DistinctBy(x => x.FullName)
                 .ToArray();
 
@@ -128,7 +131,8 @@ public class AnnotationsAccessor : RefreshableReactiveObject
             {
                 //FIXME Probably should add support for shared files
                 log.Step($"Multiple owning directories detected: {directories.Select(x => x.FullName).DumpToString()}");
-                throw new ArgumentException($"Multiple root directories detected: {directories.Select(x => x.FullName).DumpToString()}");
+                annotations.Add(CreateEmpty(task));
+                return;
             }
 
             if (directories.Length <= 0)
@@ -183,6 +187,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
                 TaskRevisions = annotations
                     .Select(x => annotatedTasksById.GetValueOrDefault(x.TaskId))
                     .Where(x => x != null)
+                    .Select(x => x!)
                     .Select(x => new TaskRevisionInfo
                     {
                         TaskId = x.Id,

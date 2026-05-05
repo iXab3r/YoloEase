@@ -4,7 +4,7 @@ using PoeShared.Blazor.Wpf;
 using PoeShared.Services;
 using YoloEase.UI.Core;
 
-namespace YoloEase.UI;
+namespace YoloEase.UI.TaskAnnotation;
 
 /// <summary>
 /// Opens task annotation views in standalone Blazor windows.

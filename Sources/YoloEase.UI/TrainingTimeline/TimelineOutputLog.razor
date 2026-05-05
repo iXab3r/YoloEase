@@ -10,14 +10,14 @@
                 <i class="fa @(isExpanded ? "fa-chevron-down" : "fa-chevron-right") fa-fixed"></i>
                 <span class="trainer-output-label">output</span>
                 <span class="trainer-output-count">@DataContext.OutputLogCount</span>
-                @if (!isExpanded && !string.IsNullOrWhiteSpace(DataContext.OutputLogPreview))
-                {
-                    <span class="trainer-output-preview">@DataContext.OutputLogPreview</span>
-                }
             </button>
             <button type="button" class="btn btn-link trainer-output-copy" title="Copy output" @onclick="CopyOutput">
                 <i class="fa fa-copy fa-fixed"></i>
             </button>
+            @if (!isExpanded && !string.IsNullOrWhiteSpace(DataContext.OutputLogPreview))
+            {
+                <span class="trainer-output-preview" title="@DataContext.OutputLogPreview">@DataContext.OutputLogPreview.TakeMidChars(128)</span>
+            }
         </div>
 
         @if (isExpanded)

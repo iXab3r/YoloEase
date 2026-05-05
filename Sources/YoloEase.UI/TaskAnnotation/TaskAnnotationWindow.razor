@@ -1,0 +1,27 @@
+@namespace YoloEase.UI.TaskAnnotation
+@using System.Globalization
+@using System.Threading
+@using AntDesign
+@using Microsoft.JSInterop
+@using PoeShared.Blazor.Scaffolding
+@using PoeShared.Blazor.Wpf
+@using YoloEase.UI.Core
+@using YoloEase.UI.Dto
+@using YoloEase.UI.Scaffolding
+@inherits PoeShared.Blazor.BlazorReactiveComponent<TaskWindowContext>
+@implements ITaskAnnotationWindowContext
+
+<BrowserShortcutSuppressor />
+
+<div class="task-editor-window"
+     tabindex="0"
+     @ref="editorElement"
+     @onkeydown="HandleKeyDown">
+    <main class="task-editor-main task-editor-golden-layout">
+        <TaskAnnotationToolbar Context="@this" />
+        <TaskAnnotationCanvas Context="@this" />
+        <TaskAnnotationInspector Context="@this" />
+    </main>
+
+    <TaskAnnotationBottomBar Context="@this" />
+</div>

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 using ByteSizeLib;
@@ -93,33 +92,76 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
 
     protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        await RefreshStorageDatasets();
-        await RefreshTrainedModels();
+        var storageDatasets = await Task.Run(ScanStorageDatasets);
+        storageDatasetsSource.EditDiff(storageDatasets);
+
+        var datasets = datasetsSource.Items.ToArray();
+        var trainedModels = await Task.Run(() => ScanTrainedModels(datasets));
+        modelFileSource.EditDiff(trainedModels);
     }
 
-    private async Task RefreshStorageDatasets()
+    private IReadOnlyList<DatasetInfo> ScanStorageDatasets()
     {
-        var datasets = new ConcurrentBag<DatasetInfo>();
-        foreach (var directory in Path.Exists(DatasetsDirectory.FullName) ? DatasetsDirectory.GetDirectories() : Array.Empty<DirectoryInfo>())
+        var datasetsDirectory = DatasetsDirectory;
+        var storageDirectory = StorageDirectory;
+        if (datasetsDirectory == null || storageDirectory == null)
         {
-            var indexFiles = directory.GetFiles("data.yaml", SearchOption.AllDirectories);
-
-            if (indexFiles.Length <= 0)
-            {
-                continue;
-            }
-
-            if (indexFiles.Length > 1)
-            {
-                throw new ArgumentException($"Directory {directory} contains more than one index file: {indexFiles.Select(x => x.FullName).DumpToString()}");
-            }
-
-            var indexFile = indexFiles[0];
-            var datasetInfo = DatasetInfo.FromIndexFile(indexFile, StorageDirectory, configSerializer);
-            datasets.Add(datasetInfo);
+            return Array.Empty<DatasetInfo>();
         }
 
-        storageDatasetsSource.EditDiff(datasets);
+        try
+        {
+            datasetsDirectory.Refresh();
+            if (!datasetsDirectory.Exists)
+            {
+                return Array.Empty<DatasetInfo>();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to inspect datasets directory {datasetsDirectory.FullName}", e);
+            return Array.Empty<DatasetInfo>();
+        }
+
+        var datasets = new List<DatasetInfo>();
+        DirectoryInfo[] datasetDirectories;
+        try
+        {
+            datasetDirectories = datasetsDirectory.GetDirectories();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"Failed to enumerate dataset directories under {datasetsDirectory.FullName}", e);
+            return Array.Empty<DatasetInfo>();
+        }
+
+        foreach (var directory in datasetDirectories)
+        {
+            try
+            {
+                var indexFiles = directory.GetFiles("data.yaml", SearchOption.AllDirectories);
+                if (indexFiles.Length <= 0)
+                {
+                    continue;
+                }
+
+                if (indexFiles.Length > 1)
+                {
+                    Log.Warn($"Directory {directory} contains more than one index file: {indexFiles.Select(x => x.FullName).DumpToString()}");
+                    continue;
+                }
+
+                var indexFile = indexFiles[0];
+                var datasetInfo = DatasetInfo.FromIndexFile(indexFile, storageDirectory, configSerializer);
+                datasets.Add(datasetInfo);
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Failed to read dataset metadata from {directory.FullName}", e);
+            }
+        }
+
+        return datasets;
     }
 
     public async Task<DatasetInfo> CreateAnnotatedDataset(
@@ -181,40 +223,46 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
         return datasetInfo;
     }
 
-    private async Task RefreshTrainedModels()
+    private IReadOnlyList<TrainedModelFileInfo> ScanTrainedModels(IReadOnlyList<DatasetInfo> datasets)
     {
-        var modelFiles = new ConcurrentBag<TrainedModelFileInfo>();
-        foreach (var training in datasetsSource.Items)
+        var modelFiles = new List<TrainedModelFileInfo>();
+        foreach (var training in datasets)
         {
-            if (!File.Exists(training.IndexFile.FullName))
+            try
             {
-                continue;
-            }
-
-            var directory = training.IndexFile.Directory;
-            if (directory == null)
-            {
-                continue;
-            }
-
-            directory.Refresh();
-            if (!directory.Exists)
-            {
-                continue;
-            }
-
-            var models = directory.GetFiles("*.onnx", SearchOption.AllDirectories);
-            foreach (var model in models)
-            {
-                var mlModelFile = new TrainedModelFileInfo()
+                if (!File.Exists(training.IndexFile.FullName))
                 {
-                    ModelFile = model,
-                };
-                modelFiles.Add(mlModelFile);
+                    continue;
+                }
+
+                var directory = training.IndexFile.Directory;
+                if (directory == null)
+                {
+                    continue;
+                }
+
+                directory.Refresh();
+                if (!directory.Exists)
+                {
+                    continue;
+                }
+
+                var models = directory.GetFiles("*.onnx", SearchOption.AllDirectories);
+                foreach (var model in models)
+                {
+                    modelFiles.Add(new TrainedModelFileInfo
+                    {
+                        ModelFile = model,
+                    });
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Failed to scan trained models for dataset {training.IndexFile.FullName}", e);
             }
         }
 
-        modelFileSource.EditDiff(modelFiles);
+        return modelFiles;
     }
 
     public async Task AddDataset()
@@ -315,7 +363,8 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
         var convertedModel = await cliWrapper.Convert(new Yolo8ExportArguments()
         {
             Format = "onnx",
-            Model = trainedModel.FullName
+            Model = trainedModel.FullName,
+            Opset = 17
         }, cancellationToken, outputHandler);
         Log.Debug($"Successfully converted model: {convertedModel.FullName} ({ByteSize.FromBytes(convertedModel.Length)})");
         log.Step("Conversion completed, model is ready to use");

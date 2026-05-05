@@ -693,7 +693,6 @@ public class PrerequisitesFixture
             "pytorch-runtime",
             "packages",
             "yolo",
-            "cvat-cli",
             "gpu"
         });
         suite.Checks.Items.Single(x => x.Name == "packages").Dependencies.Single().Name.ShouldBe("pytorch-runtime");
@@ -745,7 +744,9 @@ public class PrerequisitesFixture
         // Then
         result.ShouldBe(true);
         capturedCommand.ToString().ShouldContain("onnxruntime");
+        capturedCommand.ToString().ShouldNotContain("cvat_sdk");
         check.LastOutput.ShouldContain("onnxruntime");
+        check.LastOutput.ShouldNotContain("cvat_sdk");
     }
 
     /// <summary>
@@ -764,6 +765,8 @@ public class PrerequisitesFixture
 
         // Then
         requirements.ShouldContain("onnxruntime");
+        requirements.ShouldNotContain("cvat-cli");
+        requirements.ShouldNotContain("cvat_sdk");
     }
 
     /// <summary>

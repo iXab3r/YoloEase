@@ -1,0 +1,142 @@
+@namespace YoloEase.UI.TaskAnnotation
+
+<aside class="task-editor-toolbar" aria-label="Annotation tools">
+    <button type="button"
+            class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.Select)"
+            title="Select / pan"
+            @onclick="() => Context.SelectTool(TaskAnnotationWindow.EditorTool.Select)">
+        <i class="fa fa-mouse-pointer"></i>
+    </button>
+    <button type="button"
+            class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.RectangleSelection)"
+            title="Rectangular selection (M)"
+            @onclick="() => Context.SelectTool(TaskAnnotationWindow.EditorTool.RectangleSelection)">
+        <span class="task-editor-rect-select-glyph" aria-hidden="true"></span>
+    </button>
+    <button type="button"
+            class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.FreeformSelection)"
+            title="Free-form selection (L)"
+            @onclick="() => Context.SelectTool(TaskAnnotationWindow.EditorTool.FreeformSelection)">
+        <i class="fa fa-pencil"></i>
+    </button>
+    <button type="button"
+            class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.Pan)"
+            title="Pan"
+            @onclick="() => Context.SelectTool(TaskAnnotationWindow.EditorTool.Pan)">
+        <i class="fa fa-arrows"></i>
+    </button>
+    @if (Context.HasLabels)
+    {
+        <button type="button"
+                class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.Rectangle)"
+                title="Rectangle (N)"
+                @onclick="Context.StartRectangleTool">
+            <span class="task-editor-rectangle-glyph" aria-hidden="true"></span>
+        </button>
+    }
+    <span class="task-editor-tool-separator"></span>
+    <button type="button"
+            class="task-editor-tool"
+            title="Cut (Ctrl+X)"
+            disabled="@(!Context.CanCopySelection)"
+            @onclick="Context.CutSelection">
+        <i class="fa fa-scissors"></i>
+    </button>
+    <button type="button"
+            class="task-editor-tool"
+            title="Copy (Ctrl+C)"
+            disabled="@(!Context.CanCopySelection)"
+            @onclick="Context.CopySelection">
+        <i class="fa fa-copy"></i>
+    </button>
+    <button type="button"
+            class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.Paste)"
+            title="Paste (Ctrl+V)"
+            disabled="@(!Context.CanPasteClipboard)"
+            @onclick="Context.BeginPaste">
+        <i class="fa fa-clipboard"></i>
+    </button>
+    <span class="task-editor-tool-separator"></span>
+    <button type="button"
+            class="task-editor-tool"
+            title="Undo"
+            disabled="@(!Context.CanUndo)"
+            @onclick="Context.Undo">
+        <i class="fa fa-undo"></i>
+    </button>
+    <button type="button"
+            class="task-editor-tool"
+            title="Redo"
+            disabled="@(!Context.CanRedo)"
+            @onclick="Context.Redo">
+        <i class="fa fa-repeat"></i>
+    </button>
+    <button type="button"
+            class="task-editor-tool"
+            title="Reset zoom / pan (R)"
+            @onclick="Context.ResetZoom">
+        <i class="fa fa-compress"></i>
+    </button>
+    <span class="task-editor-tool-separator"></span>
+    <button type="button"
+            class="@Context.GetLabelsToolClass()"
+            title="@(Context.ShowLabels ? "Hide labels" : "Show labels")"
+            aria-pressed="@Context.ShowLabels"
+            data-testid="task-editor-toggle-labels"
+            @onclick="Context.ToggleShowLabels">
+        <i class="fa fa-tags"></i>
+    </button>
+    <button type="button"
+            class="@Context.GetSuggestionsToolClass()"
+            title="Show suggestions. Suggestions are temporary model results until accepted."
+            @onclick="Context.ToggleShowSuggestions">
+        <i class="@($"fa {(Context.ShowSuggestions ? "fa-eye" : "fa-eye-slash")}")"></i>
+    </button>
+    <div class="task-editor-tool-menu">
+        <button type="button"
+                class="task-editor-tool"
+                title="Auto-annotate"
+                disabled="@(!Context.CanRunAutoAnnotation)">
+            <i class="fa fa-magic"></i>
+        </button>
+        <div class="task-editor-tool-menu-panel">
+            @if (Context.FirstRunnableModel == null)
+            {
+                <div class="task-editor-tool-menu-empty">No enabled models</div>
+            }
+            else
+            {
+                <button type="button" @onclick="() => Context.RunFirstAutoAnnotation(false)">
+                    <span>First model</span>
+                    <small>Current image</small>
+                </button>
+                <button type="button" @onclick="() => Context.RunFirstAutoAnnotation(true)">
+                    <span>First model</span>
+                    <small>All images</small>
+                </button>
+                <div class="task-editor-tool-menu-separator"></div>
+                @foreach (var modelInfo in Context.AutoAnnotationModels.Select((Model, Index) => new { Model, Index }))
+                {
+                    <button type="button"
+                            disabled="@(!modelInfo.Model.IsEnabled)"
+                            @onclick="() => Context.RunAutoAnnotation(modelInfo.Model, false)">
+                        <span>@($"{modelInfo.Index + 1}. {modelInfo.Model.DisplayName}")</span>
+                        <small>Current image</small>
+                    </button>
+                    <button type="button"
+                            disabled="@(!modelInfo.Model.IsEnabled)"
+                            @onclick="() => Context.RunAutoAnnotation(modelInfo.Model, true)">
+                        <span>@($"{modelInfo.Index + 1}. {modelInfo.Model.DisplayName}")</span>
+                        <small>All images</small>
+                    </button>
+                }
+            }
+        </div>
+    </div>
+</aside>
+
+@code {
+    [Parameter]
+    [EditorRequired]
+    public ITaskAnnotationWindowContext Context { get; set; } = default!;
+}
