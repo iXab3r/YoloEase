@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Reactive;
 using System.Reactive.Disposables;
 using System.Threading;
 using AntDesign;
@@ -51,6 +52,25 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
         this.WhenAnyValue(x => x.Project)
             .SubscribeAsync(x => Stop(), Log.HandleUiException)
+            .AddTo(Anchors);
+
+        this.WhenAnyValue(x => x.Project)
+            .Where(x => x != null)
+            .Select(project => Observable.Merge(
+                Observable.Return(Unit.Default),
+                this.WhenAnyValue(x => x.IsSelected)
+                    .Where(isSelected => isSelected)
+                    .ToUnit(),
+                project.DataSources.InputDirectories.Connect()
+                    .Skip(1)
+                    .ToUnit(),
+                project.RemoteProject.WhenAnyValue(x => x.CurrentUser)
+                    .Where(_ => CanRefreshProject(project))
+                    .ToUnit())
+                .Throttle(TimeSpan.FromMilliseconds(500))
+                .Select(_ => project))
+            .Switch()
+            .SubscribeAsync(RefreshProjectForTrainer, Log.HandleUiException)
             .AddTo(Anchors);
 
         Observable.CombineLatest(
@@ -161,34 +181,19 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         timelineSource.Clear();
     }
 
-    public async Task CreateNextTask()
+    public async Task<AnnotationTaskInfo> CreateNextTask()
     {
-        var labeledFiles = AutoAnnotateThresholdStrategy switch
-        {
-            AutomaticTrainerAutoAnnotateThresholdStrategy.Global => PredictItems.Items.SelectMany(x => x.EnumerateLabels(AutoAnnotateConfidenceThresholdPercentage / 100)).ToArray(),
-            AutomaticTrainerAutoAnnotateThresholdStrategy.PerLabel => PredictItems.Items.SelectMany(x => x.EnumerateLabels(x.ScoreThreshold)).ToArray(),
-            _ => throw new ArgumentOutOfRangeException()
-        };
-        
         var batchEntry = new CreateTaskTimelineEntry(
             Project.RemoteProject,
             Project.Annotations,
             Project.TrainingBatch,
-            labeledFiles)
+            Array.Empty<FileLabel>())
         {
             Text = "Preparing next batch...",
-            AutoAnnotate = AutoAnnotate,
+            AutoAnnotate = false,
         }.AddTo(timelineSource);
         
-        var taskId = await batchEntry.Run(CancellationToken.None);
-        if (AutoAnnotate && batchEntry.Annotations is { ShapesCount: 0 })
-        {
-            WhenNotified.OnNext(new NotificationConfig(){
-                NotificationType = NotificationType.Warning,
-                Duration = 10000,
-                Message = "Auto-annotation is enabled, but we could not place even one label. Either lower Confidence Threshold or just do some manual cycles till you'll get a better model"
-            });
-        }
+        return await batchEntry.Run(CancellationToken.None);
     }
 
     public async Task NavigateToNextUnannotatedTask()
@@ -232,6 +237,23 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
         await Project.Refresh(progressReporter);
+    }
+
+    private async Task RefreshProjectForTrainer(YoloEaseProject project)
+    {
+        if (Project == null || !ReferenceEquals(Project, project) || IsBusy || !CanRefreshProject(project))
+        {
+            return;
+        }
+
+        Log.Info("Refreshing trainer project state");
+        await Refresh();
+    }
+
+    private static bool CanRefreshProject(YoloEaseProject project)
+    {
+        return project.RemoteProject.Mode == AnnotationBackendMode.Offline ||
+               project.RemoteProject.CurrentUser != null;
     }
 
     private async Task HandleTraining(CancellationToken cancellationToken)
@@ -301,8 +323,6 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     break;
                 }
                 
-                await AddPredictionsIfNeeded(cancellationToken);
-
                 var trainingSettings = Project.TrainingDataset.TrainingSettings;
                 if (lastTrainedDataset is {ProjectInfo: not null})
                 {

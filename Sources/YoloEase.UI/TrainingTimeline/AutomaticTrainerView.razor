@@ -113,7 +113,8 @@
         <div class="trainer-bottom-content">
             <div class="d-flex gap-2">
                 <ReactiveButton
-                    Class="@Track(x => x.Project.TrainingBatch.UnannotatedFiles.Count > 0 ? "btn btn-primary" : "btn btn-secondary")" Command="@(async () => await (DataContext.CreateNextTask()))">
+                    Class="@Track(x => x.Project.TrainingBatch.UnannotatedFiles.Count > 0 ? "btn btn-primary" : "btn btn-secondary")"
+                    Command="@(CreateNextTaskAndOpen)">
                     <i class="fa fa-file"></i>
                     Create Task
                 </ReactiveButton>
@@ -234,6 +235,19 @@
 
     [Inject]
     protected IBlazorWindowAccessor BlazorWindowAccessor { get; init; } = default!;
+
+    private async Task CreateNextTaskAndOpen()
+    {
+        try
+        {
+            var task = await DataContext.CreateNextTask();
+            await TaskAnnotationWindowLauncher.Open(DataContext.Project, task, BlazorWindowAccessor, BlazorWindowFactory);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
 
     private async Task OpenFirstUnfinishedTask()
     {

@@ -1,29 +1,63 @@
 @using PoeShared.UI
 @inherits PoeShared.Blazor.Controls.TimelineItemBase<CreateTaskTimelineEntry>
 
-<div class="d-flex">
+<div class="trainer-timeline-item-body">
     @if (DataContext.ProgressPercent != null)
     {
         <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="trainer-timeline-progress"/>
     }
 
-    <pre class="p-0 m-0" style="font-family: inherit; font-size: 1em;">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>
-    <ReactiveButton
-        Class="btn btn-link h-auto mx-2 p-0 align-self-start"
-        HideIfDisabled="true"
-        IsEnabled="@(DataContext.IsBusy)"
-        Command="@(DataContext.Cancel)">
-        <i class="fa fa-stop-circle-o fa-fixed"></i>
-        stop
-    </ReactiveButton>
-    <ReactiveButton
-        Class="btn btn-link h-auto mx-2 p-0 align-self-start"
-        HideIfDisabled="true"
-        IsEnabled="@(DataContext.Task != null)"
-        Command="@(async () => await DataContext.ProjectAccessor.NavigateToTask(DataContext.Task!.Id))">
-        <i class="fa fa-link fa-fixed"></i>
-        open...
-    </ReactiveButton>
+    <div class="trainer-timeline-line">
+        <pre class="trainer-timeline-text">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>
+        <ReactiveButton
+            Class="btn btn-link h-auto mx-2 p-0 align-self-start"
+            HideIfDisabled="true"
+            IsEnabled="@(DataContext.IsBusy)"
+            Command="@(DataContext.Cancel)">
+            <i class="fa fa-stop-circle-o fa-fixed"></i>
+            stop
+        </ReactiveButton>
+        <ReactiveButton
+            Class="btn btn-link h-auto mx-2 p-0 align-self-start"
+            HideIfDisabled="true"
+            IsEnabled="@(DataContext.Task != null)"
+            Command="@(async () => await DataContext.ProjectAccessor.NavigateToTask(DataContext.Task!.Id))">
+            <i class="fa fa-link fa-fixed"></i>
+            open...
+        </ReactiveButton>
+    </div>
+
+    @if (DataContext.Summary is { } summary)
+    {
+        <div class="trainer-create-task-summary">
+            <div class="trainer-create-task-summary-header">
+                <span>Task #@summary.TaskId</span>
+                <strong>@summary.TaskName</strong>
+            </div>
+            <div class="trainer-create-task-metrics">
+                <span>
+                    <small>Picked</small>
+                    <strong>@summary.PickedFiles</strong>
+                </span>
+                <span>
+                    <small>Consumed</small>
+                    <strong>@summary.ConsumedFiles</strong>
+                </span>
+                <span>
+                    <small>Left</small>
+                    <strong>@summary.FilesLeftAfter / @summary.TotalFiles</strong>
+                </span>
+                <span>
+                    <small>% left</small>
+                    <strong>@($"{summary.FilesLeftPercentage:F0}%")</strong>
+                </span>
+                <span>
+                    <small>Done</small>
+                    <strong>@($"{summary.CompletedPercentage:F0}%")</strong>
+                </span>
+            </div>
+        </div>
+    }
 </div>
 
 @code{
@@ -31,6 +65,7 @@
     public CreateTaskTimelineItem()
     {
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Task));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Summary));
     }
 
 }

@@ -37,31 +37,62 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<AnnotationTaskInfo>
 
     public bool AutoAnnotate { get; init; }
 
-    public FileInfo[] TaskFiles { get; private set; }
+    public FileInfo[] TaskFiles { get; private set; } = Array.Empty<FileInfo>();
+
+    public CreateTaskBatchSummary? Summary { get; private set; }
 
     public AnnotationProjectAccessor ProjectAccessor => annotationProjectAccessor;
 
     protected override async Task<AnnotationTaskInfo> RunInternal(CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
+        Text = "Refreshing project assets";
+        if (trainingBatchAccessor.Assets is RefreshableReactiveObject refreshableAssets)
+        {
+            await refreshableAssets.Refresh();
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Text = "Refreshing project tasks";
+        await trainingBatchAccessor.Project.Refresh();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Text = "Preparing next batch";
         await trainingBatchAccessor.Refresh();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var totalFiles = trainingBatchAccessor.Assets.Files.Count;
+        var filesLeftBefore = trainingBatchAccessor.UnannotatedFiles.Count;
 
         var files = AutoAnnotate && LabeledFiles != null && LabeledFiles.Any()
             ? await PickAnnotated()
             : await PickRandom();
+        TaskFiles = files;
 
+        AppendTextLine($"Picked {"file".ToQuantity(files.Length)} from {"remaining file".ToQuantity(filesLeftBefore)}");
         AppendTextLine($"Creating new task with {"file".ToQuantity(files.Length)}");
         var task = await trainingBatchAccessor.CreateNextTask();
-        AppendTextLine($"Created new task #{task} with {"file".ToQuantity(files.Length)} in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}");
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var filesLeftAfter = trainingBatchAccessor.UnannotatedFiles.Count;
+        Summary = new CreateTaskBatchSummary(
+            TaskId: task.Id,
+            TaskName: task.Name,
+            PickedFiles: files.Length,
+            TotalFiles: totalFiles,
+            FilesLeftBefore: filesLeftBefore,
+            FilesLeftAfter: filesLeftAfter,
+            Elapsed: sw.Elapsed);
+        RaisePropertyChanged(nameof(Summary));
+
+        Text = $"Created task #{task.Id}";
+        AppendTextLine($"Created task #{task.Id} \"{task.Name}\" with {"file".ToQuantity(files.Length)} in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}");
 
         if (AutoAnnotate && LabeledFiles != null)
         {
             Annotations = await UploadAnnotations(files, task, sw);
         }
 
-        await trainingBatchAccessor.Project.NavigateToTask(task.Id);
-
-        TaskFiles = files;
         Task = task;
         return task;
     }
@@ -167,4 +198,22 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<AnnotationTaskInfo>
         AppendTextLine( $"Created task #{task.Id} with {"frame".ToQuantity(taskFramesByFileName.Count)} and {labels.Length} labels in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}");
         return annotations;
     }
+}
+
+public sealed record CreateTaskBatchSummary(
+    int TaskId,
+    string TaskName,
+    int PickedFiles,
+    int TotalFiles,
+    int FilesLeftBefore,
+    int FilesLeftAfter,
+    TimeSpan Elapsed)
+{
+    public int CompletedFilesAfter => Math.Max(0, TotalFiles - FilesLeftAfter);
+
+    public int ConsumedFiles => Math.Max(0, FilesLeftBefore - FilesLeftAfter);
+
+    public double FilesLeftPercentage => TotalFiles <= 0 ? 0 : FilesLeftAfter * 100d / TotalFiles;
+
+    public double CompletedPercentage => TotalFiles <= 0 ? 0 : CompletedFilesAfter * 100d / TotalFiles;
 }
