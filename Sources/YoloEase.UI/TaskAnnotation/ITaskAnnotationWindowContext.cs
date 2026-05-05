@@ -48,6 +48,8 @@ public interface ITaskAnnotationWindowContext
 
     bool CanPasteClipboard { get; }
 
+    bool CanCopyPreviousFrameAnnotations { get; }
+
     bool CanUndo { get; }
 
     bool CanRedo { get; }
@@ -66,7 +68,7 @@ public interface ITaskAnnotationWindowContext
 
     bool ShowSuggestions { get; }
 
-    bool ShowLabels { get; }
+    bool ShowAnnotations { get; }
 
     int EffectiveFrameIndex { get; }
 
@@ -114,7 +116,7 @@ public interface ITaskAnnotationWindowContext
 
     string GetSuggestionsToolClass();
 
-    string GetLabelsToolClass();
+    string GetAnnotationsToolClass();
 
     string GetInspectorTabClass(TaskAnnotationWindow.TaskEditorInspectorTab tab);
 
@@ -180,6 +182,8 @@ public interface ITaskAnnotationWindowContext
 
     bool ShouldShowModelLoadButton(AutoAnnotationModelConfig model);
 
+    int GetModelSuggestionCount(AutoAnnotationModelConfig model);
+
     void SelectTool(TaskAnnotationWindow.EditorTool tool);
 
     void StartRectangleTool();
@@ -190,6 +194,8 @@ public interface ITaskAnnotationWindowContext
 
     void BeginPaste();
 
+    void CopyPreviousFrameAnnotations();
+
     void Undo();
 
     void Redo();
@@ -198,7 +204,7 @@ public interface ITaskAnnotationWindowContext
 
     void ToggleShowSuggestions();
 
-    void ToggleShowLabels();
+    void ToggleShowAnnotations();
 
     void GoFirst();
 
@@ -256,6 +262,8 @@ public interface ITaskAnnotationWindowContext
 
     void CancelAutoAnnotationRun();
 
+    void ClearModelSuggestions(AutoAnnotationModelConfig model);
+
     void SetModelEnabled(AutoAnnotationModelConfig model, ChangeEventArgs args);
 
     void SetModelCreateSuggestions(AutoAnnotationModelConfig model, ChangeEventArgs args);
@@ -271,6 +279,8 @@ public interface ITaskAnnotationWindowContext
     void SetMappingProjectLabel(AutoAnnotationModelConfig model, AutoAnnotationLabelMapping mapping, ChangeEventArgs args);
 
     void AcceptSuggestion(string suggestionId);
+
+    void RemoveSuggestion(string suggestionId);
 
     void AcceptCurrentFrameSuggestions();
 

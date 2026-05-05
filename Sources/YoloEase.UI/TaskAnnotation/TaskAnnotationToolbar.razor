@@ -56,6 +56,15 @@
             @onclick="Context.BeginPaste">
         <i class="fa fa-clipboard"></i>
     </button>
+    <button type="button"
+            class="task-editor-tool"
+            title="Copy annotations from the previous frame (Ctrl+B)"
+            aria-label="Copy annotations from the previous frame"
+            data-testid="task-editor-copy-previous-frame-annotations"
+            disabled="@(!Context.CanCopyPreviousFrameAnnotations)"
+            @onclick="Context.CopyPreviousFrameAnnotations">
+        <i class="fa fa-clone"></i>
+    </button>
     <span class="task-editor-tool-separator"></span>
     <button type="button"
             class="task-editor-tool"
@@ -79,11 +88,11 @@
     </button>
     <span class="task-editor-tool-separator"></span>
     <button type="button"
-            class="@Context.GetLabelsToolClass()"
-            title="@(Context.ShowLabels ? "Hide labels" : "Show labels")"
-            aria-pressed="@Context.ShowLabels"
-            data-testid="task-editor-toggle-labels"
-            @onclick="Context.ToggleShowLabels">
+            class="@Context.GetAnnotationsToolClass()"
+            title="@(Context.ShowAnnotations ? "Hide annotations" : "Show annotations")"
+            aria-pressed="@Context.ShowAnnotations"
+            data-testid="task-editor-toggle-annotations"
+            @onclick="Context.ToggleShowAnnotations">
         <i class="fa fa-tags"></i>
     </button>
     <button type="button"

@@ -99,6 +99,8 @@ public partial class TaskAnnotationWindow
 
     bool ITaskAnnotationWindowContext.CanPasteClipboard => CanPasteClipboard;
 
+    bool ITaskAnnotationWindowContext.CanCopyPreviousFrameAnnotations => CanCopyPreviousFrameAnnotations;
+
     bool ITaskAnnotationWindowContext.CanUndo => CanUndo;
 
     bool ITaskAnnotationWindowContext.CanRedo => CanRedo;
@@ -117,7 +119,7 @@ public partial class TaskAnnotationWindow
 
     bool ITaskAnnotationWindowContext.ShowSuggestions => showSuggestions;
 
-    bool ITaskAnnotationWindowContext.ShowLabels => showLabels;
+    bool ITaskAnnotationWindowContext.ShowAnnotations => showAnnotations;
 
     int ITaskAnnotationWindowContext.EffectiveFrameIndex => EffectiveFrameIndex;
 
@@ -165,7 +167,7 @@ public partial class TaskAnnotationWindow
 
     string ITaskAnnotationWindowContext.GetSuggestionsToolClass() => GetSuggestionsToolClass();
 
-    string ITaskAnnotationWindowContext.GetLabelsToolClass() => GetLabelsToolClass();
+    string ITaskAnnotationWindowContext.GetAnnotationsToolClass() => GetAnnotationsToolClass();
 
     string ITaskAnnotationWindowContext.GetInspectorTabClass(TaskEditorInspectorTab tab) => GetInspectorTabClass(tab);
 
@@ -231,6 +233,8 @@ public partial class TaskAnnotationWindow
 
     bool ITaskAnnotationWindowContext.ShouldShowModelLoadButton(AutoAnnotationModelConfig model) => ShouldShowModelLoadButton(model);
 
+    int ITaskAnnotationWindowContext.GetModelSuggestionCount(AutoAnnotationModelConfig model) => GetModelSuggestionCount(model);
+
     void ITaskAnnotationWindowContext.SelectTool(EditorTool tool) => SelectTool(tool);
 
     void ITaskAnnotationWindowContext.StartRectangleTool() => StartRectangleTool();
@@ -241,6 +245,8 @@ public partial class TaskAnnotationWindow
 
     void ITaskAnnotationWindowContext.BeginPaste() => BeginPaste();
 
+    void ITaskAnnotationWindowContext.CopyPreviousFrameAnnotations() => CopyPreviousFrameAnnotations();
+
     void ITaskAnnotationWindowContext.Undo() => Undo();
 
     void ITaskAnnotationWindowContext.Redo() => Redo();
@@ -249,7 +255,7 @@ public partial class TaskAnnotationWindow
 
     void ITaskAnnotationWindowContext.ToggleShowSuggestions() => ToggleShowSuggestions();
 
-    void ITaskAnnotationWindowContext.ToggleShowLabels() => ToggleShowLabels();
+    void ITaskAnnotationWindowContext.ToggleShowAnnotations() => ToggleShowAnnotations();
 
     void ITaskAnnotationWindowContext.GoFirst() => GoFirst();
 
@@ -307,6 +313,8 @@ public partial class TaskAnnotationWindow
 
     void ITaskAnnotationWindowContext.CancelAutoAnnotationRun() => CancelAutoAnnotationRun();
 
+    void ITaskAnnotationWindowContext.ClearModelSuggestions(AutoAnnotationModelConfig model) => ClearModelSuggestions(model);
+
     void ITaskAnnotationWindowContext.SetModelEnabled(AutoAnnotationModelConfig model, ChangeEventArgs args) => SetModelEnabled(model, args);
 
     void ITaskAnnotationWindowContext.SetModelCreateSuggestions(AutoAnnotationModelConfig model, ChangeEventArgs args) => SetModelCreateSuggestions(model, args);
@@ -322,6 +330,8 @@ public partial class TaskAnnotationWindow
     void ITaskAnnotationWindowContext.SetMappingProjectLabel(AutoAnnotationModelConfig model, AutoAnnotationLabelMapping mapping, ChangeEventArgs args) => SetMappingProjectLabel(model, mapping, args);
 
     void ITaskAnnotationWindowContext.AcceptSuggestion(string suggestionId) => AcceptSuggestion(suggestionId);
+
+    void ITaskAnnotationWindowContext.RemoveSuggestion(string suggestionId) => RemoveSuggestion(suggestionId);
 
     void ITaskAnnotationWindowContext.AcceptCurrentFrameSuggestions() => AcceptCurrentFrameSuggestions();
 
@@ -408,7 +418,7 @@ public partial class TaskAnnotationWindow
     private bool isAutoAnnotating;
     private bool isModelLoading;
     private bool showSuggestions = true;
-    private bool showLabels = true;
+    private bool showAnnotations = true;
     private EditorTool activeTool = EditorTool.Select;
     private TaskEditorInspectorTab activeInspectorTab = TaskEditorInspectorTab.Shapes;
     private TaskEditorSourceFilter shapeSourceFilter = TaskEditorSourceFilter.All;
@@ -468,6 +478,8 @@ public partial class TaskAnnotationWindow
 
     private bool CanPasteClipboard => !isAutoAnnotating && clipboardShapes.Count > 0;
 
+    private bool CanCopyPreviousFrameAnnotations => !isAutoAnnotating && EffectiveFrameIndex > 0 && PreviousFrameShapes.Count > 0;
+
     private bool CanRemoveCurrentFrame => !isAutoAnnotating && Project.RemoteProject.Mode == AnnotationBackendMode.Offline && FrameCount > 0 && CurrentFrame != null;
 
     private IReadOnlyList<AutoAnnotationModelConfig> AutoAnnotationModels => Project.AutoAnnotation.Models.Items
@@ -502,6 +514,11 @@ public partial class TaskAnnotationWindow
 
     private IReadOnlyList<EditorShape> CurrentFrameShapes => editorShapes
         .Where(x => x.FrameIndex == EffectiveFrameIndex)
+        .OrderBy(x => x.Id)
+        .ToArray();
+
+    private IReadOnlyList<EditorShape> PreviousFrameShapes => editorShapes
+        .Where(x => x.FrameIndex == EffectiveFrameIndex - 1)
         .OrderBy(x => x.Id)
         .ToArray();
 
@@ -1002,6 +1019,12 @@ public partial class TaskAnnotationWindow
                 return;
             }
 
+            if (key == "B")
+            {
+                CopyPreviousFrameAnnotations();
+                return;
+            }
+
             if (key == "N")
             {
                 CycleEffectiveShapeLabel();
@@ -1030,6 +1053,11 @@ public partial class TaskAnnotationWindow
 
         if (args.Key is "Delete" or "Backspace")
         {
+            if (RemoveHoveredSuggestion())
+            {
+                return;
+            }
+
             DeleteEffectiveShape();
             return;
         }
@@ -1361,6 +1389,17 @@ public partial class TaskAnnotationWindow
 
     private void BeginRectangleSelection(EditorPoint imagePoint, bool additive)
     {
+        if (!showAnnotations)
+        {
+            if (!additive)
+            {
+                selectedShapeIds.Clear();
+            }
+
+            ClearSelectionGesture();
+            return;
+        }
+
         if (!IsInsideImage(imagePoint))
         {
             if (!additive)
@@ -1389,6 +1428,17 @@ public partial class TaskAnnotationWindow
 
     private void BeginFreeformSelection(EditorPoint imagePoint, bool additive)
     {
+        if (!showAnnotations)
+        {
+            if (!additive)
+            {
+                selectedShapeIds.Clear();
+            }
+
+            ClearSelectionGesture();
+            return;
+        }
+
         if (!IsInsideImage(imagePoint))
         {
             if (!additive)
@@ -1459,6 +1509,11 @@ public partial class TaskAnnotationWindow
 
     private void ApplyRectangleSelection(EditorRect? selectionRectangle, bool additive)
     {
+        if (!showAnnotations)
+        {
+            return;
+        }
+
         if (selectionRectangle == null)
         {
             return;
@@ -1478,6 +1533,11 @@ public partial class TaskAnnotationWindow
 
     private void ApplyFreeformSelection(IReadOnlyList<EditorPoint> polygon, bool additive)
     {
+        if (!showAnnotations)
+        {
+            return;
+        }
+
         if (polygon.Count < 3)
         {
             return;
@@ -1960,6 +2020,38 @@ public partial class TaskAnnotationWindow
         hoveredHandle = EditorHandle.None;
     }
 
+    private void CopyPreviousFrameAnnotations()
+    {
+        if (!CanCopyPreviousFrameAnnotations)
+        {
+            return;
+        }
+
+        CancelActiveOperation(clearSelection: true);
+        var copiedShapes = TaskAnnotationShapeOperations.CopyToFrameAsManual(
+            PreviousFrameShapes,
+            EffectiveFrameIndex,
+            imageWidth,
+            imageHeight);
+        if (copiedShapes.Count <= 0)
+        {
+            return;
+        }
+
+        editorShapes.AddRange(copiedShapes);
+        selectedShapeIds.Clear();
+        foreach (var shape in copiedShapes)
+        {
+            selectedShapeIds.Add(shape.Id);
+        }
+
+        hoveredShapeId = copiedShapes.FirstOrDefault()?.Id;
+        hoveredHandle = EditorHandle.None;
+        activeTool = EditorTool.Select;
+        pendingPasteCursor = null;
+        PushHistorySnapshot(markDirty: true);
+    }
+
     private void CommitPaste(EditorPoint imagePoint)
     {
         if (!CanPasteClipboard)
@@ -2072,9 +2164,19 @@ public partial class TaskAnnotationWindow
         }
     }
 
-    private void ToggleShowLabels()
+    private void ToggleShowAnnotations()
     {
-        showLabels = !showLabels;
+        showAnnotations = !showAnnotations;
+        if (showAnnotations)
+        {
+            return;
+        }
+
+        selectedShapeIds.Clear();
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+        dragState = null;
+        ClearSelectionGesture();
     }
 
     private void FitImageToView()
@@ -2106,6 +2208,11 @@ public partial class TaskAnnotationWindow
 
     private EditorHit HitTest(EditorPoint imagePoint, bool includeHandles)
     {
+        if (!showAnnotations)
+        {
+            return EditorHit.None;
+        }
+
         if (!IsInsideImage(imagePoint))
         {
             return EditorHit.None;
@@ -2358,6 +2465,41 @@ public partial class TaskAnnotationWindow
         PushHistorySnapshot(markDirty: true);
     }
 
+    private void RemoveSuggestion(string suggestionId)
+    {
+        if (IsModelOperationActive)
+        {
+            return;
+        }
+
+        RemoveSuggestionCore(suggestionId);
+    }
+
+    private bool RemoveHoveredSuggestion()
+    {
+        if (IsModelOperationActive || string.IsNullOrWhiteSpace(hoveredSuggestionId))
+        {
+            return false;
+        }
+
+        return RemoveSuggestionCore(hoveredSuggestionId);
+    }
+
+    private bool RemoveSuggestionCore(string suggestionId)
+    {
+        if (AutoAnnotationSuggestionOperations.RemoveSuggestion(autoAnnotationSuggestions, suggestionId) <= 0)
+        {
+            return false;
+        }
+
+        if (string.Equals(hoveredSuggestionId, suggestionId, StringComparison.OrdinalIgnoreCase))
+        {
+            hoveredSuggestionId = null;
+        }
+
+        return true;
+    }
+
     private void AcceptCurrentFrameSuggestions()
     {
         if (IsModelOperationActive)
@@ -2399,6 +2541,25 @@ public partial class TaskAnnotationWindow
         }
 
         hoveredSuggestionId = null;
+    }
+
+    private void ClearModelSuggestions(AutoAnnotationModelConfig model)
+    {
+        if (IsModelOperationActive)
+        {
+            return;
+        }
+
+        var removed = AutoAnnotationSuggestionOperations.ClearModelSuggestions(autoAnnotationSuggestions, model);
+        if (removed <= 0)
+        {
+            return;
+        }
+
+        if (hoveredSuggestionId != null && autoAnnotationSuggestions.All(x => !string.Equals(x.Id, hoveredSuggestionId, StringComparison.OrdinalIgnoreCase)))
+        {
+            hoveredSuggestionId = null;
+        }
     }
 
     private void BeginRemoveCurrentFrame()
@@ -2567,6 +2728,11 @@ public partial class TaskAnnotationWindow
             or AutoAnnotationModelStatus.MissingFile
             or AutoAnnotationModelStatus.UnsupportedModel
             or AutoAnnotationModelStatus.LoadFailed;
+    }
+
+    private int GetModelSuggestionCount(AutoAnnotationModelConfig model)
+    {
+        return autoAnnotationSuggestions.Count(x => string.Equals(x.ModelEntryId, model.Id, StringComparison.OrdinalIgnoreCase));
     }
 
     private Task RunFirstAutoAnnotation(bool allFrames)
@@ -2980,9 +3146,9 @@ public partial class TaskAnnotationWindow
         return classes;
     }
 
-    private string GetLabelsToolClass()
+    private string GetAnnotationsToolClass()
     {
-        return showLabels ? "task-editor-tool is-active" : "task-editor-tool";
+        return showAnnotations ? "task-editor-tool is-active" : "task-editor-tool";
     }
 
     private string GetInspectorTabClass(TaskEditorInspectorTab tab)

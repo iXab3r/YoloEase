@@ -118,6 +118,7 @@
                     {
                         var model = modelInfo.Model;
                         var isRemovePending = string.Equals(Context.PendingRemoveModelId, model.Id, StringComparison.OrdinalIgnoreCase);
+                        var modelSuggestionCount = Context.GetModelSuggestionCount(model);
                         <details class="task-editor-model-card" open="@(modelInfo.Index == 0 || isRemovePending)">
                             <summary class="task-editor-model-summary">
                                 <span class="task-editor-model-slot"
@@ -198,6 +199,15 @@
                                     </button>
                                     <button type="button" title="Duplicate" disabled="@Context.IsModelOperationActive" @onclick="() => Context.DuplicateAutoAnnotationModel(model)">
                                         <i class="fa fa-copy"></i>
+                                    </button>
+                                    <button type="button"
+                                            title="@($"Clear {modelSuggestionCount} suggestion(s) from this model")"
+                                            aria-label="@($"Clear {modelSuggestionCount} suggestion(s) from this model")"
+                                            data-testid="@($"task-editor-clear-model-suggestions-{model.Id}")"
+                                            disabled="@(Context.IsModelOperationActive || modelSuggestionCount <= 0)"
+                                            @onclick="() => Context.ClearModelSuggestions(model)">
+                                        <i class="fa fa-eraser"></i>
+                                        <span>@modelSuggestionCount</span>
                                     </button>
                                     <button type="button" title="Run current" disabled="@(!Context.CanRunModel(model))" @onclick="() => Context.RunAutoAnnotation(model, false)">
                                         <i class="fa fa-play"></i>

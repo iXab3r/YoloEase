@@ -92,6 +92,82 @@ public class AutoAnnotationModelsFixture
     }
 
     [Test]
+    public void ShouldClearOnlySuggestionsForModel()
+    {
+        // Given
+        var model = AutoAnnotationModelConfig.CreateLatest();
+        model.Id = "model-a";
+        var modelSuggestion = new AutoAnnotationSuggestion
+        {
+            ModelEntryId = model.Id,
+            FrameIndex = 0,
+            LabelId = 1,
+            BoundingBox = new RectangleD(1, 1, 10, 10),
+        };
+        var secondModelSuggestion = new AutoAnnotationSuggestion
+        {
+            ModelEntryId = model.Id,
+            FrameIndex = 1,
+            LabelId = 2,
+            BoundingBox = new RectangleD(2, 2, 20, 20),
+        };
+        var otherModelSuggestion = new AutoAnnotationSuggestion
+        {
+            ModelEntryId = "model-b",
+            FrameIndex = 0,
+            LabelId = 3,
+            BoundingBox = new RectangleD(3, 3, 30, 30),
+        };
+        var suggestions = new List<AutoAnnotationSuggestion>
+        {
+            modelSuggestion,
+            secondModelSuggestion,
+            otherModelSuggestion,
+        };
+
+        // When
+        var removed = AutoAnnotationSuggestionOperations.ClearModelSuggestions(suggestions, model);
+
+        // Then
+        removed.ShouldBe(2);
+        suggestions.ShouldBe(new[] { otherModelSuggestion });
+    }
+
+    [Test]
+    public void ShouldRemoveSingleSuggestionById()
+    {
+        // Given
+        var target = new AutoAnnotationSuggestion
+        {
+            Id = "suggestion-a",
+            ModelEntryId = "model-a",
+            FrameIndex = 0,
+            LabelId = 1,
+            BoundingBox = new RectangleD(1, 1, 10, 10),
+        };
+        var other = new AutoAnnotationSuggestion
+        {
+            Id = "suggestion-b",
+            ModelEntryId = "model-a",
+            FrameIndex = 0,
+            LabelId = 2,
+            BoundingBox = new RectangleD(2, 2, 20, 20),
+        };
+        var suggestions = new List<AutoAnnotationSuggestion>
+        {
+            target,
+            other,
+        };
+
+        // When
+        var removed = AutoAnnotationSuggestionOperations.RemoveSuggestion(suggestions, "SUGGESTION-A");
+
+        // Then
+        removed.ShouldBe(1);
+        suggestions.ShouldBe(new[] { other });
+    }
+
+    [Test]
     public void ShouldMaterializeSuggestionAsManualShape()
     {
         // Given

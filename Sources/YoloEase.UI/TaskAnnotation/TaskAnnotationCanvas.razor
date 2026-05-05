@@ -81,37 +81,34 @@
                 <div class="task-editor-guide-cross" style="@Context.GetGuideCrossStyle()"></div>
             }
 
-            @foreach (var shape in Context.CurrentFrameShapes)
+            @if (Context.ShowAnnotations)
             {
-                var label = Context.GetLabel(shape.LabelId);
-                <div class="@Context.GetShapeClass(shape)"
-                     style="@Context.GetShapeStyle(shape, label)">
-                    @if (Context.ShowLabels || Context.ShouldShowShapeDetails(shape))
-                    {
+                @foreach (var shape in Context.CurrentFrameShapes)
+                {
+                    var label = Context.GetLabel(shape.LabelId);
+                    <div class="@Context.GetShapeClass(shape)"
+                         style="@Context.GetShapeStyle(shape, label)">
                         <span class="task-editor-shape-caption">
-                            @if (Context.ShowLabels)
-                            {
-                                <span>@Context.FormatShapeLabel(label)</span>
-                            }
+                            <span>@Context.FormatShapeLabel(label)</span>
                             @if (Context.ShouldShowShapeDetails(shape))
                             {
                                 <span>@Context.FormatRect(shape)</span>
                             }
                         </span>
-                    }
-                    @if (Context.ShouldShowShapeHandles(shape))
-                    {
-                        <span class="task-editor-rotate-stem"></span>
-                        <span class="@Context.GetRotateHandleClass(shape)"></span>
-                        @foreach (var handle in Context.ResizeHandles)
+                        @if (Context.ShouldShowShapeHandles(shape))
                         {
-                            <span class="@Context.GetHandleClass(shape, handle)" style="@Context.GetHandleStyle(handle)"></span>
+                            <span class="task-editor-rotate-stem"></span>
+                            <span class="@Context.GetRotateHandleClass(shape)"></span>
+                            @foreach (var handle in Context.ResizeHandles)
+                            {
+                                <span class="@Context.GetHandleClass(shape, handle)" style="@Context.GetHandleStyle(handle)"></span>
+                            }
                         }
-                    }
-                </div>
+                    </div>
+                }
             }
 
-            @if (Context.ShouldShowSelectionBounds)
+            @if (Context.ShowAnnotations && Context.ShouldShowSelectionBounds)
             {
                 <div class="task-editor-selection-bounds" style="@Context.GetSelectionBoundsStyle()">
                     <span class="task-editor-rotate-stem"></span>
@@ -135,19 +132,19 @@
                 </svg>
             }
 
-            @foreach (var shape in Context.PendingPasteShapes)
+            @if (Context.ShowAnnotations)
             {
-                var label = Context.GetLabel(shape.LabelId);
-                <div class="@Context.GetPasteShapeClass(shape)"
-                     style="@Context.GetShapeStyle(shape, label)">
-                    @if (Context.ShowLabels)
-                    {
+                @foreach (var shape in Context.PendingPasteShapes)
+                {
+                    var label = Context.GetLabel(shape.LabelId);
+                    <div class="@Context.GetPasteShapeClass(shape)"
+                         style="@Context.GetShapeStyle(shape, label)">
                         <span class="task-editor-shape-caption">
                             <span>@Context.FormatShapeLabel(label)</span>
                             <span>@Context.FormatRect(shape)</span>
                         </span>
-                    }
-                </div>
+                    </div>
+                }
             }
 
             @if (Context.DraftRectangle != null)
@@ -193,13 +190,10 @@
                     var label = Context.GetLabel(suggestion.LabelId);
                     <div class="@Context.GetSuggestionClass(suggestion)"
                          style="@Context.GetSuggestionStyle(suggestion, label)"
-                         @onmouseenter="() => Context.SetHoveredSuggestion(suggestion.Id)"
-                         @onmouseleave="() => Context.ClearHoveredSuggestion(suggestion.Id)">
+                        @onmouseenter="() => Context.SetHoveredSuggestion(suggestion.Id)"
+                        @onmouseleave="() => Context.ClearHoveredSuggestion(suggestion.Id)">
                         <span class="task-editor-suggestion-caption">
-                            @if (Context.ShowLabels)
-                            {
-                                <span>@Context.FormatShapeLabel(label)</span>
-                            }
+                            <span>@Context.FormatShapeLabel(label)</span>
                             <span>@Context.FormatSuggestionConfidence(suggestion)</span>
                             <span>@Context.FormatSuggestionSource(suggestion)</span>
                         </span>
@@ -211,6 +205,16 @@
                                 @onclick="() => Context.AcceptSuggestion(suggestion.Id)">
                             <i class="fa fa-check"></i>
                             Accept
+                        </button>
+                        <button type="button"
+                                class="task-editor-suggestion-remove"
+                                title="Delete suggestion"
+                                aria-label="Delete suggestion"
+                                data-testid="@($"task-editor-remove-suggestion-{suggestion.Id}")"
+                                disabled="@(!Context.CanModifySuggestions)"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => Context.RemoveSuggestion(suggestion.Id)">
+                            <i class="fa fa-times"></i>
                         </button>
                     </div>
                 }

@@ -63,6 +63,39 @@ public sealed class AutoAnnotationSuggestion
 
 internal static class AutoAnnotationSuggestionOperations
 {
+    public static int RemoveSuggestion(IList<AutoAnnotationSuggestion> suggestions, string suggestionId)
+    {
+        for (var i = suggestions.Count - 1; i >= 0; i--)
+        {
+            if (!string.Equals(suggestions[i].Id, suggestionId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            suggestions.RemoveAt(i);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    public static int ClearModelSuggestions(IList<AutoAnnotationSuggestion> suggestions, AutoAnnotationModelConfig model)
+    {
+        var removed = 0;
+        for (var i = suggestions.Count - 1; i >= 0; i--)
+        {
+            if (!string.Equals(suggestions[i].ModelEntryId, model.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            suggestions.RemoveAt(i);
+            removed++;
+        }
+
+        return removed;
+    }
+
     public static int ReplaceFrameSuggestions(
         IList<AutoAnnotationSuggestion> suggestions,
         AutoAnnotationModelConfig model,

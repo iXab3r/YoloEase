@@ -1928,6 +1928,36 @@ body,
     pointer-events: auto;
 }
 
+.task-editor-suggestion-remove {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 22px;
+    height: 22px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    color: #ffffff;
+    background: rgba(220, 53, 69, 0.94);
+    border: 1px solid rgba(255, 203, 211, 0.72);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    opacity: 0.86;
+    pointer-events: auto;
+    transform: scale(var(--shape-caption-scale, 1));
+    transform-origin: center;
+}
+
+.task-editor-suggestion-remove:hover:not(:disabled),
+.task-editor-suggestion-remove:focus-visible {
+    opacity: 1;
+    border-color: rgba(255, 233, 237, 0.95);
+}
+
+.task-editor-suggestion-remove:disabled {
+    opacity: 0.4;
+}
+
 .task-editor-suggestion-toolbar {
     position: absolute;
     left: 50%;
@@ -3083,6 +3113,7 @@ body,
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 5px;
     padding: 0 6px;
     color: #c9d1d6;
     background: #171d20;

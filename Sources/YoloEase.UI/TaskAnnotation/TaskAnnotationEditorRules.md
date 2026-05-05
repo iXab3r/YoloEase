@@ -25,6 +25,7 @@ The window shell should stay small: render chrome is split into `TaskAnnotationT
 - `Shift+Alt+1` through `Shift+Alt+9` run the corresponding auto-annotation model on all task frames.
 - Label shortcuts apply to `EffectiveShapes` when any exist; otherwise they change the active label for the next shape.
 - `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste the effective shape set.
+- `Ctrl+B` copies all annotations from the previous frame into the current frame as manual annotations and selects the inserted group.
 - `Delete` / `Backspace` delete `EffectiveShapes`.
 - `Escape` cancels the current tool or edit operation and clears selection.
 - `D` and `F` move one frame backward/forward.
@@ -52,6 +53,7 @@ The window shell should stay small: render chrome is split into `TaskAnnotationT
 - Paste starts an ephemeral preview mode. Preview shapes follow the mouse in image coordinates.
 - A left click commits the preview shapes to the current frame, assigns new shape IDs, selects the pasted group, and records one undo step.
 - `Escape` cancels the paste preview without changing annotations.
+- Copying annotations from the previous frame is immediate, does not use clipboard or paste preview, assigns new shape IDs, clears model source/confidence, selects every inserted shape, and records one undo step.
 
 ## Rendering
 
