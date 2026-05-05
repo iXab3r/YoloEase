@@ -33,6 +33,7 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
     public async Task<bool?> CheckPythonAsync(CheckItem check, CancellationToken cancellationToken)
     {
         check.AppendOutput($"Checking managed Python at {toolchain.PythonExecutable.FullName}");
+        toolchain.PythonExecutable.Refresh();
         if (!toolchain.PythonExecutable.Exists)
         {
             check.AppendOutput($"Expected at {toolchain.PythonExecutable.FullName}");
@@ -110,6 +111,7 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
     public async Task<bool?> CheckVenvAsync(CheckItem check, CancellationToken cancellationToken)
     {
         check.AppendOutput($"Checking managed Python environment at {toolchain.VenvPythonExecutable.FullName}");
+        toolchain.VenvPythonExecutable.Refresh();
         if (!toolchain.VenvPythonExecutable.Exists)
         {
             check.AppendOutput($"Expected at {toolchain.VenvPythonExecutable.FullName}");
@@ -130,6 +132,7 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
         var python = toolchain.RequirePythonExecutable();
         toolchain.EnsureManagedPath(toolchain.VenvDirectory);
         check.AppendOutput($"Creating managed Python environment at {toolchain.VenvDirectory.FullName}");
+        toolchain.VenvDirectory.Refresh();
         if (toolchain.VenvDirectory.Exists)
         {
             check.AppendOutput($"Removing previous environment at {toolchain.VenvDirectory.FullName}");
@@ -152,15 +155,31 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
         {
             throw new InvalidOperationException($"Failed to create Python environment: {TrimForError(result.CombinedOutput)}");
         }
+
+        toolchain.VenvPythonExecutable.Refresh();
+        if (!toolchain.VenvPythonExecutable.Exists)
+        {
+            throw new InvalidOperationException(
+                $"Python environment creation exited successfully, but expected Python executable was not created at {toolchain.VenvPythonExecutable.FullName}.");
+        }
+
         check.AppendOutput($"Managed Python environment created at {toolchain.VenvDirectory.FullName}");
     }
 
     public async Task<bool?> CheckPipAsync(CheckItem check, CancellationToken cancellationToken)
     {
         check.AppendOutput($"Checking pip inside managed environment at {toolchain.VenvPipExecutable.FullName}");
+        toolchain.VenvPipExecutable.Refresh();
         if (!toolchain.VenvPipExecutable.Exists)
         {
             check.AppendOutput($"Expected at {toolchain.VenvPipExecutable.FullName}");
+            return false;
+        }
+
+        toolchain.VenvPythonExecutable.Refresh();
+        if (!toolchain.VenvPythonExecutable.Exists)
+        {
+            check.AppendOutput($"Expected at {toolchain.VenvPythonExecutable.FullName}");
             return false;
         }
 
@@ -309,6 +328,7 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
     public async Task<bool?> CheckPackagesAsync(CheckItem check, CancellationToken cancellationToken)
     {
         check.AppendOutput("Checking required Python packages: cv2, numpy, matplotlib, shapely, onnx, onnxruntime, ultralytics, torch");
+        toolchain.VenvPythonExecutable.Refresh();
         if (!toolchain.VenvPythonExecutable.Exists)
         {
             check.AppendOutput($"Expected at {toolchain.VenvPythonExecutable.FullName}");
@@ -363,6 +383,7 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
     public async Task<bool?> CheckYoloAsync(CheckItem check, CancellationToken cancellationToken)
     {
         check.AppendOutput($"Checking YOLO CLI at {toolchain.YoloExecutable.FullName}");
+        toolchain.YoloExecutable.Refresh();
         if (!toolchain.YoloExecutable.Exists)
         {
             check.AppendOutput($"Expected at {toolchain.YoloExecutable.FullName}");
@@ -381,6 +402,7 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
     public async Task<bool?> CheckCvatCliAsync(CheckItem check, CancellationToken cancellationToken)
     {
         check.AppendOutput($"Checking CVAT CLI at {toolchain.CvatCliExecutable.FullName}");
+        toolchain.CvatCliExecutable.Refresh();
         if (!toolchain.CvatCliExecutable.Exists)
         {
             check.AppendOutput($"Expected at {toolchain.CvatCliExecutable.FullName}");

@@ -695,6 +695,81 @@ public class PrerequisitesFixture
     }
 
     /// <summary>
+    /// WHAT: Verifies that venv verification sees files created after the toolchain was resolved.
+    /// HOW: Caches a missing FileInfo state, creates the venv Python launcher, then checks the environment.
+    /// </summary>
+    [Test]
+    public async Task ShouldRefreshManagedPythonEnvironmentExecutableBeforeCheck()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var toolchain = CreateToolchain(temp);
+        toolchain.VenvPythonExecutable.Exists.ShouldBeFalse();
+        Directory.CreateDirectory(toolchain.VenvPythonExecutable.Directory!.FullName);
+        File.WriteAllText(toolchain.VenvPythonExecutable.FullName, string.Empty);
+
+        var runner = new Mock<IPrerequisiteCommandRunner>(MockBehavior.Strict);
+        runner
+            .Setup(x => x.RunAsync(
+                It.IsAny<Command>(),
+                "venv-python-version",
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<Action<string>>()))
+            .ReturnsAsync(new PrerequisiteCommandResult {ExitCode = 0, StandardOutput = "Python 3.11.9"});
+        var installer = new PrerequisitesInstaller(
+            toolchain,
+            runner.Object,
+            Mock.Of<IGpuRuntimeDetector>());
+        var check = new CheckItem {Name = "venv", Title = "Python environment"};
+
+        // When
+        var result = await installer.CheckVenvAsync(check, CancellationToken.None);
+
+        // Then
+        result.ShouldBe(true);
+        check.LastOutput.ShouldNotContain("Expected at");
+        runner.VerifyAll();
+    }
+
+    /// <summary>
+    /// WHAT: Verifies that a successful venv command still must create the expected Python launcher.
+    /// HOW: Mocks a zero-exit venv creation without writing Scripts\python.exe and checks the clear failure.
+    /// </summary>
+    [Test]
+    public async Task ShouldReportMissingPythonLauncherAfterVenvCreate()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var toolchain = CreateToolchain(temp);
+        Directory.CreateDirectory(toolchain.PythonExecutable.Directory!.FullName);
+        File.WriteAllText(toolchain.PythonExecutable.FullName, string.Empty);
+
+        var runner = new Mock<IPrerequisiteCommandRunner>(MockBehavior.Strict);
+        runner
+            .Setup(x => x.RunAsync(
+                It.IsAny<Command>(),
+                "venv-create",
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<Action<string>>()))
+            .ReturnsAsync(new PrerequisiteCommandResult {ExitCode = 0});
+        var installer = new PrerequisitesInstaller(
+            toolchain,
+            runner.Object,
+            Mock.Of<IGpuRuntimeDetector>());
+        var check = new CheckItem {Name = "venv", Title = "Python environment"};
+
+        // When
+        var error = await Should.ThrowAsync<InvalidOperationException>(() => installer.CreateVenvAsync(check, CancellationToken.None));
+
+        // Then
+        error.Message.ShouldContain("expected Python executable was not created");
+        error.Message.ShouldContain(toolchain.VenvPythonExecutable.FullName);
+        runner.VerifyAll();
+    }
+
+    /// <summary>
     /// WHAT: Verifies that a failed single-row prerequisite fix remains visible instead of being hidden by verification.
     /// HOW: Runs a fix that throws and confirms no follow-up check clears the recorded error.
     /// </summary>
