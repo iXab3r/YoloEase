@@ -98,7 +98,15 @@ public sealed class CheckSuite : DisposableReactiveObject
                 progressHandler?.Invoke(new CheckSuiteProgress(check, "Installing", completedSteps, totalSteps));
                 await check.RemediateAsync(cancellationToken);
                 completedSteps++;
-                progressHandler?.Invoke(new CheckSuiteProgress(check, check.LastError == null ? "Installed" : "Install failed", completedSteps, totalSteps));
+                var installFailed = check.LastError != null;
+                progressHandler?.Invoke(new CheckSuiteProgress(check, installFailed ? "Install failed" : "Installed", completedSteps, totalSteps));
+                if (installFailed)
+                {
+                    completedSteps++;
+                    progressHandler?.Invoke(new CheckSuiteProgress(check, "Verification skipped", completedSteps, totalSteps));
+                    continue;
+                }
+
                 progressHandler?.Invoke(new CheckSuiteProgress(check, "Verifying", completedSteps, totalSteps));
                 var after = await check.EvaluateAsync(cancellationToken);
                 completedSteps++;

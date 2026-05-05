@@ -229,6 +229,12 @@ public sealed class PrerequisitesViewModel : RefreshableReactiveObject, ICanBeSe
             {
                 UpdateOperationProgress(new CheckSuiteProgress(check, "Fixing", 0, 2));
                 await check.RemediateAsync(cancellationToken);
+                if (check.LastError != null)
+                {
+                    UpdateOperationProgress(new CheckSuiteProgress(check, "Fix failed", 2, 2));
+                    return;
+                }
+
                 UpdateOperationProgress(new CheckSuiteProgress(check, "Checking", 1, 2));
                 await check.EvaluateAsync(cancellationToken);
                 UpdateOperationProgress(new CheckSuiteProgress(check, check.IsSatisfied == true ? "Checked" : "Still missing", 2, 2));

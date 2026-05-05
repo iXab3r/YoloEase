@@ -1,5 +1,3 @@
-using System.Formats.Tar;
-using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
@@ -74,7 +72,7 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
         {
             Directory.CreateDirectory(extractionDirectory.FullName);
             check.AppendOutput($"Extracting Python archive to {extractionDirectory.FullName}");
-            await ExtractTarGzipAsync(archive, extractionDirectory, cancellationToken);
+            await ExtractTarGzipAsync(archive, extractionDirectory, check, cancellationToken);
 
             var extractedPythonDirectory = FindExtractedPythonDirectory(extractionDirectory);
             check.AppendOutput($"Moving extracted Python from {extractedPythonDirectory.FullName} to {toolchain.PythonDirectory.FullName}");
@@ -489,22 +487,36 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
             }
         }
 
-        tempFile.MoveTo(targetFile.FullName);
+        await MoveDownloadedArchiveAsync(tempFile, targetFile, check, cancellationToken);
         await VerifySha256Async(targetFile, toolchain.PythonArchiveSha256, check, cancellationToken);
         check.AppendOutput($"Python archive saved to {targetFile.FullName}");
         return targetFile;
     }
 
-    private static async Task ExtractTarGzipAsync(FileInfo archive, DirectoryInfo extractionDirectory, CancellationToken cancellationToken)
+    private async Task ExtractTarGzipAsync(
+        FileInfo archive,
+        DirectoryInfo extractionDirectory,
+        CheckItem check,
+        CancellationToken cancellationToken)
     {
-        await using var archiveStream = new FileStream(archive.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 128, useAsync: true);
-        await using var gzipStream = new GZipStream(archiveStream, CompressionMode.Decompress);
-        await Task.Run(() =>
+        var tar = ResolveTarExecutable();
+        check.AppendOutput($"Using archive extractor: {tar.FullName}");
+        var result = await commandRunner.RunAsync(
+            Cli.Wrap(tar.FullName).WithArguments(x =>
+            {
+                x.Add("-xzf");
+                x.Add(archive.FullName);
+                x.Add("-C");
+                x.Add(extractionDirectory.FullName);
+            }),
+            "python-archive-extract",
+            InstallTimeout,
+            cancellationToken,
+            check.AppendOutput);
+        if (!result.IsSuccess)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            TarFile.ExtractToDirectory(gzipStream, extractionDirectory.FullName, overwriteFiles: false);
-            cancellationToken.ThrowIfCancellationRequested();
-        }, cancellationToken);
+            throw new InvalidOperationException($"Failed to extract Python archive with {tar.FullName}: {TrimForError(result.CombinedOutput)}");
+        }
     }
 
     private static DirectoryInfo FindExtractedPythonDirectory(DirectoryInfo extractionDirectory)
@@ -515,12 +527,80 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
             .ToArray();
         if (pythonExecutables.Length <= 0)
         {
-            throw new InvalidOperationException($"Python archive did not contain a python.exe under {extractionDirectory.FullName}.");
+            throw new InvalidOperationException(
+                $"Python archive did not contain a python.exe under {extractionDirectory.FullName}. " +
+                $"Extracted entries: {DescribeDirectoryContents(extractionDirectory)}");
         }
 
         return pythonExecutables.FirstOrDefault(x => string.Equals(x.Directory?.Name, "python", StringComparison.OrdinalIgnoreCase))?.Directory
                ?? pythonExecutables[0].Directory
                ?? throw new InvalidOperationException($"Python archive did not contain a usable Python directory under {extractionDirectory.FullName}.");
+    }
+
+    private static async Task MoveDownloadedArchiveAsync(
+        FileInfo tempFile,
+        FileInfo targetFile,
+        CheckItem check,
+        CancellationToken cancellationToken)
+    {
+        var lastError = default(Exception);
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                tempFile.Refresh();
+                targetFile.Refresh();
+                if (!tempFile.Exists)
+                {
+                    if (targetFile.Exists)
+                    {
+                        check.AppendOutput($"Python archive already moved to {targetFile.FullName}");
+                        return;
+                    }
+
+                    throw new FileNotFoundException($"Downloaded Python archive temporary file is missing: {tempFile.FullName}", tempFile.FullName);
+                }
+
+                File.Move(tempFile.FullName, targetFile.FullName, overwrite: true);
+                return;
+            }
+            catch (IOException e) when (attempt < 5)
+            {
+                lastError = e;
+            }
+            catch (UnauthorizedAccessException e) when (attempt < 5)
+            {
+                lastError = e;
+            }
+
+            check.AppendOutput($"Waiting to finalize Python archive download, attempt {attempt + 1}/5");
+            await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), cancellationToken);
+        }
+
+        throw new IOException($"Failed to finalize Python archive download from {tempFile.FullName} to {targetFile.FullName}.", lastError);
+    }
+
+    private static FileInfo ResolveTarExecutable()
+    {
+        var systemTar = new FileInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe"));
+        return systemTar.Exists ? systemTar : new FileInfo("tar.exe");
+    }
+
+    private static string DescribeDirectoryContents(DirectoryInfo directory)
+    {
+        directory.Refresh();
+        if (!directory.Exists)
+        {
+            return "directory does not exist";
+        }
+
+        var entries = directory
+            .EnumerateFileSystemInfos("*", SearchOption.AllDirectories)
+            .Take(30)
+            .Select(x => Path.GetRelativePath(directory.FullName, x.FullName))
+            .ToArray();
+        return entries.Length <= 0 ? "empty directory" : string.Join(", ", entries);
     }
 
     private static async Task VerifySha256Async(FileInfo file, string expectedSha256, CheckItem check, CancellationToken cancellationToken)

@@ -581,12 +581,6 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 
     private void SetManagedPythonEnvironment(EnvironmentVariablesBuilder environment)
     {
-        toolchain.EnsureBaseDirectories();
-        var pipCacheDirectory = Path.Combine(toolchain.DownloadsDirectory.FullName, "pip-cache");
-        Directory.CreateDirectory(pipCacheDirectory);
-        environment.Set("PYTHONUTF8", "1");
-        environment.Set("PYTHONIOENCODING", "utf-8");
-        environment.Set("PIP_DISABLE_PIP_VERSION_CHECK", "1");
-        environment.Set("PIP_CACHE_DIR", pipCacheDirectory);
+        ManagedPythonEnvironment.Apply(toolchain, environment, activateVenv: true);
     }
 }

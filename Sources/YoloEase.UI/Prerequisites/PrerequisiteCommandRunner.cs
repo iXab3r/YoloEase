@@ -28,9 +28,6 @@ public sealed partial class PrerequisiteCommandRunner : DisposableReactiveObject
         Action<string>? outputHandler = null)
     {
         toolchain.EnsureBaseDirectories();
-        var pipCacheDirectory = new DirectoryInfo(Path.Combine(toolchain.DownloadsDirectory.FullName, "pip-cache"));
-        Directory.CreateDirectory(pipCacheDirectory.FullName);
-
         using var timeoutCts = new CancellationTokenSource(timeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         var output = new StringBuilder();
@@ -41,13 +38,7 @@ public sealed partial class PrerequisiteCommandRunner : DisposableReactiveObject
         try
         {
             var preparedCommand = command
-                .WithEnvironmentVariables(x =>
-                {
-                    x.Set("PYTHONUTF8", "1");
-                    x.Set("PYTHONIOENCODING", "utf-8");
-                    x.Set("PIP_DISABLE_PIP_VERSION_CHECK", "1");
-                    x.Set("PIP_CACHE_DIR", pipCacheDirectory.FullName);
-                })
+                .WithEnvironmentVariables(x => ManagedPythonEnvironment.Apply(toolchain, x))
                 .WithValidation(CommandResultValidation.None);
             var log = Log.WithSuffix(SanitizeLogName(logName));
             var commandText = Redact(preparedCommand.ToString());

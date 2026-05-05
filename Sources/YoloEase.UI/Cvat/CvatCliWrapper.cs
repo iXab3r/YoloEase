@@ -47,12 +47,14 @@ public partial class CvatCliWrapper
 
     private Command CreatePythonCommand()
     {
-        return Cli.Wrap(toolchain.RequireVenvPythonExecutable().FullName);
+        return Cli.Wrap(toolchain.RequireVenvPythonExecutable().FullName)
+            .WithEnvironmentVariables(x => ManagedPythonEnvironment.Apply(toolchain, x, activateVenv: true));
     }
 
     private Command CreateCvatCliCommand()
     {
-        return Cli.Wrap(toolchain.RequireCvatCliExecutable().FullName);
+        return Cli.Wrap(toolchain.RequireCvatCliExecutable().FullName)
+            .WithEnvironmentVariables(x => ManagedPythonEnvironment.Apply(toolchain, x, activateVenv: true));
     }
 
     public async Task DownloadAnnotations(

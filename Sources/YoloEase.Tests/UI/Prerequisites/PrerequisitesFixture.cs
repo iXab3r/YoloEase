@@ -571,6 +571,38 @@ public class PrerequisitesFixture
     }
 
     /// <summary>
+    /// WHAT: Verifies prerequisite commands prefer the managed Python toolchain over machine Python state.
+    /// HOW: Runs a shell command through the prerequisite runner and inspects the injected process environment.
+    /// </summary>
+    [Test]
+    public async Task ShouldRunPrerequisiteCommandsWithManagedPythonEnvironment()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var toolchain = CreateToolchain(temp);
+        var runner = new PrerequisiteCommandRunner(toolchain);
+        var expectedVenvScripts = Path.Combine(toolchain.VenvDirectory.FullName, "Scripts");
+        var expectedManagedPython = toolchain.PythonDirectory.FullName;
+        var cmd = Cli.Wrap(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
+            .WithArguments(new[]
+            {
+                "/c",
+                "echo PATH=%PATH% && echo PYTHONNOUSERSITE=%PYTHONNOUSERSITE% && echo PIP_REQUIRE_VIRTUALENV=%PIP_REQUIRE_VIRTUALENV% && echo PYTHONPATH=%PYTHONPATH% && echo PYTHONHOME=%PYTHONHOME%"
+            });
+
+        // When
+        var result = await runner.RunAsync(cmd, "managed-python-env", TimeSpan.FromSeconds(10));
+
+        // Then
+        result.CombinedOutput.ShouldContain($"PATH={expectedVenvScripts}");
+        result.CombinedOutput.ShouldContain(expectedManagedPython);
+        result.CombinedOutput.ShouldContain("PYTHONNOUSERSITE=1");
+        result.CombinedOutput.ShouldContain("PIP_REQUIRE_VIRTUALENV=1");
+        result.CombinedOutput.ShouldContain("PYTHONPATH=");
+        result.CombinedOutput.ShouldContain("PYTHONHOME=");
+    }
+
+    /// <summary>
     /// WHAT: Verifies that Python remediation installs from the pinned portable archive without invoking the normal installer.
     /// HOW: Creates a tiny cached tar.gz archive, verifies its hash, extracts it, and checks the managed executable.
     /// </summary>
@@ -620,6 +652,22 @@ public class PrerequisitesFixture
         runner
             .Setup(x => x.RunAsync(
                 It.IsAny<Command>(),
+                "python-archive-extract",
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<Action<string>>()))
+            .Callback(() =>
+            {
+                var extractionDirectory = downloadsDirectory.EnumerateDirectories("python-extract-*").Single();
+                var extractedPythonDirectory = Path.Combine(extractionDirectory.FullName, "python");
+                Directory.CreateDirectory(Path.Combine(extractedPythonDirectory, "Lib"));
+                File.WriteAllText(Path.Combine(extractedPythonDirectory, "python.exe"), "fake executable");
+                File.WriteAllText(Path.Combine(extractedPythonDirectory, "Lib", "os.py"), "fake library");
+            })
+            .ReturnsAsync(new PrerequisiteCommandResult {ExitCode = 0});
+        runner
+            .Setup(x => x.RunAsync(
+                It.IsAny<Command>(),
                 "python-version",
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>(),
@@ -644,6 +692,72 @@ public class PrerequisitesFixture
         check.LastOutput.ShouldContain("Managed Python installed");
         runner.VerifyAll();
         toolchain.VerifyAll();
+    }
+
+    /// <summary>
+    /// WHAT: Verifies that a failed single-row prerequisite fix remains visible instead of being hidden by verification.
+    /// HOW: Runs a fix that throws and confirms no follow-up check clears the recorded error.
+    /// </summary>
+    [Test]
+    public async Task ShouldKeepInstallErrorVisibleAfterSinglePrerequisiteFixFailure()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var suite = new CheckSuite();
+        var evaluationCalls = 0;
+        var check = new CheckItem {Name = "broken-install", Title = "Broken install"}
+            .WithEvaluation((_, _) =>
+            {
+                Interlocked.Increment(ref evaluationCalls);
+                return Task.FromResult<bool?>(false);
+            })
+            .WithRemediation((_, _) => throw new InvalidOperationException("installer exploded"));
+        suite.AddCheck(check);
+        var viewModel = CreateViewModel(new TestConfigProvider(new YoloEaseApplicationConfig()), suite, temp);
+
+        // When
+        await viewModel.RemediateCheckAsync(check);
+
+        // Then
+        check.IsSatisfied.ShouldBe(false);
+        check.LastError.ShouldNotBeNull();
+        check.LastError.Value.Message.ShouldContain("installer exploded");
+        check.LastOutput.ShouldContain("Error: installer exploded");
+        evaluationCalls.ShouldBe(0);
+        viewModel.OperationFailed.ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// WHAT: Verifies that bulk prerequisite installation preserves remediation failures for the failing row.
+    /// HOW: Runs suite remediation with a throwing fix and confirms verification is skipped for that row.
+    /// </summary>
+    [Test]
+    public async Task ShouldKeepInstallErrorVisibleAfterBulkPrerequisiteFixFailure()
+    {
+        // Given
+        var suite = new CheckSuite();
+        var evaluationCalls = 0;
+        var progressMessages = new List<string>();
+        var check = new CheckItem {Name = "broken-bulk-install", Title = "Broken bulk install"}
+            .WithEvaluation((_, _) =>
+            {
+                Interlocked.Increment(ref evaluationCalls);
+                return Task.FromResult<bool?>(false);
+            })
+            .WithRemediation((_, _) => throw new InvalidOperationException("bulk installer exploded"));
+        suite.AddCheck(check);
+
+        // When
+        await suite.RemediateFailedAsync(x => progressMessages.Add(x.Message));
+
+        // Then
+        check.IsSatisfied.ShouldBe(false);
+        check.LastError.ShouldNotBeNull();
+        check.LastError.Value.Message.ShouldContain("bulk installer exploded");
+        check.LastOutput.ShouldContain("Error: bulk installer exploded");
+        evaluationCalls.ShouldBe(1);
+        progressMessages.ShouldContain("Install failed: Broken bulk install");
+        progressMessages.ShouldContain("Verification skipped: Broken bulk install");
     }
 
     /// <summary>

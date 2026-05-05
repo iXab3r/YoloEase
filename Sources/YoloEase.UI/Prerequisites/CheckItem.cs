@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using PoeShared.Logging;
 using PoeShared.Modularity;
 
 namespace YoloEase.UI.Prerequisites;
@@ -10,6 +11,8 @@ namespace YoloEase.UI.Prerequisites;
 /// </summary>
 public sealed class CheckItem : DisposableReactiveObject, IHasError
 {
+    private static readonly IFluentLog Log = typeof(CheckItem).PrepareLogger();
+
     private readonly List<CheckAction> evaluationActions = new();
     private readonly List<CheckAction> remediationActions = new();
     private readonly List<CheckItem> dependencies = new();
@@ -224,6 +227,7 @@ public sealed class CheckItem : DisposableReactiveObject, IHasError
         }
 
         var trimmedOutput = output.Trim();
+        Log.Info($"[{(string.IsNullOrWhiteSpace(Title) ? Name : Title)}] {trimmedOutput}");
         var nextOutput = string.IsNullOrWhiteSpace(LastOutput)
             ? trimmedOutput
             : $"{LastOutput}{Environment.NewLine}{trimmedOutput}";
