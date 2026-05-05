@@ -27,7 +27,9 @@ public interface IPrerequisitesToolchain
 
     FileInfo RequirementsFile { get; }
 
-    Uri PythonInstallerUri { get; }
+    Uri PythonArchiveUri { get; }
+
+    string PythonArchiveSha256 { get; }
 
     void EnsureBaseDirectories();
 

@@ -65,7 +65,7 @@ Annotated tasks are exported in a CVAT-style format. That export is then convert
 
 The prepared dataset can be augmented, split into train/validation sets, and passed into YOLO training. The app also keeps track of training progress and generated model outputs.
 
-Training runs through a managed Python toolchain under the application's data directory. The prerequisites workflow owns Python, the virtual environment, PyTorch, Ultralytics, ONNX Runtime, and related packages so training does not depend on global PATH state. When a compatible NVIDIA driver is detected, the managed environment can install CUDA-enabled PyTorch wheels and training selects the first CUDA device automatically; otherwise CPU training remains valid.
+Training runs through a managed Python toolchain under the application's data directory. The prerequisites workflow downloads a pinned portable CPython archive and owns Python, the virtual environment, PyTorch, Ultralytics, ONNX Runtime, and related packages so training does not depend on global PATH state. When a compatible NVIDIA driver is detected, the managed environment can install CUDA-enabled PyTorch wheels and training selects the first CUDA device automatically; otherwise CPU training remains valid.
 
 ### 6. Prediction-Assisted Iteration
 

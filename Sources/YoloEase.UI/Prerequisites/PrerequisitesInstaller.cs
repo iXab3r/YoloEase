@@ -1,3 +1,7 @@
+using System.Formats.Tar;
+using System.IO.Compression;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Threading;
 using CliWrap;
@@ -50,38 +54,58 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
     {
         toolchain.EnsureBaseDirectories();
         toolchain.EnsureManagedPath(toolchain.PythonDirectory);
-        check.AppendOutput($"Installing managed Python into {toolchain.PythonDirectory.FullName}");
+        toolchain.EnsureManagedPath(toolchain.DownloadsDirectory);
+        check.AppendOutput($"Installing managed Python from a pinned archive into {toolchain.PythonDirectory.FullName}");
 
-        if (toolchain.PythonDirectory.Exists && !toolchain.PythonExecutable.Exists)
+        toolchain.PythonDirectory.Refresh();
+        if (toolchain.PythonDirectory.Exists)
         {
-            check.AppendOutput($"Removing incomplete Python directory {toolchain.PythonDirectory.FullName}");
+            check.AppendOutput($"Removing previous managed Python directory {toolchain.PythonDirectory.FullName}");
             toolchain.PythonDirectory.Delete(recursive: true);
         }
 
-        var installer = await DownloadPythonInstallerAsync(check, cancellationToken);
-        var result = await commandRunner.RunAsync(
-            Cli.Wrap(installer.FullName).WithArguments(x =>
+        var archive = await DownloadPythonArchiveAsync(check, cancellationToken);
+        var extractionDirectory = new DirectoryInfo(Path.Combine(
+            toolchain.DownloadsDirectory.FullName,
+            $"python-extract-{Guid.NewGuid():N}"));
+        toolchain.EnsureManagedPath(extractionDirectory);
+
+        try
+        {
+            Directory.CreateDirectory(extractionDirectory.FullName);
+            check.AppendOutput($"Extracting Python archive to {extractionDirectory.FullName}");
+            await ExtractTarGzipAsync(archive, extractionDirectory, cancellationToken);
+
+            var extractedPythonDirectory = FindExtractedPythonDirectory(extractionDirectory);
+            check.AppendOutput($"Moving extracted Python from {extractedPythonDirectory.FullName} to {toolchain.PythonDirectory.FullName}");
+            Directory.Move(extractedPythonDirectory.FullName, toolchain.PythonDirectory.FullName);
+        }
+        finally
+        {
+            extractionDirectory.Refresh();
+            if (extractionDirectory.Exists)
             {
-                x.Add("/quiet");
-                x.Add("InstallAllUsers=0");
-                x.Add($"TargetDir={toolchain.PythonDirectory.FullName}");
-                x.Add("Include_launcher=0");
-                x.Add("Include_pip=1");
-                x.Add("Include_test=0");
-                x.Add("Include_doc=0");
-                x.Add("Include_tcltk=0");
-                x.Add("PrependPath=0");
-                x.Add("Shortcuts=0");
-            }),
-            "python-install",
-            InstallTimeout,
+                extractionDirectory.Delete(recursive: true);
+            }
+        }
+
+        toolchain.PythonExecutable.Refresh();
+        if (!toolchain.PythonExecutable.Exists)
+        {
+            throw new InvalidOperationException($"Python archive extraction completed, but managed Python was not created at {toolchain.PythonExecutable.FullName}.");
+        }
+
+        var result = await commandRunner.RunAsync(
+            Cli.Wrap(toolchain.PythonExecutable.FullName).WithArguments("--version"),
+            "python-version",
+            QuickTimeout,
             cancellationToken,
             check.AppendOutput);
-
-        if (!result.IsSuccess)
+        if (!result.IsSuccess || !result.CombinedOutput.Contains("Python 3.11", StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"Python installer failed with exit code {result.ExitCode}: {TrimForError(result.CombinedOutput)}");
+            throw new InvalidOperationException($"Managed Python did not report Python 3.11 after extraction: {TrimForError(result.CombinedOutput)}");
         }
+
         check.AppendOutput($"Managed Python installed at {toolchain.PythonExecutable.FullName}");
     }
 
@@ -403,35 +427,42 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
         return true;
     }
 
-    private async Task<FileInfo> DownloadPythonInstallerAsync(CheckItem check, CancellationToken cancellationToken)
+    private async Task<FileInfo> DownloadPythonArchiveAsync(CheckItem check, CancellationToken cancellationToken)
     {
         toolchain.EnsureBaseDirectories();
-        var targetFile = new FileInfo(Path.Combine(toolchain.DownloadsDirectory.FullName, Path.GetFileName(toolchain.PythonInstallerUri.LocalPath)));
+        var targetFile = new FileInfo(Path.Combine(toolchain.DownloadsDirectory.FullName, GetArchiveFileName(toolchain.PythonArchiveUri)));
         targetFile.Refresh();
         if (targetFile.Exists)
         {
-            check.AppendOutput($"Using cached Python installer: {targetFile.FullName}");
-            return targetFile;
+            var cachedHash = await ComputeSha256Async(targetFile, cancellationToken);
+            if (string.Equals(cachedHash, toolchain.PythonArchiveSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                check.AppendOutput($"Using cached Python archive: {targetFile.FullName}");
+                return targetFile;
+            }
+
+            check.AppendOutput($"Removing cached Python archive with unexpected SHA-256: {targetFile.FullName}");
+            targetFile.Delete();
         }
 
         var tempFile = new FileInfo(targetFile.FullName + ".tmp");
         if (tempFile.Exists)
         {
-            check.AppendOutput($"Removing stale Python installer download: {tempFile.FullName}");
+            check.AppendOutput($"Removing stale Python archive download: {tempFile.FullName}");
             tempFile.Delete();
         }
 
-        check.AppendOutput($"Downloading Python installer from {toolchain.PythonInstallerUri}");
+        check.AppendOutput($"Downloading Python archive from {toolchain.PythonArchiveUri}");
         check.AppendOutput($"Download target: {targetFile.FullName}");
         using var httpClient = new HttpClient();
-        using var response = await httpClient.GetAsync(toolchain.PythonInstallerUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await httpClient.GetAsync(toolchain.PythonArchiveUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         var totalBytes = response.Content.Headers.ContentLength;
         check.AppendOutput(totalBytes is > 0
-            ? $"Python installer size: {FormatBytes(totalBytes.Value)}"
-            : "Python installer size is unknown");
+            ? $"Python archive size: {FormatBytes(totalBytes.Value)}"
+            : "Python archive size is unknown");
         await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken))
-        await using (var target = new FileStream(tempFile.FullName, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        await using (var target = new FileStream(tempFile.FullName, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 128, useAsync: true))
         {
             var buffer = new byte[1024 * 128];
             var downloadedBytes = 0L;
@@ -453,18 +484,74 @@ public sealed partial class PrerequisitesInstaller : DisposableReactiveObjectWit
 
                 lastProgressReport = DateTimeOffset.Now;
                 check.AppendOutput(totalBytes is > 0
-                    ? $"Downloading Python installer: {FormatBytes(downloadedBytes)} / {FormatBytes(totalBytes.Value)}"
-                    : $"Downloading Python installer: {FormatBytes(downloadedBytes)}");
+                    ? $"Downloading Python archive: {FormatBytes(downloadedBytes)} / {FormatBytes(totalBytes.Value)}"
+                    : $"Downloading Python archive: {FormatBytes(downloadedBytes)}");
             }
         }
 
-        if (targetFile.Exists)
-        {
-            targetFile.Delete();
-        }
         tempFile.MoveTo(targetFile.FullName);
-        check.AppendOutput($"Python installer saved to {targetFile.FullName}");
+        await VerifySha256Async(targetFile, toolchain.PythonArchiveSha256, check, cancellationToken);
+        check.AppendOutput($"Python archive saved to {targetFile.FullName}");
         return targetFile;
+    }
+
+    private static async Task ExtractTarGzipAsync(FileInfo archive, DirectoryInfo extractionDirectory, CancellationToken cancellationToken)
+    {
+        await using var archiveStream = new FileStream(archive.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 128, useAsync: true);
+        await using var gzipStream = new GZipStream(archiveStream, CompressionMode.Decompress);
+        await Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TarFile.ExtractToDirectory(gzipStream, extractionDirectory.FullName, overwriteFiles: false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }, cancellationToken);
+    }
+
+    private static DirectoryInfo FindExtractedPythonDirectory(DirectoryInfo extractionDirectory)
+    {
+        var pythonExecutables = extractionDirectory
+            .EnumerateFiles("python.exe", SearchOption.AllDirectories)
+            .OrderBy(x => x.FullName.Length)
+            .ToArray();
+        if (pythonExecutables.Length <= 0)
+        {
+            throw new InvalidOperationException($"Python archive did not contain a python.exe under {extractionDirectory.FullName}.");
+        }
+
+        return pythonExecutables.FirstOrDefault(x => string.Equals(x.Directory?.Name, "python", StringComparison.OrdinalIgnoreCase))?.Directory
+               ?? pythonExecutables[0].Directory
+               ?? throw new InvalidOperationException($"Python archive did not contain a usable Python directory under {extractionDirectory.FullName}.");
+    }
+
+    private static async Task VerifySha256Async(FileInfo file, string expectedSha256, CheckItem check, CancellationToken cancellationToken)
+    {
+        var actualSha256 = await ComputeSha256Async(file, cancellationToken);
+        if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            file.Delete();
+            throw new InvalidOperationException($"Python archive SHA-256 mismatch. Expected {expectedSha256}, got {actualSha256}.");
+        }
+
+        check.AppendOutput($"Python archive SHA-256 verified: {actualSha256}");
+    }
+
+    private static async Task<string> ComputeSha256Async(FileInfo file, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 128, useAsync: true);
+        using var sha256 = SHA256.Create();
+        var hash = await sha256.ComputeHashAsync(stream, cancellationToken);
+        return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static string GetArchiveFileName(Uri archiveUri)
+    {
+        var fileName = Path.GetFileName(Uri.UnescapeDataString(archiveUri.AbsolutePath));
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            throw new InvalidOperationException($"Python archive URI does not contain a file name: {archiveUri}");
+        }
+
+        return fileName;
     }
 
     private static string FormatBytes(long bytes)

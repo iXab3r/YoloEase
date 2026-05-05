@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using System.Formats.Tar;
+using System.IO.Compression;
 using System.Linq.Expressions;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using System.Security.Cryptography;
 using CliWrap;
 using Moq;
 using PoeShared.Modularity;
@@ -76,6 +79,9 @@ public class PrerequisitesFixture
         toolchain.LogsDirectory.FullName.ShouldBe(Path.Combine(temp.Path, "tools", "logs"));
         toolchain.YoloExecutable.FullName.ShouldBe(Path.Combine(temp.Path, "tools", "venv", "Scripts", "yolo.exe"));
         toolchain.CvatCliExecutable.FullName.ShouldBe(Path.Combine(temp.Path, "tools", "venv", "Scripts", "cvat-cli.exe"));
+        toolchain.PythonArchiveUri.AbsoluteUri.ShouldContain("python-build-standalone");
+        toolchain.PythonArchiveUri.AbsoluteUri.ShouldContain("cpython-3.11.9%2B20240726-x86_64-pc-windows-msvc");
+        toolchain.PythonArchiveSha256.ShouldBe("2e67e46b1e59d12583f3079c97dba46de3c8a158c9a83234a31613e969d0fd90");
 
         // When
         toolchain.EnsureBaseDirectories();
@@ -565,6 +571,82 @@ public class PrerequisitesFixture
     }
 
     /// <summary>
+    /// WHAT: Verifies that Python remediation installs from the pinned portable archive without invoking the normal installer.
+    /// HOW: Creates a tiny cached tar.gz archive, verifies its hash, extracts it, and checks the managed executable.
+    /// </summary>
+    [Test]
+    public async Task ShouldInstallPythonFromPinnedArchive()
+    {
+        // Given
+        using var appData = new TemporaryDirectory();
+        var toolsRoot = new DirectoryInfo(Path.Combine(appData.Path, "tools"));
+        var downloadsDirectory = new DirectoryInfo(Path.Combine(toolsRoot.FullName, "downloads"));
+        var pythonDirectory = new DirectoryInfo(Path.Combine(toolsRoot.FullName, "python-3.11"));
+        var pythonExecutable = new FileInfo(Path.Combine(pythonDirectory.FullName, "python.exe"));
+        var archiveUri = new Uri("https://example.test/cpython-test.tar.gz");
+
+        Directory.CreateDirectory(downloadsDirectory.FullName);
+        var archive = new FileInfo(Path.Combine(downloadsDirectory.FullName, "cpython-test.tar.gz"));
+        CreatePythonArchive(archive);
+        var archiveSha256 = ComputeSha256(archive);
+
+        var toolchain = new Mock<IPrerequisitesToolchain>(MockBehavior.Strict);
+        toolchain
+            .SetupGet(x => x.DownloadsDirectory)
+            .Returns(downloadsDirectory);
+        toolchain
+            .SetupGet(x => x.PythonDirectory)
+            .Returns(pythonDirectory);
+        toolchain
+            .SetupGet(x => x.PythonExecutable)
+            .Returns(pythonExecutable);
+        toolchain
+            .SetupGet(x => x.PythonArchiveUri)
+            .Returns(archiveUri);
+        toolchain
+            .SetupGet(x => x.PythonArchiveSha256)
+            .Returns(archiveSha256);
+        toolchain
+            .Setup(x => x.EnsureBaseDirectories())
+            .Callback(() =>
+            {
+                Directory.CreateDirectory(toolsRoot.FullName);
+                Directory.CreateDirectory(downloadsDirectory.FullName);
+            });
+        toolchain
+            .Setup(x => x.EnsureManagedPath(It.IsAny<FileSystemInfo>()));
+
+        var runner = new Mock<IPrerequisiteCommandRunner>(MockBehavior.Strict);
+        runner
+            .Setup(x => x.RunAsync(
+                It.IsAny<Command>(),
+                "python-version",
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<Action<string>>()))
+            .ReturnsAsync(new PrerequisiteCommandResult {ExitCode = 0, StandardOutput = "Python 3.11.9"});
+
+        var installer = new PrerequisitesInstaller(
+            toolchain.Object,
+            runner.Object,
+            Mock.Of<IGpuRuntimeDetector>());
+        var check = new CheckItem {Name = "python", Title = "Python"};
+
+        // When
+        await installer.InstallPythonAsync(check, CancellationToken.None);
+
+        // Then
+        pythonExecutable.Refresh();
+        pythonExecutable.Exists.ShouldBeTrue();
+        File.Exists(Path.Combine(pythonDirectory.FullName, "Lib", "os.py")).ShouldBeTrue();
+        check.LastOutput.ShouldContain("Using cached Python archive");
+        check.LastOutput.ShouldContain("Extracting Python archive");
+        check.LastOutput.ShouldContain("Managed Python installed");
+        runner.VerifyAll();
+        toolchain.VerifyAll();
+    }
+
+    /// <summary>
     /// WHAT: Verifies that a CPU-only torch install is missing when a compatible NVIDIA driver exists.
     /// HOW: Mocks detector output for an RTX GPU with driver 581.80 and CPU PyTorch.
     /// </summary>
@@ -865,6 +947,37 @@ public class PrerequisitesFixture
         Directory.CreateDirectory(scriptsDirectory);
         File.WriteAllText(Path.Combine(scriptsDirectory, "ConvertCVATtoYolo8.py"), string.Empty);
         File.WriteAllText(Path.Combine(scriptsDirectory, "CVATWrapper.py"), string.Empty);
+    }
+
+    private static void CreatePythonArchive(FileInfo archive)
+    {
+        var sourceRoot = Path.Combine(Path.GetTempPath(), "YoloEasePrerequisitesTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var pythonRoot = Path.Combine(sourceRoot, "python");
+            Directory.CreateDirectory(Path.Combine(pythonRoot, "Lib"));
+            File.WriteAllText(Path.Combine(pythonRoot, "python.exe"), "fake executable");
+            File.WriteAllText(Path.Combine(pythonRoot, "Lib", "os.py"), "fake library");
+
+            Directory.CreateDirectory(archive.Directory!.FullName);
+            using var target = new FileStream(archive.FullName, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            using var gzip = new GZipStream(target, CompressionLevel.SmallestSize);
+            TarFile.CreateFromDirectory(sourceRoot, gzip, includeBaseDirectory: false);
+        }
+        finally
+        {
+            if (Directory.Exists(sourceRoot))
+            {
+                Directory.Delete(sourceRoot, recursive: true);
+            }
+        }
+    }
+
+    private static string ComputeSha256(FileInfo file)
+    {
+        using var stream = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var sha256 = SHA256.Create();
+        return Convert.ToHexString(sha256.ComputeHash(stream)).ToLowerInvariant();
     }
 
     private sealed class TestConfigProvider : IConfigProvider<YoloEaseApplicationConfig>, IDisposable

@@ -7,7 +7,9 @@ namespace YoloEase.UI.Prerequisites;
 /// </summary>
 public sealed class PrerequisitesToolchain : IPrerequisitesToolchain
 {
-    private const string PythonInstallerVersion = "3.11.9";
+    private const string PythonStandaloneBuild = "20240726";
+    private const string PythonStandaloneAsset = "cpython-3.11.9+20240726-x86_64-pc-windows-msvc-install_only_stripped.tar.gz";
+    private const string PythonStandaloneSha256 = "2e67e46b1e59d12583f3079c97dba46de3c8a158c9a83234a31613e969d0fd90";
 
     public PrerequisitesToolchain(IAppArguments appArguments)
     {
@@ -28,7 +30,8 @@ public sealed class PrerequisitesToolchain : IPrerequisitesToolchain
         YoloExecutable = new FileInfo(Path.Combine(VenvDirectory.FullName, "Scripts", "yolo.exe"));
         CvatCliExecutable = new FileInfo(Path.Combine(VenvDirectory.FullName, "Scripts", "cvat-cli.exe"));
         RequirementsFile = new FileInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts", "requirements.txt"));
-        PythonInstallerUri = new Uri($"https://www.python.org/ftp/python/{PythonInstallerVersion}/python-{PythonInstallerVersion}-amd64.exe");
+        PythonArchiveUri = new Uri($"https://github.com/astral-sh/python-build-standalone/releases/download/{PythonStandaloneBuild}/{Uri.EscapeDataString(PythonStandaloneAsset)}");
+        PythonArchiveSha256 = PythonStandaloneSha256;
     }
 
     public DirectoryInfo ToolsRoot { get; }
@@ -53,7 +56,9 @@ public sealed class PrerequisitesToolchain : IPrerequisitesToolchain
 
     public FileInfo RequirementsFile { get; }
 
-    public Uri PythonInstallerUri { get; }
+    public Uri PythonArchiveUri { get; }
+
+    public string PythonArchiveSha256 { get; }
 
     public void EnsureBaseDirectories()
     {
