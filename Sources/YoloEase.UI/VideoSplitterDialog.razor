@@ -149,7 +149,11 @@
         try
         {
             LoadError = null;
-            var probe = await VideoFrameExtractor.ProbeAsync(DataContext.VideoFile, taskTokenSource.Token);
+            var videoFile = DataContext.VideoFile;
+            var cancellationToken = taskTokenSource.Token;
+            var probe = await Task.Run(
+                () => VideoFrameExtractor.ProbeAsync(videoFile, cancellationToken),
+                cancellationToken);
             FrameCount = checked((int) probe.FrameCount);
             StartFrameIdx = 0;
             EndFrameIdx = Math.Max(0, FrameCount - 1);
@@ -180,6 +184,7 @@
         taskTokenSource.Cancel(false);
         taskTokenSource.Dispose();
         taskTokenSource = new CancellationTokenSource();
+        var cancellationToken = taskTokenSource.Token;
         progressTracker.Reset();
 
         Log.Debug($"Splitting video file to frames @ {inputFilePath}");
@@ -199,11 +204,13 @@
             var videoFileName = Path.GetFileNameWithoutExtension(inputFile.FullName);
             var localSources = new DirectoryInfo(Path.Combine(storageDirectory.FullName, "local-sources"));
             var outputDirectory = new DirectoryInfo(Path.Combine(localSources.FullName, videoFileName, $"{StartFrameIdx}-{EndFrameIdx} x{FrameNth}"));
+            var extractionRequest = new VideoFrameExtractionRequest(inputFile, outputDirectory, StartFrameIdx, EndFrameIdx, FrameNth);
+            var extractionProgress = progressTracker.GetOrAdd("Decoding");
 
-            await VideoFrameExtractor.ExtractAsync(
-                new VideoFrameExtractionRequest(inputFile, outputDirectory, StartFrameIdx, EndFrameIdx, FrameNth),
-                progressTracker.GetOrAdd("Decoding"),
-                taskTokenSource.Token);
+            await Task.Run(
+                () => VideoFrameExtractor.ExtractAsync(extractionRequest, extractionProgress, cancellationToken),
+                cancellationToken);
+            extractionProgress.Update(100);
 
             var files = outputDirectory.GetFiles();
             var alreadyAddedFiles = project

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reactive.Linq;
 using Moq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -6,6 +7,7 @@ using PoeShared.Modularity;
 using PoeShared.Services;
 using Shouldly;
 using YoloEase.UI.Core;
+using YoloEase.UI.Dto;
 
 namespace YoloEase.Tests.UI.Core;
 
@@ -51,7 +53,6 @@ public class AnnotationProjectAccessorFixture
             """);
 
         var instance = CreateInstance(storageDirectory);
-        instance.ProjectId = 207;
 
         await instance.Refresh().WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -63,6 +64,90 @@ public class AnnotationProjectAccessorFixture
         instance.Labels.Items.Select(x => x.Name).OrderBy(x => x).ShouldBe(new[] { "Bomb", "Flower" });
         instance.ProjectFiles.Items.Select(x => x.FileName).OrderBy(x => x).ShouldBe(new[] { "frame-a.png", "frame-b.png" });
         File.Exists(Path.Combine(storageDirectory.FullName, "annotation", "tasks", "1286", "task.json")).ShouldBeTrue();
+        File.Exists(Path.Combine(storageDirectory.FullName, "annotation", "project.json")).ShouldBeFalse();
+
+        var annotations = await instance.RetrieveTaskAnnotations(task.Id);
+        annotations.Count.ShouldBe(2);
+        File.Exists(Path.Combine(storageDirectory.FullName, "annotation", "project.json")).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// WHAT: Offline project identity and next ids are derived from workspace files instead of a project.json sidecar.
+    /// HOW: Creates labels, tasks, and annotations, then verifies the former state file is never written.
+    /// </summary>
+    [Test]
+    public async Task ShouldNotCreateProjectStateFileForOfflineWorkspace()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var storageDirectory = new DirectoryInfo(Path.Combine(temp.Path, "storage"));
+        var imageFile = new FileInfo(Path.Combine(temp.Path, "frame-a.png"));
+        await File.WriteAllTextAsync(imageFile.FullName, string.Empty);
+        var instance = CreateInstance(storageDirectory);
+        var projectStateFile = Path.Combine(storageDirectory.FullName, "annotation", "project.json");
+
+        // When
+        await instance.Refresh().WaitAsync(TimeSpan.FromSeconds(5));
+        await instance.AddLabel("Flower");
+        var task = await instance.CreateTask(new[] { imageFile });
+        var label = instance.Labels.Items.ShouldHaveSingleItem();
+        await instance.SaveTaskAnnotations(task.Id, new[]
+        {
+            new CvatRectangleAnnotation
+            {
+                Kind = CvatAnnotationShapeKind.Rectangle,
+                FrameIndex = 0,
+                LabelId = label.Id,
+                BoundingBox = new RectangleD(1, 2, 3, 4),
+                Source = "manual",
+            },
+        }, AnnotationTaskStatus.Completed);
+
+        // Then
+        File.Exists(projectStateFile).ShouldBeFalse();
+        instance.Tasks.Items.ShouldHaveSingleItem().Id.ShouldBe(1);
+        instance.Labels.Items.ShouldHaveSingleItem().Id.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// WHAT: Saving one offline task must not temporarily remove files that belong to another task from the shared task-file cache.
+    /// HOW: Creates two offline tasks, records project-file cache snapshots while finishing the first task, and checks the second task file remains present.
+    /// </summary>
+    [Test]
+    public async Task ShouldKeepOtherTaskFilesVisibleWhenSavingOfflineTask()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var storageDirectory = new DirectoryInfo(Path.Combine(temp.Path, "storage"));
+        var firstFile = new FileInfo(Path.Combine(temp.Path, "frame-a.png"));
+        var secondFile = new FileInfo(Path.Combine(temp.Path, "frame-b.png"));
+        await File.WriteAllTextAsync(firstFile.FullName, string.Empty);
+        await File.WriteAllTextAsync(secondFile.FullName, string.Empty);
+
+        var instance = CreateInstance(storageDirectory);
+        var firstTask = await instance.CreateTask(new[] { firstFile });
+        var secondTask = await instance.CreateTask(new[] { secondFile });
+        var secondTaskFileKey = $"{secondTask.Id}:{secondFile.Name}";
+        var fileSnapshots = new List<string[]>();
+        using var subscription = instance.ProjectFiles.Connect().Subscribe(_ =>
+        {
+            fileSnapshots.Add(instance.ProjectFiles.Items
+                .Select(x => $"{x.TaskId}:{x.FileName}")
+                .OrderBy(x => x)
+                .ToArray());
+        });
+        fileSnapshots.Clear();
+
+        // When
+        await instance.SaveTaskAnnotations(firstTask.Id, Array.Empty<CvatRectangleAnnotation>(), AnnotationTaskStatus.Completed);
+
+        // Then
+        fileSnapshots.Any(x => !x.Contains(secondTaskFileKey)).ShouldBeFalse();
+        instance.ProjectFiles.Items
+            .Select(x => $"{x.TaskId}:{x.FileName}")
+            .OrderBy(x => x)
+            .ShouldBe(new[] { $"{firstTask.Id}:{firstFile.Name}", secondTaskFileKey });
+        instance.Tasks.Items.Single(x => x.Id == firstTask.Id).Status.ShouldBe(AnnotationTaskStatus.Completed);
     }
 
     private static AnnotationProjectAccessor CreateInstance(DirectoryInfo storageDirectory)

@@ -10,6 +10,8 @@ public interface ITaskAnnotationWindowContext
 {
     ElementReference EditorViewport { get; set; }
 
+    ElementReference EditorHitLayer { get; set; }
+
     AnnotationTaskInfo TaskInfo { get; }
 
     IReadOnlyList<TaskAnnotationWindow.EditorHandle> ResizeHandles { get; }
@@ -64,6 +66,8 @@ public interface ITaskAnnotationWindowContext
 
     bool IsAutoSaving { get; }
 
+    bool IsCanvasInteractionBlocked { get; }
+
     bool CanRemoveCurrentFrame { get; }
 
     bool ShowSuggestions { get; }
@@ -88,7 +92,13 @@ public interface ITaskAnnotationWindowContext
 
     DateTimeOffset? LastSavedAt { get; }
 
-    string? CurrentImageDataUrl { get; }
+    string? CurrentImageSourceUrl { get; }
+
+    bool ShouldShowFrameNavigationFlash { get; }
+
+    int FrameNavigationFlashVersion { get; }
+
+    string FrameNavigationFlashClass { get; }
 
     string CurrentFrameLabel { get; }
 
@@ -113,6 +123,8 @@ public interface ITaskAnnotationWindowContext
     string? PendingRemoveModelId { get; }
 
     string GetToolClass(TaskAnnotationWindow.EditorTool tool);
+
+    string GetFrameNavigationButtonClass(TaskAnnotationWindow.FrameNavigationAction action);
 
     string GetSuggestionsToolClass();
 
@@ -227,6 +239,8 @@ public interface ITaskAnnotationWindowContext
     void HandleCanvasMouseLeave(MouseEventArgs args);
 
     void HandleCanvasWheel(WheelEventArgs args);
+
+    void SuppressBrowserDrag(DragEventArgs args);
 
     void SelectShapeFromList(string shapeId, MouseEventArgs args);
 

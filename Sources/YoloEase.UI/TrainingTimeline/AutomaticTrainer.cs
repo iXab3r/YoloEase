@@ -428,7 +428,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                 {
                     break;
                 }
-                
+
                 await AddPredictionsIfNeeded(project, cancellationToken);
                 if (cancellationToken.IsCancellationRequested)
                 {

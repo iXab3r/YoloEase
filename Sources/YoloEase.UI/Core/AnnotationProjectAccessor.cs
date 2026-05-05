@@ -23,7 +23,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     private readonly ICvatClient cvatClient;
     private readonly IUniqueIdGenerator idGenerator;
     private readonly IConfigSerializer configSerializer;
-    private readonly SourceCacheEx<TaskFileInfo, string> projectFileSource = new(x => $"{x.TaskId}:{x.FileName}");
+    private readonly SourceCacheEx<TaskFileInfo, string> projectFileSource = new(GetTaskFileCacheKey);
     private readonly SourceCacheEx<AnnotationTaskInfo, int> taskSource = new(x => x.Id);
     private readonly SourceCacheEx<AnnotationProjectInfoItem, int> projectsSources = new(x => x.Id);
     private readonly SourceCacheEx<AnnotationLabelInfo, int> labelSource = new(x => x.Id);
@@ -114,7 +114,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             {
                 Username = string.IsNullOrWhiteSpace(Username) ? Environment.UserName : Username,
             };
-            await EnsureOfflineProjectState();
+            EnsureOfflineProjectIdentity();
             await Refresh();
             return;
         }
@@ -437,6 +437,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
 
         await SaveOfflineTask(task);
+        UpdateOfflineTaskCache(task);
         await WriteOfflineTaskAnnotationsXml(task, annotations);
 
         if (deleteImageFile)
@@ -468,23 +469,22 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             throw new ArgumentException("Label name must be specified");
         }
 
-        var state = await EnsureOfflineProjectState();
+        var state = ResolveOfflineProjectIdentity();
         var labels = await ReadOfflineLabels(state.ProjectId);
         if (labels.Any(x => x.Name.Equals(labelName, StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException($"Label '{labelName}' already exists");
         }
 
+        var nextLabelId = GetNextOfflineLabelId(labels);
         var label = new OfflineLabelState
         {
-            Id = state.NextLabelId,
+            Id = nextLabelId,
             Name = labelName,
-            Color = NormalizeLabelColor(color, state.NextLabelId),
+            Color = NormalizeLabelColor(color, nextLabelId),
         };
 
         labels.Add(label);
-        state.NextLabelId++;
-        await SaveOfflineProjectState(state);
         await SaveOfflineLabels(state.ProjectId, labels);
         await Refresh();
     }
@@ -496,7 +496,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             throw new NotSupportedException("Labels can be edited only for offline projects");
         }
 
-        var state = await EnsureOfflineProjectState();
+        var state = ResolveOfflineProjectIdentity();
         var tasks = await ReadOfflineTasks(state.ProjectId);
         foreach (var task in tasks)
         {
@@ -520,7 +520,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             throw new NotSupportedException("Labels can be edited only for offline projects");
         }
 
-        var state = await EnsureOfflineProjectState();
+        var state = ResolveOfflineProjectIdentity();
         var labels = await ReadOfflineLabels(state.ProjectId);
         var label = labels.FirstOrDefault(x => x.Id == labelId);
         if (label == null)
@@ -546,10 +546,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             return;
         }
 
-        var state = await EnsureOfflineProjectState();
-        state.ProjectName = ProjectName;
-        state.Revision++;
-        await SaveOfflineProjectState(state);
+        EnsureOfflineProjectIdentity();
         await Refresh();
     }
 
@@ -653,7 +650,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
 
     private async Task RefreshOffline()
     {
-        var state = await EnsureOfflineProjectState();
+        var state = ResolveOfflineProjectIdentity();
         ProjectId = state.ProjectId;
         ProjectName = state.ProjectName;
         OrganizationId = null;
@@ -700,7 +697,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         })).ToArray());
     }
 
-    private async Task<OfflineAnnotationImportSummary> EnrichOfflineProjectFromAnnotationFiles(OfflineProjectState state)
+    private async Task<OfflineAnnotationImportSummary> EnrichOfflineProjectFromAnnotationFiles(OfflineProjectIdentity state)
     {
         try
         {
@@ -737,8 +734,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             var labels = await ReadOfflineLabels(state.ProjectId);
             var labelsByName = labels.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
             var existingTaskIds = existingTasks.Select(x => x.TaskId).ToHashSet();
-            state.NextLabelId = Math.Max(state.NextLabelId, labels.Select(x => x.Id).DefaultIfEmpty(0).Max() + 1);
-            state.NextTaskId = Math.Max(state.NextTaskId, existingTasks.Select(x => x.TaskId).DefaultIfEmpty(0).Max() + 1);
+            var nextLabelId = GetNextOfflineLabelId(labels);
             var addedLabels = 0;
             foreach (var label in selectedDescriptors
                          .SelectMany(x => x.Labels)
@@ -750,7 +746,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                     continue;
                 }
 
-                var labelId = state.NextLabelId++;
+                var labelId = nextLabelId++;
                 var labelState = new OfflineLabelState
                 {
                     Id = labelId,
@@ -783,9 +779,6 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                 return OfflineAnnotationImportSummary.Empty;
             }
 
-            state.NextTaskId = Math.Max(state.NextTaskId, selectedDescriptors.Select(x => x.TaskId).DefaultIfEmpty(0).Max() + 1);
-            state.Revision++;
-            await SaveOfflineProjectState(state);
             if (addedLabels > 0)
             {
                 await SaveOfflineLabels(state.ProjectId, labels);
@@ -1011,10 +1004,12 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
 
     private async Task<AnnotationTaskInfo> CreateOfflineTask(IReadOnlyList<FileInfo> filesToAdd)
     {
-        var state = await EnsureOfflineProjectState();
-        var taskId = state.NextTaskId++;
-        state.Revision++;
-        await SaveOfflineProjectState(state);
+        var state = ResolveOfflineProjectIdentity();
+        var existingTasks = await ReadOfflineTasks(state.ProjectId);
+        var annotationTaskIds = await Task.Run(() => ScanOfflineAnnotationFiles(GetOfflineAssetsTrainingDirectory(), state.ProjectId)
+            .Select(x => x.TaskId)
+            .ToArray());
+        var taskId = Math.Max(GetNextOfflineTaskId(existingTasks), annotationTaskIds.DefaultIfEmpty(0).Max() + 1);
 
         var task = new OfflineTaskState
         {
@@ -1029,7 +1024,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
 
         await SaveOfflineTask(task);
         var taskInfo = MapTask(task);
-        taskSource.AddOrUpdate(taskInfo);
+        UpdateOfflineTaskCache(task);
         await Refresh();
         return taskInfo;
     }
@@ -1095,6 +1090,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         task.UpdatedAt = DateTimeOffset.UtcNow;
         task.CompletedAt = status == AnnotationTaskStatus.Completed ? DateTimeOffset.UtcNow : null;
         await SaveOfflineTask(task);
+        UpdateOfflineTaskCache(task);
 
         var normalizedLabels = labels
             .Select(x => x with
@@ -1117,7 +1113,8 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
 
         var document = XDocument.Load(annotationsFile.FullName);
-        var labelsByName = await EnsureOfflineLabelsFromXml(document);
+        var labelsByName = (await ReadOfflineLabels(ProjectId))
+            .ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
         var frameIndexesByName = task.Files
             .Select((fileName, index) => new { fileName, index })
             .GroupBy(x => x.fileName, StringComparer.OrdinalIgnoreCase)
@@ -1165,63 +1162,6 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
 
         return annotations;
-    }
-
-    private async Task<Dictionary<string, OfflineLabelState>> EnsureOfflineLabelsFromXml(XDocument document)
-    {
-        var state = await EnsureOfflineProjectState();
-        var labels = await ReadOfflineLabels(state.ProjectId);
-        var labelsByName = labels.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
-        var colorsByName = document
-            .Descendants("label")
-            .Select(x => new
-            {
-                Name = x.Element("name")?.Value?.Trim(),
-                Color = x.Element("color")?.Value?.Trim(),
-            })
-            .Where(x => !string.IsNullOrWhiteSpace(x.Name) && !string.IsNullOrWhiteSpace(x.Color))
-            .GroupBy(x => x.Name!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(x => x.Key, x => x.First().Color, StringComparer.OrdinalIgnoreCase);
-
-        var names = document
-            .Descendants("label")
-            .Elements("name")
-            .Select(x => x.Value)
-            .Concat(document.Descendants("box").Select(x => x.Attribute("label")?.Value))
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x!.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var changed = false;
-        foreach (var name in names)
-        {
-            if (labelsByName.ContainsKey(name))
-            {
-                continue;
-            }
-
-            var labelId = state.NextLabelId++;
-            var label = new OfflineLabelState
-            {
-                Id = labelId,
-                Name = name,
-                Color = colorsByName.GetValueOrDefault(name) ?? PickOfflineLabelColor(labelId),
-            };
-            labels.Add(label);
-            labelsByName[name] = label;
-            changed = true;
-        }
-
-        if (changed)
-        {
-            state.Revision++;
-            await SaveOfflineProjectState(state);
-            await SaveOfflineLabels(state.ProjectId, labels);
-            labelSource.EditDiff(labels.Select(MapLabel).ToArray());
-        }
-
-        return labelsByName;
     }
 
     private async Task WriteOfflineTaskAnnotationsXml(OfflineTaskState task, IReadOnlyList<CvatRectangleAnnotation> annotations)
@@ -1380,52 +1320,59 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         return value.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.ffffff+00:00", CultureInfo.InvariantCulture);
     }
 
-    private async Task<OfflineProjectState> EnsureOfflineProjectState()
+    private OfflineProjectIdentity ResolveOfflineProjectIdentity()
+    {
+        EnsureOfflineProjectIdentity();
+        return new OfflineProjectIdentity
+        {
+            ProjectId = ProjectId,
+            ProjectName = ProjectName,
+        };
+    }
+
+    private void EnsureOfflineProjectIdentity()
     {
         if (StorageDirectory == null)
         {
             throw new InvalidOperationException("Storage directory must be initialized before using offline mode");
         }
 
-        var projectId = ProjectId > 0 ? ProjectId : 1;
-        var stateFile = GetOfflineProjectStateFile(projectId);
-        if (stateFile.Directory is { Exists: false })
+        var rootDirectory = GetOfflineRootDirectory();
+        if (!rootDirectory.Exists)
         {
-            stateFile.Directory.Create();
+            rootDirectory.Create();
         }
 
-        OfflineProjectState state;
-        if (stateFile.Exists)
-        {
-            var content = await File.ReadAllTextAsync(stateFile.FullName);
-            state = configSerializer.Deserialize<OfflineProjectState>(content);
-        }
-        else
-        {
-            state = new OfflineProjectState
-            {
-                ProjectId = projectId,
-                ProjectName = ResolveOfflineProjectName(),
-            };
-        }
-
-        state.ProjectName = ResolveOfflineProjectName();
-
-        ProjectId = state.ProjectId;
-        ProjectName = state.ProjectName;
-        await SaveOfflineProjectState(state);
-        return state;
+        ProjectId = ProjectId > 0 ? ProjectId : ResolveOfflineProjectIdFromAnnotationFiles();
+        ProjectName = ResolveOfflineProjectName();
     }
 
-    private async Task SaveOfflineProjectState(OfflineProjectState state)
+    private int ResolveOfflineProjectIdFromAnnotationFiles()
     {
-        var stateFile = GetOfflineProjectStateFile(state.ProjectId);
-        if (stateFile.Directory is { Exists: false })
+        try
         {
-            stateFile.Directory.Create();
-        }
+            var trainingDirectory = GetOfflineAssetsTrainingDirectory();
+            trainingDirectory.Refresh();
+            if (!trainingDirectory.Exists)
+            {
+                return 1;
+            }
 
-        await File.WriteAllTextAsync(stateFile.FullName, configSerializer.Serialize(state));
+            var projectIds = trainingDirectory
+                .GetFiles("annotations.project.*.task.*.xml", SearchOption.TopDirectoryOnly)
+                .Select(x => OfflineAnnotationFileNameRegex.Match(x.Name))
+                .Where(x => x.Success)
+                .Select(x => ParseInt(x.Groups["projectId"].Value, 0))
+                .Where(x => x > 0)
+                .Distinct()
+                .ToArray();
+            return projectIds.Length == 1 ? projectIds[0] : 1;
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to derive offline project id from annotation XML files", e);
+            return 1;
+        }
     }
 
     private async Task<List<OfflineLabelState>> ReadOfflineLabels(int projectId)
@@ -1537,6 +1484,37 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         await File.WriteAllTextAsync(taskFile.FullName, configSerializer.Serialize(task));
     }
 
+    private void UpdateOfflineTaskCache(OfflineTaskState task)
+    {
+        taskSource.AddOrUpdate(MapTask(task));
+        jobsSource.AddOrUpdate(MapJob(task));
+
+        var taskFiles = task.Files.EmptyIfNull().Select(fileName => new TaskFileInfo
+        {
+            FileName = fileName,
+            TaskId = task.TaskId,
+        }).ToArray();
+        var taskFileKeys = taskFiles.Select(GetTaskFileCacheKey).ToHashSet(StringComparer.Ordinal);
+        foreach (var staleTaskFile in projectFileSource.Items
+                     .Where(x => x.TaskId == task.TaskId && !taskFileKeys.Contains(GetTaskFileCacheKey(x)))
+                     .ToArray())
+        {
+            projectFileSource.RemoveKey(GetTaskFileCacheKey(staleTaskFile));
+        }
+
+        projectFileSource.AddOrUpdate(taskFiles);
+    }
+
+    private static string GetTaskFileCacheKey(TaskFileInfo taskFile)
+    {
+        return GetTaskFileCacheKey(taskFile.TaskId, taskFile.FileName);
+    }
+
+    private static string GetTaskFileCacheKey(int? taskId, string fileName)
+    {
+        return $"{taskId}:{fileName}";
+    }
+
     private DirectoryInfo GetOfflineRootDirectory()
     {
         if (StorageDirectory == null)
@@ -1550,11 +1528,6 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     private DirectoryInfo GetOfflineProjectDirectory(int projectId)
     {
         return GetOfflineRootDirectory();
-    }
-
-    private FileInfo GetOfflineProjectStateFile(int projectId)
-    {
-        return new FileInfo(Path.Combine(GetOfflineProjectDirectory(projectId).FullName, "project.json"));
     }
 
     private FileInfo GetOfflineLabelsFile(int projectId)
@@ -1719,6 +1692,16 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         return PickOfflineLabelColor(fallbackId);
     }
 
+    private static int GetNextOfflineLabelId(IEnumerable<OfflineLabelState> labels)
+    {
+        return labels.Select(x => x.Id).DefaultIfEmpty(0).Max() + 1;
+    }
+
+    private static int GetNextOfflineTaskId(IEnumerable<OfflineTaskState> tasks)
+    {
+        return tasks.Select(x => x.TaskId).DefaultIfEmpty(0).Max() + 1;
+    }
+
     private string ResolveOfflineProjectName()
     {
         if (ProjectFile != null)
@@ -1766,19 +1749,13 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         bool HasAnnotations);
 
     /// <summary>
-    /// Persists offline project identity, labels, tasks, and selected project configuration.
+    /// Represents offline project identity derived from the project file and workspace contents.
     /// </summary>
-    private sealed record OfflineProjectState
+    private sealed record OfflineProjectIdentity
     {
         public int ProjectId { get; set; }
 
         public string ProjectName { get; set; } = "Offline Project";
-
-        public int NextTaskId { get; set; } = 1;
-
-        public int NextLabelId { get; set; } = 1;
-
-        public int Revision { get; set; }
     }
 
     /// <summary>

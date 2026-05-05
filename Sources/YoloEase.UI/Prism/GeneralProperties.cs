@@ -32,7 +32,7 @@ public record GeneralPropertiesV0 : IPoeEyeConfigVersioned
 
     public string[] DataDirectoryPaths { get; set; } = Array.Empty<string>();
 
-    public string BaseModelPath { get; set; } = "yolov8s.pt";
+    public string BaseModelPath { get; set; } = "yolo11s.pt";
 
     public string TrainAdditionalArguments { get; set; } = string.Empty;
 

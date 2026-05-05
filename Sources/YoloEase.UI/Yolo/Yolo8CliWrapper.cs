@@ -25,6 +25,8 @@ public sealed record Yolo8ConvertAnnotationsArguments
 /// </summary>
 public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 {
+    private const string DefaultTrainingWorkersArgument = "workers=0";
+
     [GeneratedRegex("\\s*(?'EpochCurrent'\\d+)\\/(?'EpochMax'\\d+)\\s*(?'VideoRAM'[\\w\\.]+).*?(?'EpochProgressPercentage'\\d+)%", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex TrainProgressParserRegex();
 
@@ -42,6 +44,9 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 
     [GeneratedRegex(@"^\s*(OSError|fatal|RuntimeError|Error\s*)\:\s*(?'error'.*)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex OsErrorParserRegex();
+
+    [GeneratedRegex(@"(?:^|\s)(?:--)?workers\s*(?:=|\s+)", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
+    private static partial Regex TrainingWorkersArgumentParserRegex();
 
     [GeneratedRegex(@"Ultralytics\s+(?'YoloVersion'.*?)\s+(?'PythonVersion'.*?)\s+(?'TorchVersion'.*?)\+(?'DeviceType'.*?)\s+(?'DeviceIndex'[\w\:]+)(?:\s+\((?'DeviceName'.*)\))?", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
     private static partial Regex YoloChecksParserRegex();
@@ -339,6 +344,11 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         var updateParser = UltralyticsUpdateAvailableParserRegex();
         var osErrorParser = OsErrorParserRegex();
         var managedDeviceArgument = await ResolveTrainingDeviceArgumentAsync(settings.AdditionalArguments, cancellationToken);
+        var managedWorkersArgument = ResolveDefaultTrainingWorkersArgument(settings.AdditionalArguments);
+        if (!string.IsNullOrWhiteSpace(managedWorkersArgument))
+        {
+            Log.Info($"Training workers are not specified, using {managedWorkersArgument} to avoid Windows multiprocessing memory pressure");
+        }
 
         var cmd = CreateYoloCommand(x =>
             {
@@ -370,6 +380,11 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
                 if (!string.IsNullOrWhiteSpace(managedDeviceArgument))
                 {
                     x.Add(managedDeviceArgument, escape: false);
+                }
+
+                if (!string.IsNullOrWhiteSpace(managedWorkersArgument))
+                {
+                    x.Add(managedWorkersArgument, escape: false);
                 }
 
                 if (!string.IsNullOrEmpty(settings.AdditionalArguments))
@@ -452,6 +467,13 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
             throw new FileNotFoundException($"Failed to find 'best' trained model in list of models: {trainedModels.DumpToString()}");
         }
         return new FileInfo(trainedModel);
+    }
+
+    internal static string? ResolveDefaultTrainingWorkersArgument(string? additionalArguments)
+    {
+        return string.IsNullOrWhiteSpace(additionalArguments) || !TrainingWorkersArgumentParserRegex().IsMatch(additionalArguments)
+            ? DefaultTrainingWorkersArgument
+            : null;
     }
 
     private async Task<string> ResolveTrainingDeviceArgumentAsync(string additionalArguments, CancellationToken cancellationToken)

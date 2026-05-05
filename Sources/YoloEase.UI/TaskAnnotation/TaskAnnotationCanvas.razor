@@ -2,23 +2,41 @@
 
 <section class="task-editor-canvas" aria-label="Image editor">
     <nav class="task-editor-frame-nav" aria-label="Frame navigation">
-        <button type="button" class="task-editor-icon-button" title="First frame" @onclick="Context.GoFirst">
+        <button type="button"
+                class="@Context.GetFrameNavigationButtonClass(TaskAnnotationWindow.FrameNavigationAction.First)"
+                title="First frame"
+                @onclick="Context.GoFirst">
             <i class="fa fa-fast-backward"></i>
         </button>
-        <button type="button" class="task-editor-icon-button" title="Step back (C)" @onclick="Context.GoPreviousStep">
+        <button type="button"
+                class="@Context.GetFrameNavigationButtonClass(TaskAnnotationWindow.FrameNavigationAction.PreviousStep)"
+                title="Step back (C)"
+                @onclick="Context.GoPreviousStep">
             <i class="fa fa-step-backward"></i>
         </button>
-        <button type="button" class="task-editor-icon-button" title="Back (D)" @onclick="Context.GoPrevious">
+        <button type="button"
+                class="@Context.GetFrameNavigationButtonClass(TaskAnnotationWindow.FrameNavigationAction.Previous)"
+                title="Back (D)"
+                @onclick="Context.GoPrevious">
             <i class="fa fa-chevron-left"></i>
         </button>
         <span class="task-editor-frame-index">@Context.CurrentFrameLabel</span>
-        <button type="button" class="task-editor-icon-button" title="Next (F)" @onclick="Context.GoNext">
+        <button type="button"
+                class="@Context.GetFrameNavigationButtonClass(TaskAnnotationWindow.FrameNavigationAction.Next)"
+                title="Next (F)"
+                @onclick="Context.GoNext">
             <i class="fa fa-chevron-right"></i>
         </button>
-        <button type="button" class="task-editor-icon-button" title="Step forward (V)" @onclick="Context.GoNextStep">
+        <button type="button"
+                class="@Context.GetFrameNavigationButtonClass(TaskAnnotationWindow.FrameNavigationAction.NextStep)"
+                title="Step forward (V)"
+                @onclick="Context.GoNextStep">
             <i class="fa fa-step-forward"></i>
         </button>
-        <button type="button" class="task-editor-icon-button" title="Last frame" @onclick="Context.GoLast">
+        <button type="button"
+                class="@Context.GetFrameNavigationButtonClass(TaskAnnotationWindow.FrameNavigationAction.Last)"
+                title="Last frame"
+                @onclick="Context.GoLast">
             <i class="fa fa-fast-forward"></i>
         </button>
         @if (Context.CanRemoveCurrentFrame)
@@ -52,13 +70,19 @@
     </nav>
 
     <div class="task-editor-viewport"
-         @ref="editorViewport">
+         @ref="editorViewport"
+         @ondragstart="Context.SuppressBrowserDrag"
+         @ondragstart:preventDefault="true"
+         @ondragstart:stopPropagation="true">
         <div class="task-editor-image-layer" style="@Context.ImageLayerStyle">
-            @if (!string.IsNullOrWhiteSpace(Context.CurrentImageDataUrl))
+            @if (!string.IsNullOrWhiteSpace(Context.CurrentImageSourceUrl))
             {
                 <img class="task-editor-image"
-                     src="@Context.CurrentImageDataUrl"
+                     src="@Context.CurrentImageSourceUrl"
                      draggable="false"
+                     @ondragstart="Context.SuppressBrowserDrag"
+                     @ondragstart:preventDefault="true"
+                     @ondragstart:stopPropagation="true"
                      alt="@Context.CurrentFileLabel" />
             }
             else
@@ -72,6 +96,13 @@
                 </div>
             }
         </div>
+
+        @if (Context.ShouldShowFrameNavigationFlash)
+        {
+            <div @key="Context.FrameNavigationFlashVersion"
+                 class="@Context.FrameNavigationFlashClass"
+                 aria-hidden="true"></div>
+        }
 
         <div class="task-editor-overlay-layer" aria-hidden="true">
             @if (Context.ShouldShowCreationGuide)
@@ -157,12 +188,21 @@
         </div>
 
         <div class="@Context.GetHitLayerClass()"
+             tabindex="0"
+             @ref="editorHitLayer"
              @onmousedown="Context.HandleCanvasMouseDown"
+             @onmousedown:preventDefault="true"
+             @onmousedown:stopPropagation="true"
              @onmousemove="Context.HandleCanvasMouseMove"
+             @onmousemove:preventDefault="@Context.IsCanvasInteractionBlocked"
              @onmouseup="Context.HandleCanvasMouseUp"
+             @onmouseup:preventDefault="true"
              @onmouseleave="Context.HandleCanvasMouseLeave"
              @onwheel="Context.HandleCanvasWheel"
              @onwheel:preventDefault="true"
+             @ondragstart="Context.SuppressBrowserDrag"
+             @ondragstart:preventDefault="true"
+             @ondragstart:stopPropagation="true"
              @oncontextmenu:preventDefault="true"></div>
 
         @if (Context.ShowSuggestions && Context.CurrentFrameSuggestionCount > 0)
@@ -208,8 +248,8 @@
                         </button>
                         <button type="button"
                                 class="task-editor-suggestion-remove"
-                                title="Delete suggestion"
-                                aria-label="Delete suggestion"
+                                title="Delete suggestion (Q / Del / Backspace)"
+                                aria-label="Delete suggestion (Q / Del / Backspace)"
                                 data-testid="@($"task-editor-remove-suggestion-{suggestion.Id}")"
                                 disabled="@(!Context.CanModifySuggestions)"
                                 @onclick:stopPropagation="true"
@@ -231,6 +271,7 @@
 
 @code {
     private ElementReference editorViewport;
+    private ElementReference editorHitLayer;
 
     [Parameter]
     [EditorRequired]
@@ -239,5 +280,6 @@
     protected override void OnAfterRender(bool firstRender)
     {
         Context.EditorViewport = editorViewport;
+        Context.EditorHitLayer = editorHitLayer;
     }
 }

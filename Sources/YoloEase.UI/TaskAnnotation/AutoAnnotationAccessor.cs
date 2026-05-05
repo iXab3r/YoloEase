@@ -69,6 +69,18 @@ public sealed class AutoAnnotationAccessor : DisposableReactiveObjectWithLogger,
         return model;
     }
 
+    public bool SynchronizeLatestModelReferences(IReadOnlyList<TrainedModelFileInfo> trainedModels)
+    {
+        var latestModel = ResolveLatestTrainedModel(trainedModels);
+        var changed = false;
+        foreach (var model in modelsSource.Items.Where(x => x.SourceKind == AutoAnnotationModelSourceKind.Latest))
+        {
+            changed |= SynchronizeLatestModelReference(model, latestModel);
+        }
+
+        return changed;
+    }
+
     public AutoAnnotationModelConfig DuplicateModel(AutoAnnotationModelConfig source)
     {
         var duplicate = source.CloneAsNewEntry();
@@ -159,11 +171,7 @@ public sealed class AutoAnnotationAccessor : DisposableReactiveObjectWithLogger,
             {
                 case AutoAnnotationModelSourceKind.Latest:
                 {
-                    modelFile = trainedModels
-                        .Where(x => x.ModelFile?.Exists == true)
-                        .OrderByDescending(x => x.ModelFile.LastWriteTimeUtc)
-                        .Select(x => x.ModelFile)
-                        .FirstOrDefault();
+                    modelFile = ResolveLatestTrainedModel(trainedModels);
                     if (modelFile == null)
                     {
                         model.LastStatus = AutoAnnotationModelStatus.MissingFile;
@@ -218,6 +226,65 @@ public sealed class AutoAnnotationAccessor : DisposableReactiveObjectWithLogger,
             errorsProvider.Report(e);
             throw;
         }
+    }
+
+    internal static FileInfo? ResolveLatestTrainedModel(IReadOnlyList<TrainedModelFileInfo> trainedModels)
+    {
+        return trainedModels
+            .EmptyIfNull()
+            .Select(x => x.ModelFile)
+            .Where(x => x != null)
+            .Select(x =>
+            {
+                x.Refresh();
+                return x;
+            })
+            .Where(x => x.Exists)
+            .OrderByDescending(x => x.LastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
+    internal static bool SynchronizeLatestModelReference(AutoAnnotationModelConfig model, FileInfo? latestModel)
+    {
+        if (latestModel == null)
+        {
+            var changed = model.LastStatus != AutoAnnotationModelStatus.MissingFile ||
+                          !string.IsNullOrWhiteSpace(model.LastResolvedModelPath) ||
+                          !string.Equals(model.LastError, "No trained ONNX models were found.", StringComparison.Ordinal);
+
+            model.LastResolvedModelPath = null;
+            model.LastResolvedModelHash = null;
+            model.LastResolvedModelLength = null;
+            model.LastResolvedModelLastWriteTimeUtc = null;
+            model.LastStatus = AutoAnnotationModelStatus.MissingFile;
+            model.LastError = "No trained ONNX models were found.";
+            model.LastRunAt = null;
+            model.LastRunSummary = null;
+            return changed;
+        }
+
+        latestModel.Refresh();
+        if (IsResolvedToModel(model, latestModel))
+        {
+            return false;
+        }
+
+        model.LastResolvedModelPath = latestModel.FullName;
+        model.LastResolvedModelHash = null;
+        model.LastResolvedModelLength = latestModel.Length;
+        model.LastResolvedModelLastWriteTimeUtc = latestModel.LastWriteTimeUtc;
+        model.LastStatus = AutoAnnotationModelStatus.NotChecked;
+        model.LastError = null;
+        model.LastRunAt = null;
+        model.LastRunSummary = null;
+        return true;
+    }
+
+    private static bool IsResolvedToModel(AutoAnnotationModelConfig model, FileInfo modelFile)
+    {
+        return string.Equals(model.LastResolvedModelPath, modelFile.FullName, StringComparison.OrdinalIgnoreCase) &&
+               model.LastResolvedModelLength == modelFile.Length &&
+               model.LastResolvedModelLastWriteTimeUtc == modelFile.LastWriteTimeUtc;
     }
 
     private static string? TryGetCachedResolvedHash(AutoAnnotationModelConfig model, FileInfo modelFile)

@@ -26,7 +26,7 @@ The window shell should stay small: render chrome is split into `TaskAnnotationT
 - Label shortcuts apply to `EffectiveShapes` when any exist; otherwise they change the active label for the next shape.
 - `Ctrl+C`, `Ctrl+X`, and `Ctrl+V` copy, cut, and paste the effective shape set.
 - `Ctrl+B` copies all annotations from the previous frame into the current frame as manual annotations and selects the inserted group.
-- `Delete` / `Backspace` delete `EffectiveShapes`.
+- `Q`, `Delete`, and `Backspace` delete `EffectiveShapes`.
 - `Escape` cancels the current tool or edit operation and clears selection.
 - `D` and `F` move one frame backward/forward.
 - `C` and `V` move by the configured frame step.
@@ -39,6 +39,9 @@ The window shell should stay small: render chrome is split into `TaskAnnotationT
 - The left toolbar rectangle tool uses a local CSS glyph, so it is not dependent on icon-font coverage.
 - LMB drag on empty canvas pans by default.
 - Mouse wheel zooms in place around the cursor.
+- The canvas hit layer receives focus when the task editor opens so keyboard shortcuts work without a first click.
+- Browser-native image dragging, text selection, and default drag gestures are suppressed on the editor viewport and hit layer.
+- Canvas pointer, wheel, and keyboard mutation handling is blocked while an annotation save is active.
 - Hover and selection both show resize and rotate handles.
 - Left-click selection should trigger a short, subtle fill/background flash on the selected shape. It must not change geometry, scale, outline offset, or layout.
 - Shift during resize preserves the original rectangle aspect ratio.
@@ -92,4 +95,5 @@ The window shell should stay small: render chrome is split into `TaskAnnotationT
 - Offline CVAT XML and remote CVAT upload should preserve rotation for rectangle shapes.
 - Offline task frame images should resolve through `AnnotationProjectAccessor.ResolveTaskFrameFile` before falling back to the local assets cache.
 - The task editor autosaves dirty offline annotation edits periodically and before closing/removing frames.
+- Annotation save work should run from an immutable annotation snapshot on a background thread so XML/file persistence does not execute on the UI thread.
 - Removing an image from a task is a non-undoable dataset operation. It must use a two-step button, remove the frame annotations, reindex later frames, and delete the image file when it is not referenced by another task.

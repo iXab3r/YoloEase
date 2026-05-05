@@ -1,8 +1,11 @@
 @using AntDesign
+@using System.Reactive.Linq
+@using System.Threading
 @using PoeShared.Blazor.Scaffolding
 @using PoeShared.Blazor.Wpf
 @using PoeShared.Services
 @using YoloEase.UI.Core
+@using YoloEase.UI.Dto
 @inherits YoloEaseComponent<YoloEaseProject>
 
 <TabPageLayout Class="tasks-tab"
@@ -20,6 +23,13 @@
             <span class="badge text-bg-secondary">@($"{DataContext.RemoteProject.Tasks.Count} tasks")</span>
             <span class="badge text-bg-success">@($"{DataContext.RemoteProject.Tasks.Items.Count(x => x.Status == AnnotationTaskStatus.Completed)} completed")</span>
             <span class="badge text-bg-secondary">@($"{DataContext.RemoteProject.ProjectFiles.Count} files")</span>
+            @if (isLabelStatsRefreshing)
+            {
+                <span class="badge text-bg-secondary">
+                    <span class="spinner-border spinner-border-sm"></span>
+                    labels
+                </span>
+            }
         </div>
 
         <div class="tasks-filter">
@@ -40,6 +50,40 @@
     </TopBar>
 
     <ChildContent>
+        @{
+            var labelSummaries = GetProjectLabelSummaries().ToArray();
+        }
+        @if (labelSummaries.Length > 0 || !string.IsNullOrWhiteSpace(labelStatsError))
+        {
+            <section class="tasks-label-summary">
+                <div class="tasks-label-summary-title">
+                    <span>Labels</span>
+                    @if (labelStatisticsSnapshot is { } snapshot)
+                    {
+                        <small>@($"{snapshot.TotalAnnotations} total")</small>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(labelStatsError))
+                    {
+                        <small class="text-warning">@labelStatsError</small>
+                    }
+                </div>
+                @if (labelSummaries.Length > 0)
+                {
+                    <div class="tasks-label-pills">
+                        @foreach (var label in labelSummaries)
+                        {
+                            <span class="tasks-label-pill" title="@FormatLabelSummaryTooltip(label, labelStatisticsSnapshot?.TotalFiles ?? 0)">
+                                <span class="tasks-label-dot" style="@($"background-color:{label.Color};")"></span>
+                                <span class="tasks-label-name">@label.LabelName</span>
+                                <span class="tasks-label-count">@label.AnnotationCount</span>
+                                <span class="tasks-label-percent">@FormatPercent(label.FilePercent)</span>
+                            </span>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
         @if (DataContext.RemoteProject.Tasks.Count <= 0)
         {
             <div class="alert alert-secondary mb-0">
@@ -64,6 +108,7 @@
                             <th>Task</th>
                             <th>Status</th>
                             <th class="text-end">Files</th>
+                            <th>Labels</th>
                             <th>Updated</th>
                             <th class="text-end">Actions</th>
                         </tr>
@@ -72,14 +117,15 @@
                         @foreach (var task in visibleTasks)
                         {
                             var localTask = task;
-                            <tr class="@GetTaskRowClass(localTask)">
+                            <tr @key="localTask.Id" class="@GetTaskRowClass(localTask)">
                                 <td>
                                     <div>@localTask.Name</div>
                                 </td>
                                 <td>
                                     @if (DataContext.RemoteProject.Mode == AnnotationBackendMode.Offline)
                                     {
-                                        <select class="@GetStatusSelectClass(localTask.Status)"
+                                        <select @key="localTask.Status"
+                                                class="@GetStatusSelectClass(localTask.Status)"
                                                 value="@((int) localTask.Status)"
                                                 @onchange="@(async args => await SetTaskStatus(localTask.Id, args))">
                                             <option value="@((int) AnnotationTaskStatus.New)">New</option>
@@ -93,6 +139,42 @@
                                     }
                                 </td>
                                 <td class="text-end">@GetTaskFileCount(localTask.Id)</td>
+                                <td>
+                                    @{
+                                        var taskLabelStats = GetTaskLabelStatistics(localTask.Id);
+                                    }
+                                    @if (taskLabelStats == null)
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(taskLabelStats.Error))
+                                    {
+                                        <span class="tasks-label-warning" title="@FormatTaskLabelTooltip(taskLabelStats)">
+                                            <i class="fa fa-warning"></i>
+                                            unavailable
+                                        </span>
+                                    }
+                                    else if (taskLabelStats.AnnotationCount <= 0)
+                                    {
+                                        <span class="text-muted" title="@FormatTaskLabelTooltip(taskLabelStats)">-</span>
+                                    }
+                                    else
+                                    {
+                                        <div class="tasks-label-dots" title="@FormatTaskLabelTooltip(taskLabelStats)">
+                                            @foreach (var label in taskLabelStats.Labels.Take(MaxTaskLabelDots))
+                                            {
+                                                <span class="tasks-label-dot-item">
+                                                    <span class="tasks-label-dot" style="@($"background-color:{label.Color};")"></span>
+                                                    <span>@label.AnnotationCount</span>
+                                                </span>
+                                            }
+                                            @if (taskLabelStats.Labels.Count > MaxTaskLabelDots)
+                                            {
+                                                <span class="tasks-label-more">@($"+{taskLabelStats.Labels.Count - MaxTaskLabelDots}")</span>
+                                            }
+                                        </div>
+                                    }
+                                </td>
                                 <td class="text-muted small">@FormatDate(localTask.UpdatedAt ?? localTask.CreatedAt)</td>
                                 <td class="text-end">
                                     <div class="ye-row-actions">
@@ -134,6 +216,8 @@
 </TabPageLayout>
 
 @code {
+    private const int MaxTaskLabelDots = 8;
+
     [Inject]
     protected INotificationService NotificationService { get; init; } = default!;
 
@@ -145,14 +229,56 @@
 
     private int? pendingDeleteTaskId;
     private TaskListFilter taskFilter = TaskListFilter.Open;
+    private int labelStatsRefreshVersion;
+    private bool isLabelStatsRefreshing;
+    private string? labelStatsError;
+    private TaskLabelStatisticsSnapshot? labelStatisticsSnapshot;
+    private IReadOnlyDictionary<int, TaskLabelStatistics> labelStatisticsByTask = new Dictionary<int, TaskLabelStatistics>();
+    private IDisposable? taskStatisticsRefreshSubscription;
+    private readonly SemaphoreSlim labelStatisticsRefreshGate = new(1, 1);
 
     public TasksList()
     {
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.Tasks.Count));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.ProjectFiles.Count));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.Labels.Count));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.ActiveTaskId));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsBusy));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.IsBusy));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (firstRender)
+        {
+            SubscribeToTaskStatisticsUpdates();
+            await RefreshLabelStatistics();
+        }
+    }
+
+    private void SubscribeToTaskStatisticsUpdates()
+    {
+        if (taskStatisticsRefreshSubscription != null)
+        {
+            return;
+        }
+
+        taskStatisticsRefreshSubscription = new CompositeDisposable(
+            DataContext.RemoteProject.Tasks.Connect().Skip(1).Subscribe(_ => QueueTaskStatisticsRefresh()),
+            DataContext.RemoteProject.ProjectFiles.Connect().Skip(1).Subscribe(_ => QueueTaskStatisticsRefresh()),
+            DataContext.RemoteProject.Labels.Connect().Skip(1).Subscribe(_ => QueueTaskStatisticsRefresh()));
+        taskStatisticsRefreshSubscription.AddTo(Anchors);
+    }
+
+    private void QueueTaskStatisticsRefresh()
+    {
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await RefreshLabelStatistics();
+        }).AndForget();
     }
 
     private async Task RefreshTasks()
@@ -160,6 +286,7 @@
         try
         {
             await DataContext.Refresh();
+            await RefreshLabelStatistics();
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception e)
@@ -193,6 +320,7 @@
             await DataContext.RemoteProject.DeleteTask(taskId);
             pendingDeleteTaskId = null;
             await DataContext.Refresh();
+            await RefreshLabelStatistics();
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception e)
@@ -222,6 +350,7 @@
         {
             await DataContext.RemoteProject.UpdateTaskStatus(taskId, (AnnotationTaskStatus) rawStatus);
             await DataContext.Refresh();
+            await RefreshLabelStatistics();
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception e)
@@ -233,6 +362,87 @@
     private int GetTaskFileCount(int taskId)
     {
         return DataContext.RemoteProject.ProjectFiles.Items.Count(x => x.TaskId == taskId);
+    }
+
+    private async Task RefreshLabelStatistics()
+    {
+        var refreshVersion = Interlocked.Increment(ref labelStatsRefreshVersion);
+        isLabelStatsRefreshing = true;
+        labelStatsError = null;
+        await InvokeAsync(StateHasChanged);
+
+        await labelStatisticsRefreshGate.WaitAsync();
+        try
+        {
+            if (refreshVersion != labelStatsRefreshVersion)
+            {
+                return;
+            }
+
+            var remoteProject = DataContext.RemoteProject;
+            var tasks = remoteProject.Tasks.Items.ToArray();
+            var projectFiles = remoteProject.ProjectFiles.Items.ToArray();
+            var projectLabels = remoteProject.Labels.Items.ToArray();
+            var annotationsByTask = new Dictionary<int, IReadOnlyList<CvatRectangleAnnotation>>();
+            var taskErrors = new Dictionary<int, string>();
+
+            foreach (var task in tasks)
+            {
+                if (refreshVersion != labelStatsRefreshVersion)
+                {
+                    return;
+                }
+
+                try
+                {
+                    annotationsByTask[task.Id] = await remoteProject.RetrieveTaskAnnotations(task.Id);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    Log.Warn($"Failed to load task label statistics for task {task.Id} {task.Name}", e);
+                    taskErrors[task.Id] = e.Message;
+                    annotationsByTask[task.Id] = Array.Empty<CvatRectangleAnnotation>();
+                }
+            }
+
+            if (refreshVersion != labelStatsRefreshVersion)
+            {
+                return;
+            }
+
+            var snapshot = TaskLabelStatisticsSnapshot.Create(tasks, projectFiles, projectLabels, annotationsByTask, taskErrors);
+            labelStatisticsSnapshot = snapshot;
+            labelStatisticsByTask = snapshot.Tasks.ToDictionary(x => x.TaskId);
+            labelStatsError = snapshot.FailedTaskCount <= 0
+                ? null
+                : $"Stats unavailable for {snapshot.FailedTaskCount} task(s)";
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            Log.Warn("Failed to refresh task label statistics", e);
+            labelStatsError = "Label stats unavailable";
+            ShowError(e.Message);
+        }
+        finally
+        {
+            labelStatisticsRefreshGate.Release();
+            if (refreshVersion == labelStatsRefreshVersion)
+            {
+                isLabelStatsRefreshing = false;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private IEnumerable<LabelUsageStatistics> GetProjectLabelSummaries()
+    {
+        return labelStatisticsSnapshot?.Labels.Where(x => x.AnnotationCount > 0) ?? Array.Empty<LabelUsageStatistics>();
+    }
+
+    private TaskLabelStatistics? GetTaskLabelStatistics(int taskId)
+    {
+        return labelStatisticsByTask.GetValueOrDefault(taskId);
     }
 
     private IEnumerable<AnnotationTaskInfo> GetVisibleTasks()
@@ -279,6 +489,45 @@
     private static string FormatDate(DateTimeOffset? date)
     {
         return date == null ? "-" : date.Value.LocalDateTime.ToString("g");
+    }
+
+    private static string FormatPercent(double value)
+    {
+        if (value <= 0)
+        {
+            return "0%";
+        }
+
+        var percent = value * 100;
+        return percent < 1
+            ? "<1%"
+            : $"{Math.Round(percent, MidpointRounding.AwayFromZero):0}%";
+    }
+
+    private static string FormatLabelSummaryTooltip(LabelUsageStatistics label, int totalFiles)
+    {
+        return $"{label.LabelName}: {label.AnnotationCount} label(s) on {label.FileCount} / {totalFiles} file(s) ({FormatPercent(label.FilePercent)})";
+    }
+
+    private static string FormatTaskLabelTooltip(TaskLabelStatistics task)
+    {
+        if (!string.IsNullOrWhiteSpace(task.Error))
+        {
+            return $"Label stats unavailable: {task.Error}";
+        }
+
+        if (task.AnnotationCount <= 0)
+        {
+            return $"No labels found in {task.FileCount} file(s)";
+        }
+
+        var lines = new List<string>
+        {
+            $"{task.AnnotationCount} label(s) on {task.AnnotatedFileCount} / {task.FileCount} file(s)",
+        };
+        lines.AddRange(task.Labels.Select(x =>
+            $"{x.LabelName}: {x.AnnotationCount} label(s), {x.FileCount} / {task.FileCount} file(s), {FormatPercent(x.FilePercent)}"));
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string FormatStatus(AnnotationTaskStatus status)

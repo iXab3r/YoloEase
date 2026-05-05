@@ -6,6 +6,67 @@ namespace YoloEase.Tests.UI.TaskAnnotation;
 
 public class AutoAnnotationModelsFixture
 {
+    /// <summary>
+    /// WHAT: Verifies that a Latest entry stops claiming the old loaded model after a newer trained model appears.
+    /// HOW: Points the entry at an old file, synchronizes it with a newer file, and checks that it is unresolved for loading again.
+    /// </summary>
+    [Test]
+    public void ShouldRetargetLatestModelAndResetLoadedStatus()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var oldModel = CreateModelFile(temp, "old.onnx", DateTime.UtcNow.AddMinutes(-10));
+        var newModel = CreateModelFile(temp, "new.onnx", DateTime.UtcNow);
+        var model = AutoAnnotationModelConfig.CreateLatest();
+        model.LastStatus = AutoAnnotationModelStatus.Ready;
+        model.LastResolvedModelPath = oldModel.FullName;
+        model.LastResolvedModelHash = "old-hash";
+        model.LastResolvedModelLength = oldModel.Length;
+        model.LastResolvedModelLastWriteTimeUtc = oldModel.LastWriteTimeUtc;
+        model.LastRunAt = DateTimeOffset.Now;
+        model.LastRunSummary = "10 detections, 0 skipped";
+
+        // When
+        var changed = AutoAnnotationAccessor.SynchronizeLatestModelReference(model, newModel);
+
+        // Then
+        changed.ShouldBeTrue();
+        model.LastResolvedModelPath.ShouldBe(newModel.FullName);
+        model.LastResolvedModelHash.ShouldBeNull();
+        model.LastResolvedModelLength.ShouldBe(newModel.Length);
+        model.LastResolvedModelLastWriteTimeUtc.ShouldBe(newModel.LastWriteTimeUtc);
+        model.LastStatus.ShouldBe(AutoAnnotationModelStatus.NotChecked);
+        model.LastError.ShouldBeNull();
+        model.LastRunAt.ShouldBeNull();
+        model.LastRunSummary.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// WHAT: Verifies that the latest trained model selector uses the newest existing ONNX file.
+    /// HOW: Provides model records with different write times and checks the selected file.
+    /// </summary>
+    [Test]
+    public void ShouldResolveNewestExistingTrainedModel()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var oldModel = CreateModelFile(temp, "old.onnx", DateTime.UtcNow.AddMinutes(-10));
+        var newModel = CreateModelFile(temp, "new.onnx", DateTime.UtcNow);
+        var missingModel = new FileInfo(Path.Combine(temp.Path, "missing.onnx"));
+
+        // When
+        var latest = AutoAnnotationAccessor.ResolveLatestTrainedModel(new[]
+        {
+            new TrainedModelFileInfo { ModelFile = oldModel },
+            new TrainedModelFileInfo { ModelFile = missingModel },
+            new TrainedModelFileInfo { ModelFile = newModel },
+        });
+
+        // Then
+        latest.ShouldNotBeNull();
+        latest.FullName.ShouldBe(newModel.FullName);
+    }
+
     [Test]
     public void ShouldPreserveCreateSuggestionsInModelProperties()
     {
@@ -131,6 +192,34 @@ public class AutoAnnotationModelsFixture
         // Then
         removed.ShouldBe(2);
         suggestions.ShouldBe(new[] { otherModelSuggestion });
+    }
+
+    private static FileInfo CreateModelFile(TemporaryDirectory temp, string fileName, DateTime lastWriteTimeUtc)
+    {
+        var file = new FileInfo(Path.Combine(temp.Path, fileName));
+        File.WriteAllText(file.FullName, fileName);
+        File.SetLastWriteTimeUtc(file.FullName, lastWriteTimeUtc);
+        file.Refresh();
+        return file;
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public TemporaryDirectory()
+        {
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "YoloEaseAutoAnnotationTests", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+        }
     }
 
     [Test]

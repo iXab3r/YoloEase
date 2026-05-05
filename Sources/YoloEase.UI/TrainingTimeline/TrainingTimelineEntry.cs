@@ -119,6 +119,8 @@ public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
             {
                 ModelFile = modelFileRevision
             };
+            cancellationToken.ThrowIfCancellationRequested();
+            await yolo8DatasetAccessor.Refresh();
             return TrainedModelFile;
         }
         finally

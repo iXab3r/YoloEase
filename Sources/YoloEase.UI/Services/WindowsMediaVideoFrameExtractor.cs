@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using PoeShared.Logging;
@@ -13,13 +14,15 @@ namespace YoloEase.UI.Services;
 /// </summary>
 internal sealed class WindowsMediaVideoFrameExtractor : IVideoFrameExtractor
 {
+    private const int ThumbnailBatchSize = 16;
+
     private static readonly IFluentLog Log = typeof(WindowsMediaVideoFrameExtractor).PrepareLogger();
 
     public async Task<VideoFrameProbe> ProbeAsync(FileInfo inputFile, CancellationToken cancellationToken = default)
     {
         try
         {
-            var clip = await CreateClipAsync(inputFile, cancellationToken);
+            var clip = await CreateClipAsync(inputFile, cancellationToken).ConfigureAwait(false);
             var properties = clip.GetVideoEncodingProperties();
             var framesPerSecond = GetFramesPerSecond(properties.FrameRate.Numerator, properties.FrameRate.Denominator);
             var frameCount = EstimateFrameCount(clip.OriginalDuration, framesPerSecond);
@@ -54,7 +57,7 @@ internal sealed class WindowsMediaVideoFrameExtractor : IVideoFrameExtractor
         {
             Directory.CreateDirectory(request.OutputDirectory.FullName);
 
-            var clip = await CreateClipAsync(request.InputFile, cancellationToken);
+            var clip = await CreateClipAsync(request.InputFile, cancellationToken).ConfigureAwait(false);
             var properties = clip.GetVideoEncodingProperties();
             var framesPerSecond = GetFramesPerSecond(properties.FrameRate.Numerator, properties.FrameRate.Denominator);
             var frameCount = EstimateFrameCount(clip.OriginalDuration, framesPerSecond);
@@ -69,6 +72,8 @@ internal sealed class WindowsMediaVideoFrameExtractor : IVideoFrameExtractor
 
             var savedFramesCount = 0;
             var skippedFramesCount = 0;
+            var processedFramesCount = 0;
+            var framesToSave = new List<VideoFrameToSave>(frameIndexes.Count);
             for (var i = 0; i < frameIndexes.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -78,16 +83,49 @@ internal sealed class WindowsMediaVideoFrameExtractor : IVideoFrameExtractor
                 if (File.Exists(frameFilePath))
                 {
                     skippedFramesCount++;
-                    progressReporter?.Update(i + 1, frameIndexes.Count);
+                    processedFramesCount++;
+                    progressReporter?.Update(processedFramesCount, frameIndexes.Count);
                     continue;
                 }
 
                 var timestamp = VideoFrameSelection.GetFrameTimestamp(frameIndex, framesPerSecond, clip.OriginalDuration);
-                await SaveThumbnailAsync(composition, timestamp, frameFilePath, cancellationToken);
-                savedFramesCount++;
-                Log.Debug($"Saved frame {frameIndex} into {frameFilePath}");
+                framesToSave.Add(new VideoFrameToSave(frameIndex, timestamp, frameFilePath));
+            }
 
-                progressReporter?.Update(i + 1, frameIndexes.Count);
+            foreach (var batch in framesToSave.Chunk(ThumbnailBatchSize))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var thumbnails = await composition
+                    .GetThumbnailsAsync(batch.Select(x => x.Timestamp), 0, 0, VideoFramePrecision.NearestFrame)
+                    .AsTask(cancellationToken)
+                    .ConfigureAwait(false);
+                var thumbnailArray = thumbnails.ToArray();
+                if (thumbnailArray.Length != batch.Length)
+                {
+                    throw new InvalidOperationException($"Expected {batch.Length} decoded thumbnails, got {thumbnailArray.Length}.");
+                }
+
+                try
+                {
+                    for (var i = 0; i < batch.Length; i++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var frame = batch[i];
+                        await SaveThumbnailAsync(thumbnailArray[i], frame.FilePath, cancellationToken).ConfigureAwait(false);
+                        savedFramesCount++;
+                        processedFramesCount++;
+                        Log.Debug($"Saved frame {frame.FrameIndex} into {frame.FilePath}");
+
+                        progressReporter?.Update(processedFramesCount, frameIndexes.Count);
+                    }
+                }
+                finally
+                {
+                    foreach (var thumbnail in thumbnailArray)
+                    {
+                        thumbnail.Dispose();
+                    }
+                }
             }
 
             progressReporter?.Update(100);
@@ -135,24 +173,22 @@ internal sealed class WindowsMediaVideoFrameExtractor : IVideoFrameExtractor
 
         var storageFile = await StorageFile
             .GetFileFromPathAsync(inputFile.FullName)
-            .AsTask(cancellationToken);
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
         return await MediaClip
             .CreateFromFileAsync(storageFile)
-            .AsTask(cancellationToken);
+            .AsTask(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async Task SaveThumbnailAsync(
-        MediaComposition composition,
-        TimeSpan timestamp,
+        Windows.Storage.Streams.IRandomAccessStreamWithContentType thumbnail,
         string frameFilePath,
         CancellationToken cancellationToken)
     {
-        using var thumbnail = await composition
-            .GetThumbnailAsync(timestamp, 0, 0, VideoFramePrecision.NearestFrame)
-            .AsTask(cancellationToken);
         using var thumbnailStream = thumbnail.AsStreamForRead();
-        using var image = await Image.LoadAsync(thumbnailStream, cancellationToken);
-        await image.SaveAsPngAsync(frameFilePath, cancellationToken);
+        using var image = await Image.LoadAsync(thumbnailStream, cancellationToken).ConfigureAwait(false);
+        await image.SaveAsPngAsync(frameFilePath, cancellationToken).ConfigureAwait(false);
     }
 
     private static VideoFrameExtractionException CreateUnsupportedVideoException(FileInfo inputFile, Exception error)
@@ -161,4 +197,6 @@ internal sealed class WindowsMediaVideoFrameExtractor : IVideoFrameExtractor
             $"Failed to decode video file '{inputFile.FullName}'. The file may be unsupported by installed Windows media codecs.",
             error);
     }
+
+    private readonly record struct VideoFrameToSave(long FrameIndex, TimeSpan Timestamp, string FilePath);
 }

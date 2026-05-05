@@ -132,7 +132,6 @@ Offline mode is meant to be self-contained and easy to move around. The intended
 
 That workspace mirrors annotation concepts that previously lived in CVAT, such as:
 
-- project metadata
 - labels and colors
 - tasks
 - jobs
@@ -140,7 +139,7 @@ That workspace mirrors annotation concepts that previously lived in CVAT, such a
 - annotation exports
 - task status and revision-like state
 
-This keeps the system understandable and makes it easier to preserve the existing training pipeline.
+Offline project identity, display name, and next label/task ids are derived from the project file and current workspace files instead of a separate project-state sidecar. Durable state lives in the label list, per-task task files, project-owned assets, and CVAT-style XML exports. This keeps the system understandable, reduces desync risk, and makes it easier to preserve the existing training pipeline.
 
 ## Boundaries And Current Constraints
 
