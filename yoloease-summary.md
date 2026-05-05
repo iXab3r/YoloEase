@@ -69,7 +69,7 @@ Training runs through a managed Python toolchain under the application's data di
 
 ### 6. Prediction-Assisted Iteration
 
-Once a model exists, the app can run predictions on unannotated data and use those results to support the next round of annotation work. This is part of the intended feedback loop rather than a separate standalone feature.
+Once a model exists, the automatic trainer can run YOLO CLI predictions before a training cycle starts. The prediction strategy controls whether that run covers all current project-owned files, only files not already attached to annotation tasks, or is skipped. The resulting distribution and confidence stats feed the trainer UI and can support the next round of annotation work. This is part of the intended feedback loop rather than a separate standalone feature.
 
 ## Important Architectural Idea
 

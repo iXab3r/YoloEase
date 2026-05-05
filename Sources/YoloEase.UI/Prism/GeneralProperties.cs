@@ -42,6 +42,12 @@ public record GeneralPropertiesV0 : IPoeEyeConfigVersioned
 
     public AutomaticTrainerModelStrategy PredictionModelStrategy { get; set; } = AutomaticTrainerModelStrategy.Latest;
 
+    public AutomaticTrainerPredictionStrategy PredictionStrategy { get; set; } = AutomaticTrainerPredictionStrategy.Unlabeled;
+
+    public bool PredictIncludeAnnotated { get; set; }
+
+    public float PredictBatchPercentage { get; set; } = 100;
+
     public string PredictionModelPath { get; set; } = string.Empty;
 
     public int ProjectId { get; set; }

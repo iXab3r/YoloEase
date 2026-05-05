@@ -429,6 +429,12 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
                     break;
                 }
                 
+                await AddPredictionsIfNeeded(project, cancellationToken);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
                 var trainingSettings = project.TrainingDataset.TrainingSettings;
                 if (lastTrainedDataset is {ProjectInfo: not null})
                 {
@@ -543,56 +549,43 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         }
     }
 
-    private async Task AddPredictionsIfNeeded(YoloEaseProject project, CancellationToken cancellationToken)
+    internal async Task AddPredictionsIfNeeded(YoloEaseProject project, CancellationToken cancellationToken)
     {
+        if (PredictionStrategy == AutomaticTrainerPredictionStrategy.Disabled)
+        {
+            new BasicTimelineEntry
+            {
+                Text = "Skipping predictions - disabled",
+                Timestamp = clock.Now,
+            }.AddTo(timelineSource);
+            return;
+        }
+
         var predictions = project.Predictions;
         var predictionModel = predictions.PredictionModel;
         if (predictionModel == null)
         {
+            new BasicTimelineEntry
+            {
+                Text = "Skipping predictions - no prediction model selected",
+                Timestamp = clock.Now,
+            }.AddTo(timelineSource);
             return;
         }
 
-        var directories = project.Assets.InputDirectories.Items.ToArray();
-        if (directories.Length > 1)
-        {
-            throw new NotSupportedException("Predict is not supported for multiple input directories(yet)");
-        }
-        
-        if (directories.Length<=0)
-        {
-            throw new InvalidOperationException("No input directories");
-        }
-
-        var inputDirectory = directories[0];
-
         var latestPredictions = predictions.LatestPredictions;
-        IReadOnlyList<FileInfo> filesToRunPredictOn;
-        switch (PredictionStrategy)
-        {
-            case AutomaticTrainerPredictionStrategy.AllFiles:
-            {
-                filesToRunPredictOn = inputDirectory.GetFiles().PickPercentage(PredictBatchPercentage);
-                break;
-            }
-            case AutomaticTrainerPredictionStrategy.Disabled:
-            {
-                filesToRunPredictOn = [];
-                break;
-            }
-            case AutomaticTrainerPredictionStrategy.Unlabeled:
-            {
-                filesToRunPredictOn = project.TrainingBatch.UnannotatedFiles.Items.ToArray().PickPercentage(PredictBatchPercentage);;
-                break;
-            }
-            default:
-                throw new ArgumentOutOfRangeException();
-        }
+        var filesToRunPredictOn = ResolvePredictionFiles(
+            PredictionStrategy,
+            project.Assets.Files.Items,
+            project.TrainingBatch.UnannotatedFiles.Items,
+            PredictBatchPercentage);
 
         if (filesToRunPredictOn.IsEmpty())
         {
-            new BasicTimelineEntry()
+            new BasicTimelineEntry
             {
-                Text = "Skipping predictions - no files detected"
+                Text = "Skipping predictions - no files detected",
+                Timestamp = clock.Now,
             }.AddTo(timelineSource);
             return;
         }
@@ -604,9 +597,10 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         var haveToPredict = noPredictions || isAnotherModel || storageHasChanged;
         if (!haveToPredict)
         {
-            new BasicTimelineEntry()
+            new BasicTimelineEntry
             {
-                Text = $"Skipping predictions - not needed, status: {new { noPredictions, isAnotherModel, storageHasChanged }}"
+                Text = $"Skipping predictions - not needed, status: {new { noPredictions, isAnotherModel, storageHasChanged }}",
+                Timestamp = clock.Now,
             }.AddTo(timelineSource);
             return;
         }
@@ -622,6 +616,21 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             project.Predictions).AddTo(timelineSource);
         var actualPredictions = await predictEntry.Run(cancellationToken);
         project.Predictions.LatestPredictions = actualPredictions;
+    }
+
+    internal static IReadOnlyList<FileInfo> ResolvePredictionFiles(
+        AutomaticTrainerPredictionStrategy predictionStrategy,
+        IEnumerable<FileInfo> allProjectFiles,
+        IEnumerable<FileInfo> unannotatedFiles,
+        float percentage)
+    {
+        return predictionStrategy switch
+        {
+            AutomaticTrainerPredictionStrategy.AllFiles => allProjectFiles.ToArray().PickPercentage(percentage),
+            AutomaticTrainerPredictionStrategy.Unlabeled => unannotatedFiles.ToArray().PickPercentage(percentage),
+            AutomaticTrainerPredictionStrategy.Disabled => Array.Empty<FileInfo>(),
+            _ => throw new ArgumentOutOfRangeException(nameof(predictionStrategy), predictionStrategy, null),
+        };
     }
 
     private YoloEaseProject GetRequiredProject()

@@ -1238,6 +1238,9 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         AutomaticTrainer.ModelStrategy = !string.IsNullOrWhiteSpace(config.PredictionModelPath)
             ? config.PredictionModelStrategy
             : config.AutoAnnotateModelStrategy;
+        AutomaticTrainer.PredictionStrategy = config.PredictionStrategy;
+        AutomaticTrainer.PredictIncludeAnnotated = config.PredictIncludeAnnotated;
+        AutomaticTrainer.PredictBatchPercentage = config.PredictBatchPercentage;
         AutomaticTrainer.AutoAnnotate = false;
         AutomaticTrainer.AutoAnnotateConfidenceThresholdPercentage = 25;
 
@@ -1335,6 +1338,9 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             MaxNumberOfCpuCores = project.TrainingDataset.MaxNumberOfCpuCores,
             PredictionModelPath = project.Predictions.PredictionModel?.ModelFile?.FullName ?? string.Empty,
             PredictionModelStrategy = AutomaticTrainer.ModelStrategy,
+            PredictionStrategy = AutomaticTrainer.PredictionStrategy,
+            PredictIncludeAnnotated = AutomaticTrainer.PredictIncludeAnnotated,
+            PredictBatchPercentage = AutomaticTrainer.PredictBatchPercentage,
             AutoAnnotationIsEnabled = false,
             AutoAnnotationModelPath = string.Empty,
             AutoAnnotateConfidenceThresholdPercentage = 25,
