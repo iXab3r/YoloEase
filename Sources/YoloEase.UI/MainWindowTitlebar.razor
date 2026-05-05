@@ -3,41 +3,54 @@
 @using MouseEventArgs = Microsoft.AspNetCore.Components.Web.MouseEventArgs
 @inherits YoloEaseComponent<MainWindowViewModel>
 
-<span class="d-flex align-items-center gap-2 flex-grow-1 w-100 min-w-0">
-    <ReactiveSection
-        Trackers="@(new ReactiveTrackerList().With(this.WhenAnyValue(x => x.BlazorWindowAccessor.Window.Title, x => x.DataContext.YoloEaseProject)))">
-        <span class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
-            <span class="d-flex align-items-center flex-grow-1 min-w-0 user-select-none"
-                  @onmousedown="HandleMouseDown">
-                <span class="text-truncate">
-                    @BlazorWindowAccessor.Window.Title
-                </span>
+<span class="yolo-titlebar d-flex align-items-center gap-2 flex-grow-1 w-100 min-w-0">
+    <span class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+        <span class="yolo-titlebar-title d-flex align-items-center flex-grow-1 min-w-0 user-select-none"
+              @onmousedown="HandleMouseDown">
+            <span class="yolo-titlebar-app-icon">
+                <i class="fa fa-crosshairs"></i>
             </span>
-
-            @if (DataContext.YoloEaseProject != null)
-            {
-                <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
-                                CommandEx="@DataContext.NewProjectCommand">
-                    <i class="fa fa-file-text"></i>
-                    New project
-                </ReactiveButton>
-                <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
-                                CommandEx="@DataContext.SaveAsProjectCommand">
-                    <i class="fa fa-save"></i>
-                    Save As...
-                </ReactiveButton>
-                <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
-                                CommandEx="@DataContext.LoadProjectCommand">
-                    <i class="fa fa-folder-open"></i>
-                    Load
-                </ReactiveButton>
-            }
+            <span class="text-truncate">
+                @BlazorWindowAccessor.Window.Title
+            </span>
         </span>
-    </ReactiveSection>
+
+        @if (DataContext.YoloEaseProject != null)
+        {
+            <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
+                            CommandEx="@DataContext.NewProjectCommand">
+                <i class="fa fa-file-text"></i>
+                New project
+            </ReactiveButton>
+            <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
+                            CommandEx="@DataContext.SaveAsProjectCommand">
+                <i class="fa fa-save"></i>
+                Save As...
+            </ReactiveButton>
+            <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
+                            CommandEx="@DataContext.LoadProjectCommand">
+                <i class="fa fa-folder-open"></i>
+                Load
+            </ReactiveButton>
+        }
+    </span>
 </span>
 
 @code {
     [Inject] public required IBlazorWindowAccessor BlazorWindowAccessor { get; init; }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+
+        BlazorWindowAccessor.Window.WhenAnyValue(x => x.Title)
+            .Subscribe(_ => InvokeAsync(StateHasChanged).AndForget())
+            .AddTo(Anchors);
+
+        DataContext.WhenAnyValue(x => x.YoloEaseProject)
+            .Subscribe(_ => InvokeAsync(StateHasChanged).AndForget())
+            .AddTo(Anchors);
+    }
 
     private void HandleMouseDown(MouseEventArgs mouseEventArgs)
     {

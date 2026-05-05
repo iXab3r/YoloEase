@@ -12,11 +12,15 @@ using Polly;
 using YoloEase.UI.Augmentations;
 using YoloEase.UI.Controls;
 using YoloEase.UI.Core;
+using YoloEase.UI.Prerequisites;
 using YoloEase.UI.Prism;
 using YoloEase.UI.TrainingTimeline;
 
 namespace YoloEase.UI;
 
+/// <summary>
+/// Drives the main desktop shell, project lifecycle, recent projects, and docked tab state.
+/// </summary>
 public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 {
     private static readonly Binder<MainWindowViewModel> Binder = new();
@@ -35,19 +39,22 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     private readonly ISourceCache<TabItem, string> tabsSource = new SourceCache<TabItem, string>(x => x.Id);
 
     private readonly TabItem settingsTab;
+    private readonly TabItem prerequisitesTab;
+    private readonly TabItem annotationsTab;
+    private readonly TabItem tasksTab;
     private readonly TabItem trainerTab;
     private readonly TabItem augmentationsTab;
     private readonly TabItem localTab;
     private readonly TabItem remoteTab;
     private readonly TabItem batchTab;
-    private readonly TabItem annotationsTab;
     private readonly TabItem trainingTab;
     private readonly FileInfo databaseFile;
+    private bool prerequisitesActivationPending;
     
     static MainWindowViewModel()
     {
-        Binder.Bind(x => x.LoadedProjectFile != null && x.LoadedProjectFile.Directory != null ? x.LoadedProjectFile.Directory.GetSubdirectory("storage")  : default).To(x => x.StorageDirectory);
-        Binder.BindIf(x => x.YoloEaseProject != null, x => PrepareProjectDirectory(x.StorageDirectory, x.YoloEaseProject!.RemoteProject.ProjectId, x.YoloEaseProject.RemoteProject.ServerUrl)).To(x => x.ProjectOutputDirectory);
+        Binder.Bind(x => PrepareStorageDirectory(x.LoadedProjectFile, x.YoloEaseProject == null ? AnnotationBackendMode.Cvat : x.YoloEaseProject.RemoteProject.Mode)).To(x => x.StorageDirectory);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => PrepareProjectDirectory(x.StorageDirectory, x.YoloEaseProject!.RemoteProject.Mode, x.YoloEaseProject.RemoteProject.ProjectId, x.YoloEaseProject.RemoteProject.ServerUrl)).To(x => x.ProjectOutputDirectory);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.ProjectOutputDirectory).To(x => x.YoloEaseProject!.StorageDirectory);
 
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.RemoteProject.ProjectId).To(x => x.ProjectId);
@@ -58,6 +65,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.TrainingBatch).To((x,v) => x.batchTab.DataContext = v);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.Augmentations).To((x,v) => x.augmentationsTab.DataContext = v);
         Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!.Annotations).To((x,v) => x.annotationsTab.DataContext = v);
+        Binder.BindIf(x => x.YoloEaseProject != null, x => x.YoloEaseProject!).To((x,v) => x.tasksTab.DataContext = v);
         Binder.BindIf(x => x.YoloEaseProject != null,x => x.YoloEaseProject!.TrainingDataset).To((x,v) => x.trainingTab.DataContext = v);
 
         Binder.BindIf(x => x.LoadedProjectFile != null, x => $"{Path.Combine(x.LoadedProjectFile!.DirectoryName.TakeMidChars(16, false), x.LoadedProjectFile.Name)}")
@@ -77,12 +85,14 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         ISaveFileDialog saveProjectFileDialog,
         IAppArguments appArguments,
         AutomaticTrainer automaticTrainer,
+        PrerequisitesViewModel prerequisites,
         IConfigSerializer configSerializer,
         IApplicationAccessor applicationAccessor,
         IFactory<YoloEaseProject> projectFactory,
         [Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler)
     {
         AutomaticTrainer = automaticTrainer.AddTo(Anchors);
+        Prerequisites = prerequisites.AddTo(Anchors);
         AppArguments = appArguments;
         this.folderBrowserDialog = folderBrowserDialog;
         this.openFileDialog = openFileDialog;
@@ -105,47 +115,96 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         settingsTab = new TabItem()
         {
             Title = "Settings",
-            DataContext = this
+            DataContext = this,
+            ViewType = typeof(ProjectTree.ProjectSettings),
+            SortOrder = 0
+        }.AddTo(tabsSource);
+
+        prerequisitesTab = new TabItem()
+        {
+            Title = "Prerequisites",
+            DataContext = Prerequisites,
+            ViewType = typeof(PrerequisitesView),
+            SortOrder = -10
+        }.AddTo(tabsSource);
+
+        annotationsTab = new TabItem()
+        {
+            Title = "Project",
+            ViewType = typeof(AnnotationsEditor),
+            SortOrder = 10
+        }.AddTo(tabsSource);
+
+        tasksTab = new TabItem()
+        {
+            Title = "Tasks",
+            ViewType = typeof(TasksList),
+            SortOrder = 20
         }.AddTo(tabsSource);
 
         trainerTab = new TabItem()
         {
             Title = "Trainer",
-            DataContext = AutomaticTrainer
+            DataContext = AutomaticTrainer,
+            ViewType = typeof(AutomaticTrainerView),
+            SortOrder = 30
         }.AddTo(tabsSource);    
         
         augmentationsTab = new TabItem()
         {
             Title = "Augmentations",
+            ViewType = typeof(AugmentationsEditor),
+            SortOrder = 40
         }.AddTo(tabsSource);
 
         localTab = new TabItem()
         {
             Title = "Local",
+            SortOrder = 50
         }.AddTo(tabsSource);
 
         remoteTab = new TabItem()
         {
             Title = "Remote",
+            SortOrder = 60
         }.AddTo(tabsSource);
 
         batchTab = new TabItem()
         {
             Title = "Batch",
-        }.AddTo(tabsSource);
-
-        annotationsTab = new TabItem()
-        {
-            Title = "Annotations",
+            SortOrder = 70
         }.AddTo(tabsSource);
 
         trainingTab = new TabItem()
         {
             Title = "Training",
+            SortOrder = 80
         }.AddTo(tabsSource);
 
         this.WhenAnyValue(x => x.IsAdvancedMode)
-            .Subscribe(x => { localTab.IsVisible = remoteTab.IsVisible = batchTab.IsVisible = annotationsTab.IsVisible = trainingTab.IsVisible = x; })
+            .CombineLatest(
+                this.WhenAnyValue(x => x.YoloEaseProject)
+                    .Select(project => project == null
+                        ? Observable.Return(AnnotationBackendMode.Cvat)
+                        : project.RemoteProject.WhenAnyValue(x => x.Mode))
+                    .Switch(),
+                this.WhenAnyValue(x => x.YoloEaseProject).Select(project => project != null),
+                (isAdvancedMode, annotationMode, isProjectLoaded) => new { isAdvancedMode, annotationMode, isProjectLoaded })
+            .Subscribe(x =>
+            {
+                annotationsTab.Title = x.annotationMode == AnnotationBackendMode.Offline ? "Project" : "Annotations";
+                annotationsTab.IsVisible = x.annotationMode == AnnotationBackendMode.Offline;
+                prerequisitesTab.IsVisible = x.isProjectLoaded;
+                tasksTab.IsVisible = true;
+                localTab.IsVisible = batchTab.IsVisible = trainingTab.IsVisible = x.isAdvancedMode;
+                remoteTab.IsVisible = x.isAdvancedMode && x.annotationMode == AnnotationBackendMode.Cvat;
+
+                var activeTab = tabsSource.Items.FirstOrDefault(y => y.Id == ActiveTabId);
+                if (activeTab is { IsVisible: false })
+                {
+                    ActiveTabId = annotationsTab.IsVisible ? annotationsTab.Id : settingsTab.Id;
+                }
+            })
             .AddTo(Anchors);
 
         Tabs = tabsSource.AsObservableList().AddTo(Anchors);
@@ -162,6 +221,10 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                     }
 
                     tab.IsSelected = true;
+                    if (ReferenceEquals(tab, prerequisitesTab))
+                    {
+                        Prerequisites.NotifyTabActivated().AndForget(ignoreExceptions: true);
+                    }
                 }
                 else
                 {
@@ -171,6 +234,12 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                     }
                 }
             })
+            .AddTo(Anchors);
+
+        Prerequisites
+            .WhenAnyValue(x => x.HasMissingRequired)
+            .Where(x => x)
+            .Subscribe(_ => ActivatePrerequisitesOrDefer())
             .AddTo(Anchors);
 
         ProjectsDirectory = new DirectoryInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "YoloEase projects"));
@@ -189,6 +258,8 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         
         var configSource = Observable.Merge(
                 this.WhenAnyValue(x => x.ProjectId).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.RemoteProject.Mode).ToUnit(),
+                this.WhenAnyValue(x => x.YoloEaseProject!.RemoteProject.ProjectName).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.AutoAnnotate).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.ModelStrategy).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.PickStrategy).ToUnit(),
@@ -231,9 +302,18 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             .Where(x => x != null)
             .Subscribe(x =>
             {
-                if (!string.IsNullOrEmpty(x.RemoteProject.Username) &&
-                    !string.IsNullOrEmpty(x.RemoteProject.Password) &&
-                    !string.IsNullOrEmpty(x.RemoteProject.ServerUrl))
+                TryActivatePendingPrerequisites();
+
+                Task.Run(async () =>
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(750));
+                    await Prerequisites.RequestStartupCheckAsync();
+                }).AndForget(ignoreExceptions: true);
+
+                if (x.RemoteProject.Mode == AnnotationBackendMode.Offline ||
+                    (!string.IsNullOrEmpty(x.RemoteProject.Username) &&
+                     !string.IsNullOrEmpty(x.RemoteProject.Password) &&
+                     !string.IsNullOrEmpty(x.RemoteProject.ServerUrl)))
                 {
                     Task.Run(async () =>
                     {
@@ -257,7 +337,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             .AddTo(Anchors);
 
         this.WhenAnyValue(x => x.ProjectId)
-            .EnableIf(this.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.CurrentUser).Select(x => x != null))
+            .EnableIf(this.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.CurrentUser, x => x.YoloEaseProject.RemoteProject.Mode, (user, mode) => mode == AnnotationBackendMode.Offline || user != null))
             .SubscribeAsync(async _ =>
             {
                 try
@@ -326,6 +406,8 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     public int ProjectId { get; set; }
 
     public AutomaticTrainer AutomaticTrainer { get; }
+
+    public PrerequisitesViewModel Prerequisites { get; }
     
     public AugmentationsAccessor Augmentations { get; }
 
@@ -420,13 +502,17 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         }
         
         
-        var newConfig = new GeneralProperties();
+        var newConfig = new GeneralProperties
+        {
+            AnnotationBackendMode = AnnotationBackendMode.Offline,
+        };
         var loadedConfig = LoadedProject;
         if (loadedConfig != null)
         {
             newConfig.Username = loadedConfig.Username;
             newConfig.Password = loadedConfig.Password;
             newConfig.ServerUrl = loadedConfig.ServerUrl;
+            newConfig.ProjectName = loadedConfig.ProjectName;
         }
 
         var selectedFile = saveProjectFileDialog.ShowDialog();
@@ -469,6 +555,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         if (selectedFile != null)
         {
             LoadedProjectFile = selectedFile;
+            ApplyLoadedProjectFileContext();
             await SaveProjectCommandExecuted();
         }
     }
@@ -511,9 +598,53 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         applicationAccessor.Exit();
     }
 
-    private static DirectoryInfo? PrepareProjectDirectory(DirectoryInfo? storageDirectory, int? projectId, string apiUrl)
+    private void ActivatePrerequisitesOrDefer()
     {
-        if (storageDirectory == null || string.IsNullOrEmpty(apiUrl))
+        if (YoloEaseProject == null)
+        {
+            prerequisitesActivationPending = true;
+            return;
+        }
+
+        ActiveTabId = prerequisitesTab.Id;
+    }
+
+    private void TryActivatePendingPrerequisites()
+    {
+        if (!prerequisitesActivationPending || YoloEaseProject == null)
+        {
+            return;
+        }
+
+        prerequisitesActivationPending = false;
+        ActiveTabId = prerequisitesTab.Id;
+    }
+
+    private static DirectoryInfo? PrepareStorageDirectory(FileInfo? loadedProjectFile, AnnotationBackendMode backendMode)
+    {
+        if (loadedProjectFile?.Directory == null)
+        {
+            return null;
+        }
+
+        return backendMode == AnnotationBackendMode.Offline
+            ? loadedProjectFile.Directory.GetSubdirectory(Path.GetFileNameWithoutExtension(loadedProjectFile.Name))
+            : loadedProjectFile.Directory.GetSubdirectory("storage");
+    }
+
+    private static DirectoryInfo? PrepareProjectDirectory(DirectoryInfo? storageDirectory, AnnotationBackendMode backendMode, int? projectId, string apiUrl)
+    {
+        if (storageDirectory == null)
+        {
+            return null;
+        }
+
+        if (backendMode == AnnotationBackendMode.Offline)
+        {
+            return storageDirectory;
+        }
+
+        if (string.IsNullOrEmpty(apiUrl))
         {
             return null;
         }
@@ -587,11 +718,13 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     {
         var configJson = File.ReadAllText(file.FullName);
         var config = configSerializer.Deserialize<GeneralProperties>(configJson);
-        LoadProjectConfig(config);
         LoadedProjectFile = file;
-        if (Directory.Exists(StorageDirectory.FullName) == false)
+        LoadProjectConfig(config);
+        ApplyLoadedProjectFileContext();
+        var storageDirectory = StorageDirectory ?? PrepareStorageDirectory(file, config.AnnotationBackendMode);
+        if (storageDirectory != null && Directory.Exists(storageDirectory.FullName) == false)
         {
-            Directory.CreateDirectory(StorageDirectory.FullName);
+            Directory.CreateDirectory(storageDirectory.FullName);
         }
         AddRecentProject(new RecentProjectInfo()
         {
@@ -603,14 +736,19 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     private void LoadProjectConfig(GeneralProperties config)
     {
         var project = projectFactory.Create();
+        project.RemoteProject.Mode = config.AnnotationBackendMode;
         project.RemoteProject.Username = config.Username;
         project.RemoteProject.Password = config.Password;
         project.RemoteProject.ServerUrl = config.ServerUrl;
         project.RemoteProject.ProjectId = config.ProjectId;
+        project.RemoteProject.ProjectName = config.AnnotationBackendMode == AnnotationBackendMode.Offline && LoadedProjectFile != null
+            ? Path.GetFileNameWithoutExtension(LoadedProjectFile.Name)
+            : config.ProjectName;
         project.DataSources.InputDirectories.EditDiff(config.DataDirectoryPaths.EmptyIfNull().Where(x => !string.IsNullOrEmpty(x)).Select(x => new DirectoryInfo(x)));
         project.TrainingDataset.BaseModelPath = config.BaseModelPath;
         project.TrainingDataset.Epochs = config.TrainingEpochs;
         project.TrainingDataset.ModelSize = config.ModelSize;
+        project.TrainingDataset.TrainValSplitPercentage = config.TrainValSplitPercentage;
         project.TrainingBatch.BatchPercentage = config.BatchPercentage;
         project.TrainingDataset.TrainAdditionalArguments = config.TrainAdditionalArguments;
         project.TrainingDataset.MaxNumberOfCpuCores = config.MaxNumberOfCpuCores;
@@ -668,19 +806,26 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         project.Augmentations.Effects.Clear();
         project.Augmentations.Effects.EditDiff(effects);
 
+        ApplyProjectFileContext(project, LoadedProjectFile);
         YoloEaseProject = project;
+        ApplyLoadedProjectFileContext();
         LoadedProject = config;
     }
 
     private GeneralProperties PrepareProjectConfig()
     {
+        var projectName = YoloEaseProject!.RemoteProject.Mode == AnnotationBackendMode.Offline && LoadedProjectFile != null
+            ? Path.GetFileNameWithoutExtension(LoadedProjectFile.Name)
+            : YoloEaseProject.RemoteProject.ProjectName;
         var baseConfig = LoadedProject ?? new GeneralProperties();
         var updatedConfig = baseConfig with
         {
+            AnnotationBackendMode = YoloEaseProject!.RemoteProject.Mode,
             Username = YoloEaseProject!.RemoteProject.Username,
             Password = YoloEaseProject.RemoteProject.Password,
             ServerUrl = YoloEaseProject.RemoteProject.ServerUrl,
             ProjectId = YoloEaseProject.RemoteProject.ProjectId,
+            ProjectName = projectName,
             DataDirectoryPaths = YoloEaseProject.DataSources.InputDirectories.Items.Select(x => x.FullName).ToArray(),
             TrainingEpochs = YoloEaseProject.TrainingDataset.Epochs,
             ModelSize = YoloEaseProject.TrainingDataset.ModelSize,
@@ -695,6 +840,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             AutoAnnotateModelStrategy = AutomaticTrainer.ModelStrategy,
 
             PredictConfidenceThresholdPercentage = YoloEaseProject.Predictions.ConfidenceThresholdPercentage,
+            PredictIoUThresholdPercentage = YoloEaseProject.Predictions.IoUThresholdPercentage,
             PredictAdditionalArguments = YoloEaseProject.Predictions.PredictAdditionalArguments,
             
             Augmentations = SaveEffects(YoloEaseProject.Augmentations.Effects.Items)
@@ -717,6 +863,40 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         }
         var configJson = configSerializer.Serialize(config);
         File.WriteAllText(file.FullName, configJson);
+    }
+
+    private void ApplyLoadedProjectFileContext()
+    {
+        if (YoloEaseProject == null)
+        {
+            return;
+        }
+
+        ApplyProjectFileContext(YoloEaseProject, LoadedProjectFile);
+    }
+
+    private void ApplyProjectFileContext(YoloEaseProject project, FileInfo? projectFile)
+    {
+        project.RemoteProject.SetProjectFile(projectFile);
+
+        var storageDirectory = PrepareStorageDirectory(projectFile, project.RemoteProject.Mode);
+        if (storageDirectory != null)
+        {
+            StorageDirectory = storageDirectory;
+        }
+
+        var projectDirectory = PrepareProjectDirectory(
+            storageDirectory,
+            project.RemoteProject.Mode,
+            project.RemoteProject.ProjectId,
+            project.RemoteProject.ServerUrl);
+        if (projectDirectory == null)
+        {
+            return;
+        }
+
+        ProjectOutputDirectory = projectDirectory;
+        project.StorageDirectory = projectDirectory;
     }
 
     private void SaveProjectConfig(FileInfo file)

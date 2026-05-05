@@ -1,0 +1,51 @@
+@using ReactiveUI
+@using Microsoft.JSInterop
+@inherits PoeShared.Blazor.BlazorReactiveComponent<RunnableTimelineEntryBase>
+
+@if (DataContext.HasOutputLog)
+{
+    <div class="trainer-output">
+        <div class="trainer-output-toolbar">
+            <button type="button" class="btn btn-link trainer-output-toggle" @onclick="ToggleExpanded">
+                <i class="fa @(isExpanded ? "fa-chevron-down" : "fa-chevron-right") fa-fixed"></i>
+                <span class="trainer-output-label">output</span>
+                <span class="trainer-output-count">@DataContext.OutputLogCount</span>
+                @if (!isExpanded && !string.IsNullOrWhiteSpace(DataContext.OutputLogPreview))
+                {
+                    <span class="trainer-output-preview">@DataContext.OutputLogPreview</span>
+                }
+            </button>
+            <button type="button" class="btn btn-link trainer-output-copy" title="Copy output" @onclick="CopyOutput">
+                <i class="fa fa-copy fa-fixed"></i>
+            </button>
+        </div>
+
+        @if (isExpanded)
+        {
+            <pre class="trainer-output-log scroller">@DataContext.OutputLogText</pre>
+        }
+    </div>
+}
+
+@code {
+    private bool isExpanded;
+
+    [Inject]
+    protected IJSRuntime JavaScriptRuntime { get; init; } = default!;
+
+    public TimelineOutputLog()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.OutputLogCount));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.OutputLogText));
+    }
+
+    private void ToggleExpanded()
+    {
+        isExpanded = !isExpanded;
+    }
+
+    private async Task CopyOutput()
+    {
+        await JavaScriptRuntime.InvokeVoidAsync("navigator.clipboard.writeText", DataContext.OutputLogText);
+    }
+}

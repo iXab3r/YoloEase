@@ -1,0 +1,50 @@
+@if (HasItems)
+{
+    <div class="@ResponsiveClassValue">
+        <table class="@TableClass">
+            @if (Header != null)
+            {
+                <thead>
+                @Header
+                </thead>
+            }
+            <tbody>
+            @Rows
+            </tbody>
+        </table>
+    </div>
+}
+else if (EmptyContent != null)
+{
+    @EmptyContent
+}
+
+@code {
+    private const string DefaultTableClass = "table table-sm table-hover align-middle ye-table";
+
+    [Parameter]
+    public bool HasItems { get; set; } = true;
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public string? ResponsiveClass { get; set; }
+
+    [Parameter]
+    public RenderFragment? Header { get; set; }
+
+    [Parameter]
+    public RenderFragment? Rows { get; set; }
+
+    [Parameter]
+    public RenderFragment? EmptyContent { get; set; }
+
+    private string TableClass => string.IsNullOrWhiteSpace(Class)
+        ? DefaultTableClass
+        : $"{DefaultTableClass} {Class}";
+
+    private string ResponsiveClassValue => string.IsNullOrWhiteSpace(ResponsiveClass)
+        ? "table-responsive"
+        : $"table-responsive {ResponsiveClass}";
+}

@@ -7,6 +7,9 @@ using YoloEase.UI.Scaffolding;
 
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Base implementation for configurable image effects with enablement and settings hashing.
+/// </summary>
 public abstract class ImageEffectBase<T> : YoloObjectBase<T>, IImageEffect where T : ImageEffectProperties, new()
 {
     public bool IsEnabled { get; set; } = true;

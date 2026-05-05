@@ -10,6 +10,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Carries model and dataset inputs into the prediction timeline step.
+/// </summary>
 public sealed record PredictArgs
 {
     public required TrainedModelFileInfo Model { get; init; }
@@ -17,6 +20,9 @@ public sealed record PredictArgs
     public required FileInfo[] Files { get; init; }
 }
 
+/// <summary>
+/// Timeline step that runs predictions against a generated dataset.
+/// </summary>
 public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
 {
     private readonly TrainedModelFileInfo trainedModelFileInfo;
@@ -45,7 +51,7 @@ public class PredictTimelineEntry : RunnableTimelineEntry<DatasetPredictInfo>
             {
                 ProgressPercent = (int) update.ProgressPercentage;
                 Text = $"Processed predictions for image {update.ImageCurrent}/{update.ImageMax}";
-            }, cancellationToken: cancellationToken);
+            }, cancellationToken: cancellationToken, outputHandler: AppendOutputLog);
         if (predictionResults == null)
         {
             throw new InvalidStateException("Failed to get predictions");

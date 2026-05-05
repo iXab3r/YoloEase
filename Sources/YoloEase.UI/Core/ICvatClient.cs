@@ -5,6 +5,9 @@ using YoloEase.UI.Cvat;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Exposes CVAT connection settings, authentication state, and authenticated execution helpers.
+/// </summary>
 public interface ICvatClient : INotifyPropertyChanged
 {
     CvatApiClient Api { get; }

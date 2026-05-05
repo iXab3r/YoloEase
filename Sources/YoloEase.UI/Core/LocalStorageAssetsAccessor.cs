@@ -5,6 +5,9 @@ using YoloEase.UI.Scaffolding;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Stores and indexes project assets in the local project storage directory.
+/// </summary>
 public class LocalStorageAssetsAccessor : RefreshableReactiveObject, IFileAssetsAccessor
 {
     public static readonly string[] FilesFilter = new[] {"*.png", "*.jpg", "*.bmp"};

@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Captures the command-line settings for a YOLO training run.
+/// </summary>
 public sealed record Yolo8TrainArguments
 {
     public string Model { get; init; }

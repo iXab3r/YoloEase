@@ -1,9 +1,9 @@
 @inherits PoeShared.Blazor.Controls.TimelineItemBase<UpdateYoloTimelineEntry>
 
-<div class="d-flex">
+<div class="trainer-timeline-item-body">
     <div class="vstack gap-3">
-        <div class="d-flex">
-            <div>@(DataContext.Text)@(DataContext.IsBusy ? "..." : string.Empty)</div>
+        <div class="trainer-timeline-line">
+            <div class="trainer-timeline-text">@(DataContext.Text)@(DataContext.IsBusy ? "..." : string.Empty)</div>
             <ReactiveButton
                 Class="btn btn-link h-auto mx-2 p-0"
                 HideIfDisabled="true"
@@ -17,6 +17,7 @@
         {
             <span class="alert alert-warning">@((DataContext.UpdateText))</span>
         }
+        <TimelineOutputLog DataContext="@DataContext"/>
     </div>
 </div>
 

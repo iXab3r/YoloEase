@@ -2,6 +2,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Represents one labeled YOLO prediction with confidence and bounding box geometry.
+/// </summary>
 public readonly record struct YoloPrediction
 {
     /// <summary>

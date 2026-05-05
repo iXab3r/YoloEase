@@ -4,6 +4,9 @@ using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Timeline step that updates the managed YOLO package.
+/// </summary>
 public class UpdateYoloTimelineEntry : RunnableTimelineEntry
 {
     private readonly Yolo8CliWrapper yolo8CliWrapper;
@@ -35,7 +38,7 @@ public class UpdateYoloTimelineEntry : RunnableTimelineEntry
         else
         {
             Text = "Updating Yolo via PIP";
-            await yolo8CliWrapper.UpdateYolo(cancellationToken);
+            await yolo8CliWrapper.UpdateYolo(cancellationToken, AppendOutputLog);
             Text = "Updated Yolo to the latest version";
         }
     }

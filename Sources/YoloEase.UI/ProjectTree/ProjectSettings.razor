@@ -1,418 +1,401 @@
-@using CvatApi
 @using System.Globalization
+@using AntDesign
 @using PoeShared.Blazor.Scaffolding
 @using PoeShared.Dialogs.Services
+@using YoloEase.UI.Core
 @using FileInfo = System.IO.FileInfo
 @inherits PoeShared.Blazor.BlazorReactiveComponent<MainWindowViewModel>
 
-<div class="container">
-<div class="row">
-    <div class="col-12">
-        <h4>CVAT API settings</h4>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="serverUrl" class="col-form-label">Server URL<span class="text-danger">*</span></label>
-    </div>
-    <div class="col-sm-9">
-        <div class="input-group">
-            <InputTextEx type="text" class="form-control" id="serverUrl" @bind-Value="@DataContext.YoloEaseProject.RemoteProject.ServerUrl"/>
-            <ReactiveButton Class="btn btn-outline-secondary" Command="@(async () => await ProcessUtils.OpenUri(DataContext.YoloEaseProject.RemoteProject.ServerUrl))">
-                <i class="fa fa-link"></i>
-                Open
-            </ReactiveButton>
+<TabPageLayout Class="settings-tab" BodyClass="ye-settings">
+    <TopBar>
+        <div class="ye-tab-title-row">
+            <span class="ye-tab-title">@GetSettingsTitle()</span>
+            <span class="ye-tab-subtitle">@GetSettingsSubtitle()</span>
         </div>
-    </div>
-</div>
+    </TopBar>
 
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="username" class="col-form-label">Username<span class="text-danger">*</span></label>
-    </div>
-    <div class="col-sm-9">
-        <InputTextEx type="text" class="form-control" id="username" placeholder="Enter username" @bind-Value="@DataContext.YoloEaseProject.RemoteProject.Username"/>
-    </div>
-</div>
+    <ChildContent>
+    <section class="ye-section">
+        <div class="ye-section-header">
+            <h4>Annotation backend</h4>
+        </div>
 
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="password" class="col-form-label">Password<span class="text-danger">*</span></label>
-    </div>
-    <div class="col-sm-9">
-        <InputTextEx type="password" class="form-control" id="password" placeholder="Enter password" @bind-Value="@DataContext.YoloEaseProject.RemoteProject.Password"/>
-    </div>
-</div>
+        <div class="ye-field">
+            <label for="annotationBackend" class="ye-field-label">Backend</label>
+            <div class="ye-field-control">
+                <select class="form-select" id="annotationBackend"
+                        value="@((int) DataContext.YoloEaseProject.RemoteProject.Mode)"
+                        @onchange="HandleBackendModeChanged">
+                    <option value="@((int) AnnotationBackendMode.Offline)">Offline</option>
+                    <option value="@((int) AnnotationBackendMode.Cvat)">CVAT</option>
+                </select>
+            </div>
+        </div>
 
+        <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.Mode, x => x.YoloEaseProject.RemoteProject.CurrentUser, x => x.YoloEaseProject.RemoteProject.IsBusy)})">
+            @if (DataContext.YoloEaseProject.RemoteProject.Mode == AnnotationBackendMode.Cvat)
+            {
+                <div class="ye-field">
+                    <label for="serverUrl" class="ye-field-label">Server URL<span class="text-danger">*</span></label>
+                    <div class="ye-field-control">
+                        <div class="input-group">
+                            <InputTextEx type="text" class="form-control" id="serverUrl" @bind-Value="@DataContext.YoloEaseProject.RemoteProject.ServerUrl"/>
+                            <ReactiveButton Class="btn btn-outline-secondary" Command="@(async () => await ProcessUtils.OpenUri(DataContext.YoloEaseProject.RemoteProject.ServerUrl))">
+                                <i class="fa fa-link"></i>
+                                Open
+                            </ReactiveButton>
+                        </div>
+                    </div>
+                </div>
 
-<div class="row">
-    <div class="col-sm-3">
-    </div>
-    <div class="col-sm-9  text-sm-end d-flex align-items-center">
-        <div class="hstack">
-            <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.CurrentUser, x => x.YoloEaseProject.RemoteProject.Username)})">
-                @if (DataContext.YoloEaseProject.RemoteProject.CurrentUser == null)
-                {
-                    <div class="text-danger">not logged in</div>
-                }
-                else
-                {
-                    <div class="text-success">logged in as @(DataContext.YoloEaseProject.RemoteProject.Username)</div>
-                }
+                <div class="ye-field">
+                    <label for="username" class="ye-field-label">Username<span class="text-danger">*</span></label>
+                    <div class="ye-field-control">
+                        <InputTextEx type="text" class="form-control" id="username" placeholder="Enter username" @bind-Value="@DataContext.YoloEaseProject.RemoteProject.Username"/>
+                    </div>
+                </div>
+
+                <div class="ye-field">
+                    <label for="password" class="ye-field-label">Password<span class="text-danger">*</span></label>
+                    <div class="ye-field-control">
+                        <InputTextEx type="password" class="form-control" id="password" placeholder="Enter password" @bind-Value="@DataContext.YoloEaseProject.RemoteProject.Password"/>
+                    </div>
+                </div>
+
+                <div class="ye-field">
+                    <div class="ye-field-label"></div>
+                    <div class="ye-field-control ye-status-row">
+                        @if (DataContext.YoloEaseProject.RemoteProject.CurrentUser == null)
+                        {
+                            <span class="text-danger">not logged in</span>
+                            <div class="flex-grow-1"></div>
+                            <ReactiveButton Class="btn btn-primary" Command="@DataContext.YoloEaseProject.RemoteProject.Login">
+                                <i class="fa fa-sign-in"></i>
+                                Login
+                            </ReactiveButton>
+                        }
+                        else
+                        {
+                            <span class="text-success">logged in as @DataContext.YoloEaseProject.RemoteProject.Username</span>
+                            <div class="flex-grow-1"></div>
+                            <ReactiveButton Class="btn btn-link" Command="@DataContext.YoloEaseProject.RemoteProject.Logout">
+                                <i class="fa fa-sign-out"></i>
+                                Logout
+                            </ReactiveButton>
+                            <ReactiveButton Class="btn btn-link" Command="@(() => DataContext.YoloEaseProject.RemoteProject.Refresh())">
+                                <i class="fa fa-refresh"></i>
+                                Refresh
+                            </ReactiveButton>
+                        }
+                    </div>
+                </div>
+
                 @if (DataContext.YoloEaseProject.RemoteProject.CurrentUser != null)
                 {
-                    <ReactiveButton Class="btn btn-link" Command="@DataContext.YoloEaseProject.RemoteProject.Logout">
-                        <i class="fa fa-sign-out"></i>
-                        Logout
-                    </ReactiveButton>
+                    <div class="ye-field">
+                        <label for="projectId" class="ye-field-label">
+                            @if (Track(x => x.YoloEaseProject.RemoteProject.IsBusy))
+                            {
+                                <span class="spinner-border spinner-border-sm"></span>
+                            }
+                            Project<span class="text-danger">*</span>
+                        </label>
+                        <div class="ye-field-control">
+                            @if (DataContext.YoloEaseProject.RemoteProject.Projects.Count <= 0)
+                            {
+                                <div class="alert alert-secondary mb-0">No projects available</div>
+                            }
+                            else
+                            {
+                                <div class="input-group">
+                                    <ReactiveButton Class="btn btn-outline-secondary"
+                                                    Command="@(async () => await ProcessUtils.OpenFolder(DataContext.YoloEaseProject.StorageDirectory))">
+                                        <i class="fa fa-folder-open"></i>
+                                    </ReactiveButton>
+                                    <select id="projectId" class="form-select"
+                                            value="@DataContext.ProjectId"
+                                            @onchange="HandleProjectChanged">
+                                        @foreach (var project in DataContext.YoloEaseProject.RemoteProject.Projects.Items.OrderBy(x => x.Name))
+                                        {
+                                            <option value="@project.Id">@project.Name</option>
+                                        }
+                                    </select>
+                                    <ReactiveButton Class="btn btn-outline-secondary" Command="@DataContext.OpenProject">
+                                        <i class="fa fa-link"></i>
+                                        Open
+                                    </ReactiveButton>
+                                </div>
+                            }
+                        </div>
+                    </div>
                 }
-            </ReactiveSection>
-
-
-        </div>
-        <div class="flex-grow-1">
-
-        </div>
-        <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.CurrentUser)})">
-            @if (DataContext.YoloEaseProject.RemoteProject.CurrentUser == null)
-            {
-                <ReactiveButton Class="btn btn-primary" Command="@DataContext.YoloEaseProject.RemoteProject.Login">
-                    <i class="fa fa-sign-in"></i>
-                    Login
-                </ReactiveButton>
             }
             else
             {
-                <ReactiveButton Class="btn btn-link" Command="@(() => DataContext.YoloEaseProject.RemoteProject.Refresh())">
-                    <i class="fa fa-refresh"></i>
-                    Refresh
-                </ReactiveButton>
-            }
-        </ReactiveSection>
+                <div class="ye-field">
+                    <label for="offlineUsername" class="ye-field-label">Operator</label>
+                    <div class="ye-field-control">
+                        <InputTextEx type="text" class="form-control" id="offlineUsername" placeholder="Displayed as the local editor user" @bind-Value="@DataContext.YoloEaseProject.RemoteProject.Username"/>
+                    </div>
+                </div>
 
+                <div class="ye-field">
+                    <div class="ye-field-label"></div>
+                    <div class="ye-field-control ye-status-row">
+                        <span class="text-success">offline workspace ready</span>
+                        <div class="flex-grow-1"></div>
+                        <ReactiveButton Class="btn btn-link" Command="@(() => DataContext.YoloEaseProject.RemoteProject.Refresh())">
+                            <i class="fa fa-refresh"></i>
+                            Refresh
+                        </ReactiveButton>
+                    </div>
+                </div>
 
-    </div>
-</div>
-
-<ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.CurrentUser)})">
-    @if (DataContext.YoloEaseProject.RemoteProject.CurrentUser != null)
-    {
-        <div class="row">
-            <div class="col-sm-3 text-sm-end">
-                <label for="projectId" class="col-form-label">
-                    @if (Track(x => x.YoloEaseProject.RemoteProject.IsBusy))
-                    {
-                        <div class="spinner-border spinner-border-sm"></div>
-                    }
-                    Project<span class="text-danger">*</span>
-                </label>
-            </div>
-            <div class="col-sm-9 hstack">
-                <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.Projects)})">
-
-                    @if (DataContext.YoloEaseProject.RemoteProject.Projects.Count <= 0)
-                    {
-                        <div class="text-warning">
-                            No projects available
-                        </div>
-                    }
-                    else
-                    {
+                <div class="ye-field">
+                    <label class="ye-field-label">
+                        @if (Track(x => x.YoloEaseProject.RemoteProject.IsBusy))
+                        {
+                            <span class="spinner-border spinner-border-sm"></span>
+                        }
+                        Workspace
+                    </label>
+                    <div class="ye-field-control">
                         <div class="input-group">
                             <ReactiveButton Class="btn btn-outline-secondary"
                                             Command="@(async () => await ProcessUtils.OpenFolder(DataContext.YoloEaseProject.StorageDirectory))">
                                 <i class="fa fa-folder-open"></i>
                             </ReactiveButton>
-                            <Select TItem="ProjectRead"
-                                    TItemValue="int"
-                                    Class="form-control w-auto"
-                                    DataSource="@(DataContext.YoloEaseProject.RemoteProject.Projects.Items)"
-                                    @bind-Value="@DataContext.ProjectId"
-                                    ValueName="@nameof(ProjectRead.Id)"
-                                    LabelName="@nameof(ProjectRead.Name)"
-                                    OnSelectedItemChanged="@(x => DataContext.ProjectId = x?.Id ?? 0)">
-                            </Select>
+                            <span class="input-group-text ye-path">@DataContext.YoloEaseProject.StorageDirectory?.FullName</span>
                             <ReactiveButton Class="btn btn-outline-secondary" Command="@DataContext.OpenProject">
                                 <i class="fa fa-link"></i>
                                 Open
                             </ReactiveButton>
                         </div>
-                    }
-                </ReactiveSection>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-sm-3 text-sm-end">
-                <label for="projectId" class="col-form-label">
-                    <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.IsBusy)})">
-                        @if (DataContext.YoloEaseProject.RemoteProject.IsBusy)
-                        {
-                            <div class="spinner-border spinner-border-sm"></div>
-                        }
-                        Labels
-                    </ReactiveSection>
-                </label>
-            </div>
-            <div class="col-sm-9 hstack">
-                <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.Labels)})">
-                    @if (DataContext.YoloEaseProject.RemoteProject.Labels.Count <= 0)
-                    {
-                        <div class="text-warning">
-                            No labels available
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="wrap-panel">
-                            @foreach (var label in DataContext.YoloEaseProject.RemoteProject.Labels.Items)
-                            {
-                                <div class="item">
-                                    <div class="circle" style="background-color: @(label.Color);"></div>
-                                    <div class="label">@label.Name</div>
-                                </div>
-                            }
-                        </div>
-                    }
-                </ReactiveSection>
-
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-sm-3 text-sm-end">
-                <label class="col-form-label">
-                    Stats
-                </label>
-            </div>
-            <div class="col-sm-9 hstack gap-2 align-items-center">
-                <div>
-                    <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.Tasks)})">
-                        @("task".ToQuantity(DataContext.YoloEaseProject.RemoteProject.Tasks.Count))
-                    </ReactiveSection>
-                </div>
-                <div>
-                    <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.RemoteProject.ProjectFiles)})">
-                        @("file".ToQuantity(DataContext.YoloEaseProject.RemoteProject.ProjectFiles.Count))
-                    </ReactiveSection>
-                </div>
-            </div>
-        </div>
-    }
-</ReactiveSection>
-
-<Divider/>
-
-<div class="row mt-3">
-    <div class="col-8">
-        <h4>Data sources (directories, files, etc)<span class="text-danger">*</span> (@Track(x => x.YoloEaseProject.DataSources.InputDirectories.Count))</h4>
-    </div>
-    <div class="col-4 text-sm-end flex">
-        <ReactiveButton Class="btn btn-primary my-1" Command="@(async () => await AddVideo())">Add Video...</ReactiveButton>
-        <ReactiveButton Class="btn btn-primary my-1" Command="@DataContext.AddDataFolderDirectory">Add Folder...</ReactiveButton>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-12">
-
-        <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.DataSources.InputDirectories)})">
-            @if (DataContext.YoloEaseProject.DataSources.InputDirectories.Count > 0)
-            {
-                <Table TItem="DirectoryInfo" DataSource="@(DataContext.YoloEaseProject.DataSources.InputDirectories.Items)"
-                       HidePagination="true">
-                    <ActionColumn Title="" Class="text-end">
-                        <ReactiveButton Class="btn btn-outline-secondary" Command="@(async () => await PoeShared.Scaffolding.ProcessUtils.OpenFolder(context))">
-                            <i class="fa fa-folder-open"></i>
-                        </ReactiveButton>
-                    </ActionColumn>
-                    <PropertyColumn Property="x => x.FullName" Title="Source name">
-                        @if (PathUtils.IsParentDir(DataContext.YoloEaseProject.StorageDirectory.FullName, context.FullName))
-                        {
-                            @(Path.GetRelativePath(DataContext.YoloEaseProject.StorageDirectory.FullName, context.FullName).TakeMidChars(64))
-                        }
-                        else
-                        {
-                            @(context.FullName.TakeMidChars(96))
-                        }
-                    </PropertyColumn>
-                    <ActionColumn Title="" Class="text-end">
-                        <ReactiveButton Command="@(async () => await DataContext.RemoveDataFolderDirectory(context))">
-                            Remove
-                        </ReactiveButton>
-                    </ActionColumn>
-                </Table>
-            }
-            else
-            {
-                <div class="alert alert-secondary my-2">
-                    Start by adding data sources - folders with images, video files, etc
+                    </div>
                 </div>
             }
         </ReactiveSection>
-    </div>
-</div>
-<Divider/>
 
-<div class="row mt-3">
-    <div class="col-12">
-        <h4>Training settings</h4>
-    </div>
-</div>
+        <div class="ye-field">
+            <label class="ye-field-label">
+                @if (Track(x => x.YoloEaseProject.RemoteProject.IsBusy))
+                {
+                    <span class="spinner-border spinner-border-sm"></span>
+                }
+                Labels
+            </label>
+            <div class="ye-field-control">
+                @if (DataContext.YoloEaseProject.RemoteProject.Labels.Count <= 0)
+                {
+                    <div class="alert alert-secondary mb-0">No labels available</div>
+                }
+                else
+                {
+                    <div class="ye-labels">
+                        @foreach (var label in DataContext.YoloEaseProject.RemoteProject.Labels.Items.OrderBy(x => x.Name))
+                        {
+                            <div class="ye-label-pill">
+                                <span class="ye-label-swatch" style="background-color: @(label.Color);"></span>
+                                <span>@label.Name</span>
+                            </div>
+                        }
+                    </div>
+                }
 
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="modelPath" class="col-form-label">Yolo8/10+ base model</label>
-    </div>
-    <div class="col-sm-9">
-        <div class="input-group">
-            <InputTextEx type="text" class="form-control" id="modelPath" placeholder="Yolo8 base model path" @bind-Value="@DataContext.YoloEaseProject.TrainingDataset.BaseModelPath"/>
-            <ReactiveButton Class="btn btn-outline-secondary" Command="@DataContext.SelectModel">
-                ...
-            </ReactiveButton>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="epochs" class="col-form-label">Epochs</label>
-    </div>
-    <div class="col-sm-9 align-self-center">
-        <div class="input-group hstack">
-            <input type="number" class="form-control" id="epochs"
-                   min="1" step="1"
-                   value="@Track(x => x.YoloEaseProject.TrainingDataset.Epochs)"
-                   oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.TrainingDataset.Epochs = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 1 : Convert.ToInt32(valueAsString))">
-            <div style="flex-grow: 5;">
-                <small>usually 50-200 is a good choice</small>
+                @if (DataContext.YoloEaseProject.RemoteProject.Mode == AnnotationBackendMode.Offline)
+                {
+                    <div class="form-text mt-2">Manage offline labels and their colors from the Project tab.</div>
+                }
             </div>
         </div>
-    </div>
-</div>
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="modelSize" class="col-form-label">Model Size</label>
-    </div>
-    <div class="col-sm-9 align-self-center">
-        <div class="input-group hstack">
-            <input type="number" class="form-control" id="modelSize"
-                   min="32" step="32"
-                   value="@Track(x => x.YoloEaseProject.TrainingDataset.ModelSize)"
-                   oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.TrainingDataset.ModelSize = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 1 : Convert.ToInt32(valueAsString))">
-            <div style="flex-grow: 5;">
-                <small>640 is default value and should fit most use cases</small>
+
+        <div class="ye-field">
+            <label class="ye-field-label">Stats</label>
+            <div class="ye-field-control ye-inline-stats">
+                <span>@($"{DataContext.YoloEaseProject.RemoteProject.Tasks.Count} tasks")</span>
+                <span>@($"{DataContext.YoloEaseProject.RemoteProject.ProjectFiles.Count} files")</span>
             </div>
         </div>
-    </div>
-</div>
+    </section>
 
-    <div class="row">
-        <div class="col-sm-3 text-sm-end">
-            <label for="maxCpuCores" class="col-form-label">Max CPU Cores</label>
+    <section class="ye-section">
+        <div class="ye-section-header">
+            <h4>Data sources<span class="text-danger">*</span> (@Track(x => x.YoloEaseProject.DataSources.InputDirectories.Count))</h4>
+            <div class="ye-actions">
+                <ReactiveButton Class="btn btn-primary btn-sm" Command="@(async () => await AddVideo())">Add Video...</ReactiveButton>
+                <ReactiveButton Class="btn btn-primary btn-sm" Command="@DataContext.AddDataFolderDirectory">Add Folder...</ReactiveButton>
+            </div>
         </div>
-        <div class="col-sm-9 align-self-center">
-            <ReactiveSection Trackers="@(new ReactiveTrackerList().With(DataContext.WhenAnyValue(x => x.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)))">
-                <div class="d-flex gap-1 align-items-center">
-                    <input type="range" class="flex-grow-1" id="maxCpuCores"
+
+        <ReactiveSection Trackers="@(new() {DataContext.WhenAnyValue(x => x.YoloEaseProject.DataSources.InputDirectories)})">
+            <YeTable HasItems="@(DataContext.YoloEaseProject.DataSources.InputDirectories.Count > 0)">
+                <Header>
+                        <tr>
+                            <th>Source</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                </Header>
+                <Rows>
+                        @foreach (var source in DataContext.YoloEaseProject.DataSources.InputDirectories.Items.OrderBy(x => x.FullName))
+                        {
+                            var localSource = source;
+                            <tr>
+                                <td class="ye-path">@GetDataSourcePath(localSource)</td>
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+                                        <ReactiveButton Class="btn btn-outline-secondary" Command="@(async () => await PoeShared.Scaffolding.ProcessUtils.OpenFolder(localSource))">
+                                            <i class="fa fa-folder-open"></i>
+                                            Open
+                                        </ReactiveButton>
+                                        <div class="btn-group btn-group-sm ye-two-step-group">
+                                            @if (IsPendingDataSourceRemoval(localSource))
+                                            {
+                                                <ReactiveButton Class="btn btn-danger ye-two-step-confirm" Command="@(async () => await ConfirmRemoveDataSource(localSource))">
+                                                    <i class="fa fa-trash"></i>
+                                                    Remove
+                                                </ReactiveButton>
+                                                <button type="button" class="btn btn-secondary ye-two-step-cancel" @onclick="CancelRemoveDataSource">
+                                                    Cancel
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn btn-outline-danger ye-two-step-primary" @onclick="() => BeginRemoveDataSource(localSource)">
+                                                    Remove
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                </Rows>
+                <EmptyContent>
+                    <div class="alert alert-secondary mb-0">Start by adding data sources - folders with images, video files, etc</div>
+                </EmptyContent>
+            </YeTable>
+        </ReactiveSection>
+    </section>
+
+    <section class="ye-section">
+        <div class="ye-section-header">
+            <h4>Training settings</h4>
+        </div>
+
+        <div class="ye-field">
+            <label for="modelPath" class="ye-field-label">Yolo8/10+ base model</label>
+            <div class="ye-field-control">
+                <div class="input-group">
+                    <InputTextEx type="text" class="form-control" id="modelPath" placeholder="Yolo8 base model path" @bind-Value="@DataContext.YoloEaseProject.TrainingDataset.BaseModelPath"/>
+                    <ReactiveButton Class="btn btn-outline-secondary" Command="@DataContext.SelectModel">
+                        ...
+                    </ReactiveButton>
+                </div>
+            </div>
+        </div>
+
+        <div class="ye-field ye-field-compact">
+            <label for="epochs" class="ye-field-label">Epochs</label>
+            <div class="ye-field-control">
+                <input type="number" class="form-control ye-number" id="epochs"
+                       min="1" step="1"
+                       value="@Track(x => x.YoloEaseProject.TrainingDataset.Epochs)"
+                       @oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.TrainingDataset.Epochs = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 1 : Convert.ToInt32(valueAsString))">
+                <span class="ye-help">usually 50-200 is a good choice</span>
+            </div>
+        </div>
+
+        <div class="ye-field ye-field-compact">
+            <label for="modelSize" class="ye-field-label">Model Size</label>
+            <div class="ye-field-control">
+                <input type="number" class="form-control ye-number" id="modelSize"
+                       min="32" step="32"
+                       value="@Track(x => x.YoloEaseProject.TrainingDataset.ModelSize)"
+                       @oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.TrainingDataset.ModelSize = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 1 : Convert.ToInt32(valueAsString))">
+                <span class="ye-help">640 is default value and should fit most use cases</span>
+            </div>
+        </div>
+
+        <div class="ye-field ye-field-compact">
+            <label for="maxCpuCores" class="ye-field-label">Max CPU Cores</label>
+            <div class="ye-field-control">
+                <ReactiveSection Trackers="@(new ReactiveTrackerList().With(DataContext.WhenAnyValue(x => x.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)))">
+                    <input type="range" class="form-range ye-range" id="maxCpuCores"
                            min="0"
                            max="@(Environment.ProcessorCount)"
-                           value="@(DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)"
-                           oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
-                    <label class="text-nowrap" style="min-width:100px;">@($"{(DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores <= 0 ? "Any" : DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)}")</label>
+                           value="@DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores"
+                           @oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores = x.Value is not string valueAsString ? 0 : Convert.ToInt32(valueAsString))">
+                    <span class="ye-range-value">@($"{(DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores <= 0 ? "Any" : DataContext.YoloEaseProject.TrainingDataset.MaxNumberOfCpuCores)}")</span>
+                </ReactiveSection>
+            </div>
+        </div>
+
+        <div class="ye-field">
+            <label for="trainAdditionalArguments" class="ye-field-label">Additional arguments</label>
+            <div class="ye-field-control">
+                <InputTextEx type="text" class="form-control" id="trainAdditionalArguments" placeholder="command line arguments..." @bind-Value="@DataContext.YoloEaseProject.TrainingDataset.TrainAdditionalArguments"/>
+            </div>
+        </div>
+    </section>
+
+    <section class="ye-section">
+        <div class="ye-section-header">
+            <h4>Predict settings</h4>
+        </div>
+
+        <div class="ye-field ye-field-compact">
+            <label for="predictConfidenceThreshold" class="ye-field-label">Confidence threshold</label>
+            <div class="ye-field-control">
+                <input type="range" class="form-range ye-range"
+                       id="predictConfidenceThreshold"
+                       min="0"
+                       max="100"
+                       value="@Track(x => x.YoloEaseProject.Predictions.ConfidenceThresholdPercentage.ToString(CultureInfo.InvariantCulture))"
+                       @oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.Predictions.ConfidenceThresholdPercentage = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 0 : Convert.ToSingle(valueAsString))">
+                <span class="ye-range-value">@Track(x => $"{x.YoloEaseProject.Predictions.ConfidenceThresholdPercentage}%")</span>
+            </div>
+        </div>
+
+        <div class="ye-field ye-field-compact">
+            <label for="predictIoUThreshold" class="ye-field-label">IoU threshold</label>
+            <div class="ye-field-control">
+                <input type="range" class="form-range ye-range"
+                       id="predictIoUThreshold"
+                       min="0"
+                       max="100"
+                       value="@Track(x => x.YoloEaseProject.Predictions.IoUThresholdPercentage.ToString(CultureInfo.InvariantCulture))"
+                       @oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.Predictions.IoUThresholdPercentage = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 0 : Convert.ToSingle(valueAsString))">
+                <span class="ye-range-value">@Track(x => $"{x.YoloEaseProject.Predictions.IoUThresholdPercentage}%")</span>
+            </div>
+        </div>
+
+        <div class="ye-field">
+            <label for="predictAdditionalArguments" class="ye-field-label">Additional arguments</label>
+            <div class="ye-field-control">
+                <InputTextEx type="text" class="form-control" id="predictAdditionalArguments" placeholder="command line arguments..." @bind-Value="@DataContext.YoloEaseProject.Predictions.PredictAdditionalArguments"/>
+            </div>
+        </div>
+    </section>
+
+    <section class="ye-section">
+        <div class="ye-section-header">
+            <h4>Application settings</h4>
+        </div>
+
+        <div class="ye-field">
+            <label for="directoryPath" class="ye-field-label">Storage directory</label>
+            <div class="ye-field-control">
+                <div class="input-group">
+                    <ReactiveButton Class="btn btn-outline-secondary" Command="@DataContext.OpenStorage">
+                        <i class="fa fa-folder-open"></i>
+                    </ReactiveButton>
+                    <span class="input-group-text ye-path">@DataContext.StorageDirectory?.FullName</span>
                 </div>
-            </ReactiveSection>
-            
+            </div>
         </div>
-    </div>
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="trainAdditionalArguments" class="col-form-label">Additional arguments</label>
-    </div>
-    <div class="col-sm-9 align-self-center">
-        <div class="input-group">
-            <InputTextEx type="text" class="form-control" id="trainAdditionalArguments" placeholder="command line arguments..." @bind-Value="@DataContext.YoloEaseProject.TrainingDataset.TrainAdditionalArguments"/>
-        </div>
-    </div>
-</div>
-<Divider/>
-<div class="row mt-3">
-    <div class="col-12">
-        <h4>Predict settings</h4>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="epochs" class="col-form-label">Confidence threshold</label>
-    </div>
-    <div class="col-sm-9 align-self-center">
-        <div class="input-group d-flex">
-            <input type="range" class="form-range align-self-center mx-2 w-auto flex-grow-1"
-                   id="batchSizePercentage"
-                   min="0"
-                   max="100"
-                   value="@Track(x => x.YoloEaseProject.Predictions.ConfidenceThresholdPercentage.ToString(CultureInfo.InvariantCulture))"
-                   oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.Predictions.ConfidenceThresholdPercentage = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 0 : Convert.ToSingle(valueAsString))">
-            <span class="input-group-text" style="min-width:50px;">@Track(x => $"{x.YoloEaseProject.Predictions.ConfidenceThresholdPercentage}%")</span>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="epochs" class="col-form-label">IoU threshold</label>
-    </div>
-    <div class="col-sm-9 align-self-center">
-        <div class="input-group d-flex">
-            <input type="range" class="form-range align-self-center mx-2 w-auto flex-grow-1"
-                   id="batchSizeIoUThreshold"
-                   min="0"
-                   max="100"
-                   value="@Track(x => x.YoloEaseProject.Predictions.IoUThresholdPercentage.ToString(CultureInfo.InvariantCulture))"
-                   oninput="@((ChangeEventArgs x) => DataContext.YoloEaseProject.Predictions.IoUThresholdPercentage = x.Value is not string valueAsString || string.IsNullOrEmpty(valueAsString) ? 0 : Convert.ToSingle(valueAsString))">
-            <span class="input-group-text" style="min-width:50px;">@Track(x => $"{x.YoloEaseProject.Predictions.IoUThresholdPercentage}%")</span>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="predictAdditionalArguments" class="col-form-label">Additional arguments</label>
-    </div>
-    <div class="col-sm-9 align-self-center">
-        <div class="input-group">
-            <InputTextEx type="text" class="form-control" id="predictAdditionalArguments" placeholder="command line arguments..." @bind-Value="@DataContext.YoloEaseProject.Predictions.PredictAdditionalArguments"/>
-        </div>
-    </div>
-</div>
-<Divider/>
-
-<div class="row mt-3">
-    <div class="col-12">
-        <h4>Application settings</h4>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-sm-3 text-sm-end">
-        <label for="directoryPath" class="col-form-label">Storage directory</label>
-    </div>
-    <div class="col-sm-9">
-        <div class="input-group">
-            <ReactiveButton Class="btn btn-outline-secondary" Command="@DataContext.OpenStorage">
-                <i class="fa fa-folder-open"></i>
-            </ReactiveButton>
-            <span class="input-group-text">
-                @(DataContext.StorageDirectory?.FullName)
-            </span>
-        </div>
-    </div>
-</div>
-<Divider/>
-
-
-</div>
+    </section>
+    </ChildContent>
+</TabPageLayout>
 
 <VideoSplitterDialog @ref="@videoSplitterDialog" DataContext="@DataContext"></VideoSplitterDialog>
 <MultiVideoSplitterDialog @ref="@multiVideoSplitterDialog" DataContext="@DataContext"></MultiVideoSplitterDialog>
@@ -422,6 +405,7 @@
 
     private VideoSplitterDialog videoSplitterDialog;
     private MultiVideoSplitterDialog multiVideoSplitterDialog;
+    private string? pendingDataSourceRemovalPath;
 
     public ProjectSettings([Dependency(WellKnownSchedulers.UI)] IScheduler uiScheduler)
     {
@@ -430,6 +414,32 @@
     
     [Inject]
     protected IOpenFileDialog? OpenFileDialog { get; init; }
+
+    [Inject]
+    protected INotificationService NotificationService { get; init; } = default!;
+
+    private async Task HandleBackendModeChanged(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out var rawMode))
+        {
+            return;
+        }
+
+        try
+        {
+            await DataContext.YoloEaseProject.RemoteProject.ApplyMode((AnnotationBackendMode) rawMode);
+            await DataContext.YoloEaseProject.Refresh();
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void HandleProjectChanged(ChangeEventArgs args)
+    {
+        DataContext.ProjectId = int.TryParse(args.Value?.ToString(), out var projectId) ? projectId : 0;
+    }
     
     private async Task AddVideo()
     {
@@ -450,5 +460,75 @@
 
             await videoSplitterDialog.Show(videoFile);
         });
+    }
+
+    private string GetDataSourcePath(DirectoryInfo directoryInfo)
+    {
+        if (DataContext.YoloEaseProject.StorageDirectory != null &&
+            PathUtils.IsParentDir(DataContext.YoloEaseProject.StorageDirectory.FullName, directoryInfo.FullName))
+        {
+            return Path.GetRelativePath(DataContext.YoloEaseProject.StorageDirectory.FullName, directoryInfo.FullName).TakeMidChars(64);
+        }
+
+        return directoryInfo.FullName.TakeMidChars(96);
+    }
+
+    private bool IsPendingDataSourceRemoval(DirectoryInfo directoryInfo)
+    {
+        return string.Equals(pendingDataSourceRemovalPath, directoryInfo.FullName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void BeginRemoveDataSource(DirectoryInfo directoryInfo)
+    {
+        pendingDataSourceRemovalPath = directoryInfo.FullName;
+    }
+
+    private void CancelRemoveDataSource()
+    {
+        pendingDataSourceRemovalPath = null;
+    }
+
+    private async Task ConfirmRemoveDataSource(DirectoryInfo directoryInfo)
+    {
+        try
+        {
+            await DataContext.RemoveDataFolderDirectory(directoryInfo);
+            pendingDataSourceRemovalPath = null;
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private string GetSettingsTitle()
+    {
+        var projectName = DataContext.YoloEaseProject.RemoteProject.ProjectName;
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            return projectName.Trim();
+        }
+
+        var loadedProjectName = DataContext.LoadedProjectFile == null
+            ? null
+            : Path.GetFileNameWithoutExtension(DataContext.LoadedProjectFile.Name);
+
+        return string.IsNullOrWhiteSpace(loadedProjectName) ? "Project" : loadedProjectName;
+    }
+
+    private string GetSettingsSubtitle()
+    {
+        var mode = DataContext.YoloEaseProject.RemoteProject.Mode;
+        return mode == AnnotationBackendMode.Offline ? "Offline backend" : "CVAT backend";
+    }
+
+    private void ShowError(string message)
+    {
+        NotificationService.Open(new NotificationConfig
+        {
+            NotificationType = NotificationType.Error,
+            Duration = 8,
+            Message = message,
+        }).AndForget();
     }
 }

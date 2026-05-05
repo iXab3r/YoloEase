@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Defines an augmentation effect that can transform images and their annotation rectangles.
+/// </summary>
 public interface IImageEffect : IYoloObject
 {
     bool IsEnabled { get; set; }

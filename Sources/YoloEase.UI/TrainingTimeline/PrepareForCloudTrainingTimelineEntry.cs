@@ -9,6 +9,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Timeline step that prepares a dataset package for cloud training.
+/// </summary>
 public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileInfo>
 {
     private static readonly IFluentLog Log = typeof(PrepareForCloudTrainingTimelineEntry).PrepareLogger();

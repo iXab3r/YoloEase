@@ -2,6 +2,9 @@ using SixLabors.ImageSharp.Processing;
 
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Applies ImageSharp box blur to augmented image copies while preserving annotation boxes.
+/// </summary>
 public sealed class BoxBlurImageEffect : ImageEffectBase<BoxBlurImageEffectProperties>
 {
     private static readonly Binder<BoxBlurImageEffect> Binder = new();

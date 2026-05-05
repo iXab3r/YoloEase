@@ -3,12 +3,12 @@
 @using PoeShared.Blazor.Wpf.Scaffolding
 @inherits PoeShared.Blazor.Controls.TimelineItemBase<TimelineEntry>
 
-<TimelineItem Class="@(DataContext.IsBusy ? "ant-timeline-item-pending" : "")"
+<TimelineItem Class="@($"trainer-timeline-item {(DataContext.IsBusy ? "ant-timeline-item-pending" : "")}")"
               Label="@(DataContext.Timestamp == null ? "" : DataContext.Timestamp.Value.ToString("HH:mm:ss", CultureInfo.InvariantCulture))">
-    <div class="d-flex align-items-center">
+    <div class="trainer-timeline-entry">
         @if (!string.IsNullOrEmpty(DataContext.PrefixIcon))
         {
-            <i class="@($"me-2 align-self-center fa {DataContext.PrefixIcon}")"></i>
+            <i class="@($"trainer-timeline-prefix fa {DataContext.PrefixIcon}")"></i>
         }
         <BlazorContentPresenter Content="@DataContext"/>
 

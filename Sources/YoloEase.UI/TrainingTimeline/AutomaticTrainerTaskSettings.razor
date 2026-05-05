@@ -3,7 +3,7 @@
 @using Switch = AntDesign.Switch
 @inherits YoloEaseComponent<AutomaticTrainer>
 
-<div class="d-grid-auto-flow-row gap-4" style="width: 330px;">
+<div class="trainer-settings-panel-stack ye-panel-stack" style="width: 330px;">
 
 @{
     var headerTrackers = new ReactiveTrackerList()
@@ -12,16 +12,19 @@
         this.WhenAnyValue(x => x.DataContext.Project.TrainingBatch.UnannotatedFiles),
     };
 }
-<ReactiveSection Trackers="@headerTrackers">
-    <div class="d-flex gap-1 align-items-center">
-        <label class="text-nowrap">
-            @($"{DataContext.Project.Assets.Files.Count} total / {DataContext.Project.TrainingBatch.UnannotatedFiles.Count} unannotated")
-        </label>
-    </div>
-</ReactiveSection>
 
-<div>
-    <h5>Training settings</h5>
+<section class="ye-panel">
+    <header class="ye-panel-header">
+        <span>Training settings</span>
+        <ReactiveSection Trackers="@headerTrackers">
+            <span class="ye-panel-meta">
+                @($"{DataContext.Project.Assets.Files.Count} total / {DataContext.Project.TrainingBatch.UnannotatedFiles.Count} unannotated")
+            </span>
+        </ReactiveSection>
+    </header>
+
+    <div class="ye-panel-body trainer-settings-panel-body">
+<div class="trainer-settings-control">
     <h6>Batch size</h6>
     @{
         var batchTrackers = new ReactiveTrackerList()
@@ -96,9 +99,17 @@
         </RadioGroup>
     </div>
 </div>
+</div>
+</section>
 
 @if (DataContext.PredictionStrategy is not AutomaticTrainerPredictionStrategy.Disabled)
 {
+    <section class="ye-panel">
+        <header class="ye-panel-header">
+            <span>Prediction setup</span>
+        </header>
+
+        <div class="ye-panel-body trainer-settings-panel-body">
     <div>
         <h6>Auto-annotation</h6>
         <div class="d-flex gap-1 align-items-center">
@@ -170,6 +181,8 @@
             </ReactiveSection>
         </div>
     </div>
+        </div>
+    </section>
 
     var predictionTrackers = new ReactiveTrackerList()
     {
@@ -181,8 +194,13 @@
     };
 
     <ReactiveSection DebounceTime="@(UiConstants.UiThrottlingDelay)" Trackers="@(predictionTrackers)">
+        <section class="ye-panel">
+            <header class="ye-panel-header">
+                <span>Prediction results</span>
+            </header>
+
+            <div class="ye-panel-body trainer-settings-panel-body">
         <div>
-            <h5>Prediction results</h5>
             <h6>Annotated files</h6>
             <div class="w-100 d-flex gap-1">
                 <RadioGroup @bind-Value="DataContext.PredictIncludeAnnotated" Size="@(AntSizeLDSType.Small)">
@@ -346,7 +364,7 @@
                                 </div>
 
                                 <span>
-                                    <b>@context.Label.Name</b>
+                                    <span>@context.Label.Name</span>
                                 </span>
 
                                 <span class="flex-grow-1 d-flex gap-1 align-items-center" style="place-content: center;">
@@ -380,7 +398,7 @@
                                                value="@(context.ScoreThreshold * 100)"
                                                oninput="@((ChangeEventArgs x) => context.ScoreThreshold = x.Value is not string valueAsString ? 0 : Convert.ToSingle(valueAsString) / 100)">
                                         <label style="min-width: 30px;" class="text-nowrap">
-                                            <b>@($"{context.ScoreThreshold * 100:F0}%")</b>
+                                            @($"{context.ScoreThreshold * 100:F0}%")
                                         </label>
                                     </span>
                                 }
@@ -409,6 +427,8 @@
                 }
             </div>
         </div>
+            </div>
+        </section>
     </ReactiveSection>
 }
 

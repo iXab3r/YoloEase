@@ -30,6 +30,7 @@
         <PackageReference Include="Humanizer.Core" Version="2.14.1"/>
         <PackageReference Include="MetadataExtractor" Version="2.8.0"/>
         <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.19.0" />
+        <PackageReference Include="System.Management" Version="8.0.0" />
         <PackageReference Include="PropertyChanged.Fody" Version="3.4.0" PrivateAssets="All">
             <ExcludeAssets>runtime</ExcludeAssets>
             <IncludeAssets>All</IncludeAssets>
@@ -66,6 +67,10 @@
         </None>
 
         <None Update="Scripts\ConvertCVATtoYolo8_cls.py">
+          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+
+        <None Update="Scripts\requirements.txt">
           <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
 

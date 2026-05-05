@@ -1,0 +1,246 @@
+@using AntDesign
+@using PoeShared.Blazor.Scaffolding
+@using PoeShared.Blazor.Wpf
+@using PoeShared.Services
+@using YoloEase.UI.Core
+@inherits YoloEaseComponent<YoloEaseProject>
+
+<TabPageLayout Class="tasks-tab" BodyClass="tasks-page">
+    <TopBar>
+        <div class="ye-tab-title-row">
+            <span class="ye-tab-title">Tasks</span>
+            <span class="ye-tab-subtitle">@DataContext.RemoteProject.ProjectName</span>
+        </div>
+
+        <div class="tasks-stats">
+            <span class="badge text-bg-secondary">@($"{DataContext.RemoteProject.Tasks.Count} tasks")</span>
+            <span class="badge text-bg-success">@($"{DataContext.RemoteProject.Tasks.Items.Count(x => x.Status == AnnotationTaskStatus.Completed)} completed")</span>
+            <span class="badge text-bg-secondary">@($"{DataContext.RemoteProject.ProjectFiles.Count} files")</span>
+        </div>
+
+        <div class="flex-grow-1"></div>
+
+        <ReactiveButton Class="btn btn-outline-secondary btn-sm"
+                        Command="@(async () => await RefreshTasks())">
+            <i class="fa fa-refresh"></i>
+            Refresh
+        </ReactiveButton>
+    </TopBar>
+
+    <ChildContent>
+        @if (DataContext.RemoteProject.Tasks.Count <= 0)
+        {
+            <div class="alert alert-secondary mb-0">
+                No tasks yet.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle tasks-table">
+                    <thead>
+                    <tr>
+                        <th>Task</th>
+                        <th>Status</th>
+                        <th class="text-end">Files</th>
+                        <th>Updated</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var task in DataContext.RemoteProject.Tasks.Items.OrderByDescending(x => x.UpdatedAt ?? x.CreatedAt ?? DateTimeOffset.MinValue))
+                    {
+                        var localTask = task;
+                        <tr class="@(DataContext.RemoteProject.ActiveTaskId == localTask.Id ? "table-active" : string.Empty)">
+                            <td>
+                                <div>@localTask.Name</div>
+                            </td>
+                            <td>
+                                @if (DataContext.RemoteProject.Mode == AnnotationBackendMode.Offline)
+                                {
+                                    <select class="form-select form-select-sm tasks-status-select"
+                                            value="@((int) localTask.Status)"
+                                            @onchange="@(async args => await SetTaskStatus(localTask.Id, args))">
+                                        <option value="@((int) AnnotationTaskStatus.New)">New</option>
+                                        <option value="@((int) AnnotationTaskStatus.InProgress)">In progress</option>
+                                        <option value="@((int) AnnotationTaskStatus.Completed)">Completed</option>
+                                    </select>
+                                }
+                                else
+                                {
+                                    <span class="@GetStatusClass(localTask.Status)">@FormatStatus(localTask.Status)</span>
+                                }
+                            </td>
+                            <td class="text-end">@GetTaskFileCount(localTask.Id)</td>
+                            <td class="text-muted small">@FormatDate(localTask.UpdatedAt ?? localTask.CreatedAt)</td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <ReactiveButton Class="btn btn-outline-secondary"
+                                                    Command="@(async () => await OpenTask(localTask.Id))">
+                                        <i class="fa fa-external-link"></i>
+                                        Open
+                                    </ReactiveButton>
+                                    <div class="btn-group btn-group-sm ye-two-step-group">
+                                        @if (pendingDeleteTaskId == localTask.Id)
+                                        {
+                                            <ReactiveButton Class="btn btn-danger ye-two-step-confirm"
+                                                            Command="@(async () => await DeleteTask(localTask.Id))">
+                                                <i class="fa fa-trash"></i>
+                                                Delete
+                                            </ReactiveButton>
+                                            <button type="button" class="btn btn-secondary ye-two-step-cancel" @onclick="CancelDeleteTask">
+                                                Cancel
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-outline-danger ye-two-step-primary" @onclick="() => BeginDeleteTask(localTask.Id)">
+                                                <i class="fa fa-trash"></i>
+                                                Delete
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </ChildContent>
+</TabPageLayout>
+
+@code {
+    [Inject]
+    protected INotificationService NotificationService { get; init; } = default!;
+
+    [Inject]
+    protected IFactory<IBlazorWindow, System.Windows.Threading.Dispatcher> BlazorWindowFactory { get; init; } = default!;
+
+    [Inject]
+    protected IBlazorWindowAccessor BlazorWindowAccessor { get; init; } = default!;
+
+    private int? pendingDeleteTaskId;
+
+    public TasksList()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.Tasks.Count));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.ProjectFiles.Count));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.ActiveTaskId));
+    }
+
+    private async Task RefreshTasks()
+    {
+        try
+        {
+            await DataContext.Refresh();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private async Task OpenTask(int taskId)
+    {
+        try
+        {
+            var task = DataContext.RemoteProject.Tasks.Items.FirstOrDefault(x => x.Id == taskId);
+            if (task == null)
+            {
+                return;
+            }
+
+            await TaskAnnotationWindowLauncher.Open(DataContext, task, BlazorWindowAccessor, BlazorWindowFactory);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private async Task DeleteTask(int taskId)
+    {
+        try
+        {
+            await DataContext.RemoteProject.DeleteTask(taskId);
+            pendingDeleteTaskId = null;
+            await DataContext.Refresh();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void BeginDeleteTask(int taskId)
+    {
+        pendingDeleteTaskId = taskId;
+    }
+
+    private void CancelDeleteTask()
+    {
+        pendingDeleteTaskId = null;
+    }
+
+    private async Task SetTaskStatus(int taskId, ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out var rawStatus))
+        {
+            return;
+        }
+
+        try
+        {
+            await DataContext.RemoteProject.UpdateTaskStatus(taskId, (AnnotationTaskStatus) rawStatus);
+            await DataContext.Refresh();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private int GetTaskFileCount(int taskId)
+    {
+        return DataContext.RemoteProject.ProjectFiles.Items.Count(x => x.TaskId == taskId);
+    }
+
+    private static string FormatDate(DateTimeOffset? date)
+    {
+        return date == null ? "-" : date.Value.LocalDateTime.ToString("g");
+    }
+
+    private static string FormatStatus(AnnotationTaskStatus status)
+    {
+        return status switch
+        {
+            AnnotationTaskStatus.InProgress => "In progress",
+            _ => status.ToString(),
+        };
+    }
+
+    private static string GetStatusClass(AnnotationTaskStatus status)
+    {
+        return status switch
+        {
+            AnnotationTaskStatus.Completed => "badge text-bg-success",
+            AnnotationTaskStatus.InProgress => "badge text-bg-warning",
+            _ => "badge text-bg-secondary",
+        };
+    }
+
+    private void ShowError(string message)
+    {
+        NotificationService.Open(new NotificationConfig
+        {
+            NotificationType = NotificationType.Error,
+            Duration = 8,
+            Message = message,
+        }).AndForget();
+    }
+}

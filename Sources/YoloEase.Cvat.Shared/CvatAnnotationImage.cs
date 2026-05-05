@@ -2,6 +2,9 @@
 
 namespace YoloEase.Cvat.Shared;
 
+/// <summary>
+/// Represents one image entry in CVAT annotation XML, including its frame metadata and boxes.
+/// </summary>
 public record CvatAnnotationImage
 {
     [XmlAttribute("id")] public int Id { get; set; }

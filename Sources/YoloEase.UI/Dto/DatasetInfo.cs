@@ -3,6 +3,9 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace YoloEase.UI.Dto;
 
+/// <summary>
+/// Describes a generated YOLO dataset and the number of samples in each split.
+/// </summary>
 public sealed record DatasetInfo
 {
     public bool IsStorage { get; init; }

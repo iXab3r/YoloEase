@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Captures the command-line settings for a YOLO prediction run.
+/// </summary>
 public sealed record Yolo8PredictArguments
 {
     public required string Source { get; init; }

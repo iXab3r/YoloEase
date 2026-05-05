@@ -1,5 +1,10 @@
+using YoloEase.UI.Core;
+
 namespace YoloEase.UI.Dto;
 
+/// <summary>
+/// Stores the persisted project identity and version metadata.
+/// </summary>
 public sealed record YoloEaseProjectInfo : IPoeEyeConfigVersioned
 {
     public int Revision { get; set; }
@@ -19,6 +24,8 @@ public sealed record YoloEaseProjectInfo : IPoeEyeConfigVersioned
     public ModelTrainingSettings ModelTrainingSettings { get; set; }
     
     public int[] Tasks { get; set; }
+
+    public TaskRevisionInfo[] TaskRevisions { get; set; } = Array.Empty<TaskRevisionInfo>();
     
     public string[] Files { get; set; }
 

@@ -2,34 +2,36 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
-using CvatApi;
 using Humanizer;
 using YoloEase.UI.Core;
 using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
-public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
+/// <summary>
+/// Timeline step that creates a new annotation task from local project assets.
+/// </summary>
+public class CreateTaskTimelineEntry : RunnableTimelineEntry<AnnotationTaskInfo>
 {
     private readonly AnnotationsAccessor annotationsAccessor;
     private readonly TrainingBatchAccessor trainingBatchAccessor;
-    private readonly CvatProjectAccessor cvatProjectAccessor;
+    private readonly AnnotationProjectAccessor annotationProjectAccessor;
 
     public CreateTaskTimelineEntry(
-        CvatProjectAccessor cvatProjectAccessor,
+        AnnotationProjectAccessor annotationProjectAccessor,
         AnnotationsAccessor annotationsAccessor,
         TrainingBatchAccessor trainingBatchAccessor,
         IReadOnlyList<FileLabel> labeledFiles)
     {
         LabeledFiles = labeledFiles;
-        this.cvatProjectAccessor = cvatProjectAccessor;
+        this.annotationProjectAccessor = annotationProjectAccessor;
         this.annotationsAccessor = annotationsAccessor;
         this.trainingBatchAccessor = trainingBatchAccessor;
     }
 
-    public TaskRead? Task { get; private set; }
+    public AnnotationTaskInfo? Task { get; private set; }
 
-    public AnnotationsRead Annotations { get; private set; }
+    public AnnotationUpdateResult? Annotations { get; private set; }
 
     public IReadOnlyList<FileLabel> LabeledFiles { get; init; }
 
@@ -37,9 +39,9 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
 
     public FileInfo[] TaskFiles { get; private set; }
 
-    public CvatProjectAccessor CvatProjectAccessor => cvatProjectAccessor;
+    public AnnotationProjectAccessor ProjectAccessor => annotationProjectAccessor;
 
-    protected override async Task<TaskRead> RunInternal(CancellationToken cancellationToken)
+    protected override async Task<AnnotationTaskInfo> RunInternal(CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         await trainingBatchAccessor.Refresh();
@@ -57,7 +59,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             Annotations = await UploadAnnotations(files, task, sw);
         }
 
-        await trainingBatchAccessor.Project.NavigateToTask(task.Id!.Value);
+        await trainingBatchAccessor.Project.NavigateToTask(task.Id);
 
         TaskFiles = files;
         Task = task;
@@ -113,17 +115,15 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
         return files.Randomize().ToArray();
     }
 
-    private async Task<AnnotationsRead> UploadAnnotations(
+    private async Task<AnnotationUpdateResult> UploadAnnotations(
         FileInfo[] files,
-        TaskRead task,
+        AnnotationTaskInfo task,
         Stopwatch sw)
     {
-        var taskMetadata = await cvatProjectAccessor.RetrieveMetadata(task.Id.Value);
+        var taskMetadata = await annotationProjectAccessor.RetrieveMetadata(task.Id);
 
         var taskFramesByFileName = taskMetadata.Frames
-            .EmptyIfNull()
-            .Select((x, frameIdx) => new {Frame = x, FrameIdx = frameIdx})
-            .ToDictionary(x => Path.GetFileNameWithoutExtension(x.Frame.Name), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(x => Path.GetFileNameWithoutExtension(x.Name), x => x.Index, StringComparer.OrdinalIgnoreCase);
 
         AppendTextLine($"Annotating the task #{task.Id}");
         var predictions = LabeledFiles
@@ -131,7 +131,7 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             .Select(x => new PredictInfo() {File = x.Key, Labels = x.Select(y => y.Label).ToArray()})
             .ToDictionary(x => Path.GetFileNameWithoutExtension(x.File.Name), x => x);
 
-        var projectLabelsByName = cvatProjectAccessor.Labels.Items
+        var projectLabelsByName = annotationProjectAccessor.Labels.Items
             .ToDictionary(x => x.Name, x => x);
 
         var labels = files
@@ -141,28 +141,29 @@ public class CreateTaskTimelineEntry : RunnableTimelineEntry<TaskRead>
             .Select(x => x.Labels.Select(prediction =>
             {
                 var fileName = Path.GetFileNameWithoutExtension(x.File.Name);
-                if (!taskFramesByFileName.TryGetValue(fileName, out var taskFrame))
+                if (!taskFramesByFileName.TryGetValue(fileName, out var taskFrameIndex))
                 {
                     throw new InvalidStateException($"Failed to resolve frame using name {x.File.Name}");
                 }
 
                 if (!projectLabelsByName.TryGetValue(prediction.Label.Name, out var cvatLabel))
                 {
-                    throw new InvalidStateException($"Failed to resolve CVAT label using Name {prediction.Label.Name}, known labels: {projectLabelsByName.DumpToString()}");
+                    throw new InvalidStateException($"Failed to resolve annotation label using Name {prediction.Label.Name}, known labels: {projectLabelsByName.DumpToString()}");
                 }
 
                 return new CvatRectangleAnnotation()
                 {
                     BoundingBox = prediction.BoundingBox,
-                    LabelId = cvatLabel.Id.Value,
-                    FrameIndex = taskFrame.FrameIdx
+                    LabelId = cvatLabel.Id,
+                    FrameIndex = taskFrameIndex,
+                    Source = "automatic",
                 };
             }))
             .SelectMany(x => x)
             .ToArray();
 
         AppendTextLine( $"Uploading {"label".ToQuantity(labels.Count())} for {"frame".ToQuantity(taskFramesByFileName.Count)}");
-        var annotations = await annotationsAccessor.UploadAnnotations(task.Id.Value, labels);
+        var annotations = await annotationsAccessor.UploadAnnotations(task.Id, labels);
         AppendTextLine( $"Created task #{task.Id} with {"frame".ToQuantity(taskFramesByFileName.Count)} and {labels.Length} labels in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}");
         return annotations;
     }

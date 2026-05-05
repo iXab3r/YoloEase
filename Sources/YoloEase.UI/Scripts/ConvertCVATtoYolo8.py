@@ -15,6 +15,8 @@ from shapely.ops import split
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+YOLO_EPSILON = 1e-9
+
 
 def main():
     try:
@@ -26,7 +28,7 @@ def main():
 
 def main_internal():
     script_options = parse_options()
-    logger.info("Options:", script_options)
+    logger.info(f"Options: {script_options}")
 
     output_folder = os.path.abspath(script_options.output_directory)
     if os.path.exists(output_folder):
@@ -37,14 +39,14 @@ def main_internal():
     for annotations_file in script_options.input_annotations_files:
         images_by_path.extend(prepare_images(annotations_file))
 
-    save(output_folder, images_by_path, script_options.output_directory, script_options.train_val_percentage)
+    save(output_folder, images_by_path, script_options.use_symlinks, script_options.train_val_percentage)
 
     logger.info(f"Processing completed, images: {len(images_by_path)}")
 
 
 def prepare_images(annotations_file):
     annotations = parse_annotations(annotations_file)
-    print(annotations)
+    logger.info(f"Preparing annotations from {annotations_file}: {len(annotations.images)} image(s)")
 
     images_folder = os.path.dirname(annotations_file)
     all_images = {
@@ -69,21 +71,11 @@ def prepare_images(annotations_file):
             logger.info(f"Image {image.name} in {images_folder} is not annotated")
 
         logger.info(f"Processing {image.name}, boxes: {len(image.boxes)}, masks: {len(image.masks)}")
-        boxes = [
-            YoloLabeledBBox(
-                class_name=box.label,
-                bbox=RectangleD.from_ltrb(
-                    box.xtl / image.width,
-                    box.ytl / image.height,
-                    box.xbr / image.width,
-                    box.ybr / image.height,
-                    ),
-                unscaled_bbox=RectangleD.from_ltrb(
-                    box.xtl, box.ytl, box.xbr, box.ybr
-                ),
-            )
-            for box in image.boxes
-        ]
+        boxes = []
+        for box in image.boxes:
+            yolo_box = convert_box_to_yolo(box, image)
+            if yolo_box is not None:
+                boxes.append(yolo_box)
 
         yolo_masks = [mask for single_mask in image.masks for mask in parse_to_yolo_labeled_masks(single_mask, image)]
         # CvatMaskConverter.draw_and_show_polygons(image.height, image.width, [yolo_mask.unscaled_mask for yolo_mask in yolo_masks])
@@ -93,6 +85,71 @@ def prepare_images(annotations_file):
         )
 
     return images
+
+
+def convert_box_to_yolo(box, image):
+    if image.width <= 0 or image.height <= 0:
+        logger.warning(
+            f"Skipping box '{box.label}' in {image.name}: invalid image size {image.width}x{image.height}"
+        )
+        return None
+
+    image_width = float(image.width)
+    image_height = float(image.height)
+
+    left = min(float(box.xtl), float(box.xbr))
+    top = min(float(box.ytl), float(box.ybr))
+    right = max(float(box.xtl), float(box.xbr))
+    bottom = max(float(box.ytl), float(box.ybr))
+
+    clipped_left = clamp(left, 0.0, image_width)
+    clipped_top = clamp(top, 0.0, image_height)
+    clipped_right = clamp(right, 0.0, image_width)
+    clipped_bottom = clamp(bottom, 0.0, image_height)
+
+    clipped_width = clipped_right - clipped_left
+    clipped_height = clipped_bottom - clipped_top
+    if clipped_width <= YOLO_EPSILON or clipped_height <= YOLO_EPSILON:
+        logger.warning(
+            f"Skipping box '{box.label}' in {image.name}: box is outside the image after clipping "
+            f"({left:g}, {top:g}, {right:g}, {bottom:g}) within {image.width}x{image.height}"
+        )
+        return None
+
+    if (
+        abs(clipped_left - left) > YOLO_EPSILON
+        or abs(clipped_top - top) > YOLO_EPSILON
+        or abs(clipped_right - right) > YOLO_EPSILON
+        or abs(clipped_bottom - bottom) > YOLO_EPSILON
+    ):
+        logger.info(
+            f"Clipped box '{box.label}' in {image.name}: "
+            f"({left:g}, {top:g}, {right:g}, {bottom:g}) -> "
+            f"({clipped_left:g}, {clipped_top:g}, {clipped_right:g}, {clipped_bottom:g})"
+        )
+
+    return YoloLabeledBBox(
+        class_name=box.label,
+        bbox=RectangleD.from_ltrb(
+            clipped_left / image_width,
+            clipped_top / image_height,
+            clipped_right / image_width,
+            clipped_bottom / image_height,
+        ),
+        unscaled_bbox=RectangleD.from_ltrb(
+            clipped_left, clipped_top, clipped_right, clipped_bottom
+        ),
+    )
+
+
+def clamp(value, min_value, max_value):
+    return max(min_value, min(value, max_value))
+
+
+def format_yolo_float(value):
+    safe_value = clamp(float(value), 0.0, 1.0)
+    text = f"{safe_value:.16f}".rstrip("0").rstrip(".")
+    return text if text else "0"
 
 
 def parse_to_yolo_labeled_masks(mask, image):
@@ -190,11 +247,11 @@ names: [{', '.join(f"'{label.name}'" for label in labels.values())}]
                     destination_image_file)
 
             image_boxes = [
-                f"{labels[bbox.class_name].index} {bbox.bbox.center_x} {bbox.bbox.center_y} {bbox.bbox.width} {bbox.bbox.height}"
+                f"{labels[bbox.class_name].index} {format_yolo_float(bbox.bbox.center_x)} {format_yolo_float(bbox.bbox.center_y)} {format_yolo_float(bbox.bbox.width)} {format_yolo_float(bbox.bbox.height)}"
                 for bbox in image.bboxes
             ]
             image_masks = [
-                f"{labels[mask.class_name].index} {' '.join(f'{float(val):.16f}'.rstrip('0').rstrip('.') for val in mask.mask.flatten())}"
+                f"{labels[mask.class_name].index} {' '.join(format_yolo_float(val) for val in mask.mask.flatten())}"
                 for mask in image.masks
             ]
             with open(
@@ -204,8 +261,10 @@ names: [{', '.join(f"'{label.name}'" for label in labels.values())}]
                     ),
                     "w",
             ) as f:
-                f.write("\n".join(image_boxes))
-                f.write("\n".join(image_masks))
+                label_lines = image_boxes + image_masks
+                f.write("\n".join(label_lines))
+                if label_lines:
+                    f.write("\n")
 
 
 def read_file_paths(file_path):
@@ -497,6 +556,15 @@ class ScriptOptions:
         self.output_directory = output_directory
         self.use_symlinks = use_symlinks
         self.train_val_percentage = train_val_percentage
+
+    def __repr__(self):
+        return (
+            "ScriptOptions("
+            f"input_annotations_files={self.input_annotations_files}, "
+            f"output_directory='{self.output_directory}', "
+            f"use_symlinks={self.use_symlinks}, "
+            f"train_val_percentage={self.train_val_percentage})"
+        )
 
 
 class CvatMaskConverter:

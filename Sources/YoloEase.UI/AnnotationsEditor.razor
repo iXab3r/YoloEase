@@ -1,0 +1,291 @@
+@using AntDesign
+@using Microsoft.JSInterop
+@using PoeShared.Blazor.Scaffolding
+@using PoeShared.Scaffolding
+@using YoloEase.UI.Core
+@inherits YoloEaseComponent<AnnotationsAccessor>
+
+<TabPageLayout Class="project-tab" BodyClass="annotation-editor-shell">
+    <TopBar>
+        @if (DataContext.RemoteProject.Mode == AnnotationBackendMode.Offline)
+        {
+            <div class="ye-tab-title-row">
+                <span class="ye-tab-title">Offline project</span>
+                <span class="ye-tab-subtitle">Manage label names and colors.</span>
+            </div>
+            <div class="annotation-editor-toolbar-stats">
+                <span class="badge text-bg-secondary">@($"{DataContext.RemoteProject.Labels.Count} labels")</span>
+            </div>
+
+            <div class="flex-grow-1"></div>
+
+            <ReactiveButton Class="btn btn-outline-secondary btn-sm"
+                            Command="@(async () => await OpenProjectFolder())">
+                <i class="fa fa-folder-open"></i>
+                Open
+            </ReactiveButton>
+            <ReactiveButton Class="btn btn-outline-secondary btn-sm"
+                            Command="@(async () => await RefreshProjectData())">
+                <i class="fa fa-refresh"></i>
+                Refresh
+            </ReactiveButton>
+        }
+        else
+        {
+            <div class="ye-tab-title-row">
+                <span class="ye-tab-title">Project</span>
+                <span class="ye-tab-subtitle">CVAT mode</span>
+            </div>
+        }
+    </TopBar>
+
+    <ChildContent>
+    @if (DataContext.RemoteProject.Mode != AnnotationBackendMode.Offline)
+    {
+        <div class="alert alert-secondary m-0">
+            The built-in project workspace is available only in offline mode. In CVAT mode, keep using the existing external CVAT flow.
+        </div>
+    }
+    else
+    {
+        <section class="annotation-label-editor">
+            @if (isAddingLabel)
+            {
+                <div class="annotation-label-compose">
+                    <input type="text"
+                           @ref="newLabelNameInput"
+                           class="form-control form-control-sm"
+                           placeholder="Label name"
+                           @bind="newLabelName"
+                           @bind:event="oninput" />
+                    <input type="color"
+                           class="form-control form-control-color annotation-label-color-input"
+                           value="@newLabelColor"
+                           @onchange="HandleNewLabelColorChanged" />
+                    <ReactiveButton Class="btn btn-primary btn-sm annotation-label-compose-action" Command="@(async () => await AddLabel())">
+                        Add
+                    </ReactiveButton>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm annotation-label-compose-action"
+                            @onclick="CancelAddLabel">
+                        Cancel
+                    </button>
+                </div>
+            }
+
+            <div class="annotation-label-pills">
+                <button type="button"
+                        class="annotation-label-pill annotation-label-add-pill"
+                        @onclick="BeginAddLabel">
+                    <i class="fa fa-plus"></i>
+                    <span class="annotation-label-name">Add label</span>
+                </button>
+
+                @foreach (var label in DataContext.RemoteProject.Labels.Items.OrderBy(x => x.Name))
+                {
+                    var localLabel = label;
+                    <div class="annotation-label-pill">
+                        <span class="annotation-label-swatch" style="@($"background:{localLabel.Color};")"></span>
+                        <span class="annotation-label-name">@localLabel.Name</span>
+                        <input type="color"
+                               class="form-control form-control-color annotation-label-color-input"
+                               value="@localLabel.Color"
+                               @onchange="@(async args => await HandleLabelColorChanged(localLabel.Id, args))" />
+                        <span class="ye-two-step-icon-group">
+                            @if (pendingRemoveLabelId == localLabel.Id)
+                            {
+                                <ReactiveButton Class="btn btn-link btn-sm text-danger annotation-label-remove annotation-label-confirm-remove"
+                                                Command="@(async () => await RemoveLabel(localLabel.Id))"
+                                                title="Confirm remove label">
+                                    <i class="fa fa-check"></i>
+                                </ReactiveButton>
+                                <button type="button"
+                                        class="btn btn-link btn-sm annotation-label-remove"
+                                        title="Cancel remove label"
+                                        @onclick="CancelRemoveLabel">
+                                    <i class="fa fa-times"></i>
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button"
+                                        class="btn btn-link btn-sm text-danger annotation-label-remove ye-two-step-primary"
+                                        title="Remove label"
+                                        @onclick="() => BeginRemoveLabel(localLabel.Id)">
+                                    <i class="fa fa-times"></i>
+                                </button>
+                            }
+                        </span>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+    </ChildContent>
+</TabPageLayout>
+
+@code {
+    private const string JsModulePath = "./assets/js/taskAnnotationEditor.js";
+
+    private string? newLabelName;
+    private string newLabelColor = AnnotationLabelPalette.Colors[0];
+    private bool isAddingLabel;
+    private bool shouldFocusNewLabelName;
+    private int? pendingRemoveLabelId;
+    private ElementReference newLabelNameInput;
+    private IJSObjectReference? jsModule;
+
+    [Inject]
+    protected INotificationService NotificationService { get; init; } = default!;
+
+    [Inject]
+    protected IJSRuntime JavaScriptRuntime { get; init; } = default!;
+
+    public AnnotationsEditor()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.RemoteProject.Labels.Count));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (!shouldFocusNewLabelName)
+        {
+            return;
+        }
+
+        shouldFocusNewLabelName = false;
+        jsModule ??= await JavaScriptRuntime.InvokeAsync<IJSObjectReference>("import", JsModulePath);
+        await jsModule.InvokeVoidAsync("focusAndSelect", newLabelNameInput);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (jsModule != null)
+        {
+            await jsModule.DisposeAsync();
+        }
+
+        await base.DisposeAsync();
+    }
+
+    private async Task RefreshProjectData()
+    {
+        try
+        {
+            await DataContext.RemoteProject.Refresh();
+            await DataContext.Refresh();
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private async Task OpenProjectFolder()
+    {
+        if (DataContext.RemoteProject.StorageDirectory == null)
+        {
+            return;
+        }
+
+        await ProcessUtils.OpenFolder(DataContext.RemoteProject.StorageDirectory);
+    }
+
+    private async Task AddLabel()
+    {
+        try
+        {
+            await DataContext.RemoteProject.AddLabel(newLabelName ?? string.Empty, newLabelColor);
+            newLabelName = string.Empty;
+            isAddingLabel = true;
+            pendingRemoveLabelId = null;
+            await DataContext.RemoteProject.Refresh();
+            await DataContext.Refresh();
+            newLabelColor = GetNextLabelColor();
+            shouldFocusNewLabelName = true;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private async Task RemoveLabel(int labelId)
+    {
+        try
+        {
+            await DataContext.RemoteProject.DeleteLabel(labelId);
+            pendingRemoveLabelId = null;
+            await DataContext.Refresh();
+            newLabelColor = GetNextLabelColor();
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private async Task HandleLabelColorChanged(int labelId, ChangeEventArgs args)
+    {
+        try
+        {
+            await DataContext.RemoteProject.UpdateLabelColor(labelId, args.Value?.ToString());
+            await DataContext.Refresh();
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void HandleNewLabelColorChanged(ChangeEventArgs args)
+    {
+        newLabelColor = args.Value?.ToString() ?? GetNextLabelColor();
+    }
+
+    private async Task BeginAddLabel()
+    {
+        pendingRemoveLabelId = null;
+        isAddingLabel = true;
+        newLabelName ??= string.Empty;
+        newLabelColor = GetNextLabelColor();
+        shouldFocusNewLabelName = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelAddLabel()
+    {
+        isAddingLabel = false;
+        newLabelName = string.Empty;
+        newLabelColor = GetNextLabelColor();
+    }
+
+    private void BeginRemoveLabel(int labelId)
+    {
+        pendingRemoveLabelId = labelId;
+        isAddingLabel = false;
+    }
+
+    private void CancelRemoveLabel()
+    {
+        pendingRemoveLabelId = null;
+    }
+
+    private string GetNextLabelColor()
+    {
+        return AnnotationLabelPalette.PickNext(DataContext.RemoteProject.Labels.Items.Select(x => x.Color));
+    }
+
+    private void ShowError(string message)
+    {
+        NotificationService.Open(new NotificationConfig
+        {
+            NotificationType = NotificationType.Error,
+            Duration = 8,
+            Message = message,
+        }).AndForget();
+    }
+}

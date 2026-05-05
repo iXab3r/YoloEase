@@ -2,8 +2,10 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using PoeShared.Blazor;
+using PoeShared.Blazor.Controls.Services;
 using PoeShared.Blazor.Controls.Prism;
 using PoeShared.Blazor.Prism;
 using PoeShared.Blazor.Scaffolding;
@@ -25,6 +27,9 @@ using YoloEase.UI.Scaffolding;
 
 namespace YoloEase.UI;
 
+/// <summary>
+/// Configures Unity, Blazor, logging, and the WPF shell for the desktop application.
+/// </summary>
 public sealed class ProgramBootstrapper : DisposableReactiveObject
 {
     private static readonly IFluentLog Log = typeof(ProgramBootstrapper).PrepareLogger();
@@ -59,6 +64,7 @@ public sealed class ProgramBootstrapper : DisposableReactiveObject
         Container.RegisterSingleton<IConfigProvider, ConfigProviderFromFile>();
 
         var blazorContentRepository = Container.Resolve<IBlazorContentRepository>();
+        blazorContentRepository.RegisterForJavaScript(typeof(DynamicComponentContainer), "blazor-dynamic-component");
         blazorContentRepository.AdditionalFiles.Add(new RefFileInfo(@"_content/AntDesign/js/ant-design-blazor.js"));
         blazorContentRepository.AdditionalFiles.Add(new RefFileInfo(@"_content/AntDesign/css/ant-design-blazor.css"));
         blazorContentRepository.AdditionalFiles.Add(new RefFileInfo(@"_content/PoeShared.Blazor.Wpf/css/bootstrap.css"));

@@ -11,6 +11,9 @@ using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Creates YOLO datasets from annotation XML and tracks dataset generation settings.
+/// </summary>
 public class Yolo8DatasetAccessor : RefreshableReactiveObject
 {
     private readonly IConfigSerializer configSerializer;
@@ -121,7 +124,8 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
 
     public async Task<DatasetInfo> CreateAnnotatedDataset(
         IEnumerable<FileInfo> annotationsSource,
-        CvatProjectAccessor project)
+        AnnotationProjectAccessor project,
+        Action<YoloCommandOutput>? outputHandler = null)
     {
         var trainId = $"{idGenerator.Next()}";
         var datasetDirectory = new DirectoryInfo(Path.Combine(DatasetsDirectory.FullName, trainId));
@@ -138,7 +142,7 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
             OutputDirectory = datasetDirectory,
             UseSymlinks = true,
             TrainValPercentage = (int)TrainValSplitPercentage,
-        });
+        }, outputHandler);
 
         var indexFile = new FileInfo(Path.Combine(datasetDirectory.FullName, "data.yaml"));
         if (!indexFile.Exists)
@@ -246,12 +250,18 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
     }
 
 
-    public Task<Yolo8ChecksResult> RunChecks(CancellationToken cancellationToken = default)
+    public Task<Yolo8ChecksResult> RunChecks(
+        CancellationToken cancellationToken = default,
+        Action<YoloCommandOutput>? outputHandler = null)
     {
-        return this.cliWrapper.RunChecks(cancellationToken);
+        return this.cliWrapper.RunChecks(cancellationToken, outputHandler);
     }
 
-    public async Task<FileInfo> TrainModel(DatasetInfo dataset, Action<Yolo8TrainProgressUpdate> updateHandler = null, CancellationToken cancellationToken = default)
+    public async Task<FileInfo> TrainModel(
+        DatasetInfo dataset,
+        Action<Yolo8TrainProgressUpdate> updateHandler = null,
+        CancellationToken cancellationToken = default,
+        Action<YoloCommandOutput>? outputHandler = null)
     {
         var now = DateTime.Now;
         var datasetIndexFile = dataset.IndexFile;
@@ -298,7 +308,7 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
             OutputDirectory = outputDirectory,
             MaxCpuCoresCount = MaxNumberOfCpuCores,
             AdditionalArguments = TrainAdditionalArguments
-        }, updateHandler: updateHandler, cancellationToken: cancellationToken);
+        }, updateHandler: updateHandler, cancellationToken: cancellationToken, outputHandler: outputHandler);
         log.Step($"Successfully trained model: {trainedModel.FullName} ({ByteSize.FromBytes(trainedModel.Length)})");
 
         log.Step("Converting model to ONNX");
@@ -306,7 +316,7 @@ public class Yolo8DatasetAccessor : RefreshableReactiveObject
         {
             Format = "onnx",
             Model = trainedModel.FullName
-        }, cancellationToken);
+        }, cancellationToken, outputHandler);
         Log.Debug($"Successfully converted model: {convertedModel.FullName} ({ByteSize.FromBytes(convertedModel.Length)})");
         log.Step("Conversion completed, model is ready to use");
 

@@ -4,6 +4,9 @@ using YoloEase.UI.Cvat;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Maintains CVAT authentication state and creates authenticated generated API clients.
+/// </summary>
 public class CvatClient : DisposableReactiveObjectWithLogger, ICvatClient
 {
     private static readonly Binder<CvatClient> Binder = new();

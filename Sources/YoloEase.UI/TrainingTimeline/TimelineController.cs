@@ -2,6 +2,9 @@ using PoeShared.Blazor.Controls;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Coordinates sequential execution of the training timeline entries.
+/// </summary>
 public sealed class TimelineController 
 {
     private readonly CircularSourceList<TimelineEntry> itemsSource;

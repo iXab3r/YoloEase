@@ -3,6 +3,9 @@ using YoloEase.UI.Services;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Aggregates all project-scoped accessors for data sources, annotations, training, predictions, and augmentations.
+/// </summary>
 public class YoloEaseProject : RefreshableReactiveObject
 {
     private static readonly Binder<YoloEaseProject> Binder = new();
@@ -11,6 +14,7 @@ public class YoloEaseProject : RefreshableReactiveObject
 
     static YoloEaseProject()
     {
+        Binder.Bind(x => x.StorageDirectory).To(x => x.RemoteProject.StorageDirectory);
         Binder.Bind(x => x.StorageDirectory).To(x => x.TrainingDataset.StorageDirectory);
         Binder.Bind(x => x.StorageDirectory).To(x => x.Assets.StorageDirectory);
         Binder.Bind(x => x.StorageDirectory).To(x => x.Predictions.StorageDirectory);
@@ -18,31 +22,31 @@ public class YoloEaseProject : RefreshableReactiveObject
     }
 
     public YoloEaseProject(
-        CvatProjectAccessor cvatProjectAccessor,
+        AnnotationProjectAccessor annotationProjectAccessor,
         IYoloModelCachingService yoloModelCachingService,
         IFactory<DataSourcesProvider> fileSystemAssetsAccessor,
         IFactory<Yolo8PredictAccessor> predictAccessorFactory,
         IFactory<AugmentationsAccessor, AnnotationsAccessor> augmentationsAccessorFactory,
         IFactory<LocalStorageAssetsAccessor, DataSourcesProvider> localStorageDatasetAccessorFactory,
         IFactory<Yolo8DatasetAccessor, IFileAssetsAccessor> trainingDatasetAccessorFactory,
-        IFactory<AnnotationsAccessor,  CvatProjectAccessor, IFileAssetsAccessor, Yolo8DatasetAccessor> annotationsAccessorFactory,
-        IFactory<TrainingBatchAccessor, CvatProjectAccessor, IFileAssetsAccessor> batchAccessorFactory)
+        IFactory<AnnotationsAccessor, AnnotationProjectAccessor, IFileAssetsAccessor, Yolo8DatasetAccessor> annotationsAccessorFactory,
+        IFactory<TrainingBatchAccessor, AnnotationProjectAccessor, IFileAssetsAccessor> batchAccessorFactory)
     {
         this.yoloModelCachingService = yoloModelCachingService;
-        RemoteProject = cvatProjectAccessor.AddTo(Anchors);
+        RemoteProject = annotationProjectAccessor.AddTo(Anchors);
         DataSources = fileSystemAssetsAccessor.Create().AddTo(Anchors);
         Predictions = predictAccessorFactory.Create().AddTo(Anchors);
         Assets = localStorageDatasetAccessorFactory.Create(DataSources).AddTo(Anchors);
         TrainingDataset = trainingDatasetAccessorFactory.Create(Assets).AddTo(Anchors);
-        TrainingBatch = batchAccessorFactory.Create(cvatProjectAccessor, Assets).AddTo(Anchors);
-        Annotations = annotationsAccessorFactory.Create(cvatProjectAccessor, Assets, TrainingDataset).AddTo(Anchors);
+        TrainingBatch = batchAccessorFactory.Create(annotationProjectAccessor, Assets).AddTo(Anchors);
+        Annotations = annotationsAccessorFactory.Create(annotationProjectAccessor, Assets, TrainingDataset).AddTo(Anchors);
         Augmentations = augmentationsAccessorFactory.Create(Annotations).AddTo(Anchors);
         Binder.Attach(this).AddTo(Anchors);
     }
     
     public DirectoryInfo StorageDirectory { get; set; }
     
-    public CvatProjectAccessor RemoteProject { get; }
+    public AnnotationProjectAccessor RemoteProject { get; }
     
     public AugmentationsAccessor Augmentations { get; }
     

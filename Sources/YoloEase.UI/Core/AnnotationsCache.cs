@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Caches parsed annotation documents by file and invalidates them as project inputs change.
+/// </summary>
 public sealed class AnnotationsCache : DisposableReactiveObject
 {
     public DirectoryInfo StorageDirectory { get; set; } 

@@ -17,6 +17,9 @@ using YoloEase.UI.Scaffolding;
 
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Applies configured image effects to project annotations and prepares augmented training inputs.
+/// </summary>
 public class AugmentationsAccessor : RefreshableReactiveObject
 {
     private static readonly int AugmenatationIdOffset = 1_000_000_000;
@@ -179,12 +182,13 @@ public class AugmentationsAccessor : RefreshableReactiveObject
         IImageEffect effectToApply)
     {
         log.Info($"Mutating bounding boxes: {annotatedImage.Boxes.Count()}");
+        var sourceImageSize = new SharpSize(annotatedImage.Width, annotatedImage.Height);
         var mutatedBoxes = annotatedImage.Boxes
             .Select(x =>
             {
                 var bbox = CvatRectangleD.FromLTRB(x.Xtl, x.Ytl, x.Xbr, x.Ybr);
 
-                var mutatedBbox = effectToApply.Mutate(bbox.ToSharpSize(), bbox.ToSharpRectangleF());
+                var mutatedBbox = effectToApply.Mutate(sourceImageSize, bbox.ToSharpRectangleF());
                 return x with
                 {
                     Source = x.Source + " augmentation",

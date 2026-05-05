@@ -2,6 +2,9 @@
 
 namespace YoloEase.Cvat.Shared;
 
+/// <summary>
+/// Represents a single CVAT rectangle annotation in XML form.
+/// </summary>
 public record CvatBox
 {
     [XmlAttribute("label")] public string Label { get; set; }

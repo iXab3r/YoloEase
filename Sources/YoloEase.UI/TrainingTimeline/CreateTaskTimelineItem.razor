@@ -4,7 +4,7 @@
 <div class="d-flex">
     @if (DataContext.ProgressPercent != null)
     {
-        <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="align-self-center mx-2" Style="width: 50px;position: absolute;left: -90px;"/>
+        <ProgressBar Value="@(DataContext.ProgressPercent ?? 0)" Class="trainer-timeline-progress"/>
     }
 
     <pre class="p-0 m-0" style="font-family: inherit; font-size: 1em;">@DataContext.Text@(DataContext.IsBusy ? "..." : string.Empty)</pre>
@@ -20,7 +20,7 @@
         Class="btn btn-link h-auto mx-2 p-0 align-self-start"
         HideIfDisabled="true"
         IsEnabled="@(DataContext.Task != null)"
-        Command="@(async () => await DataContext.CvatProjectAccessor.NavigateToTask(DataContext.Task!.Id!.Value))">
+        Command="@(async () => await DataContext.ProjectAccessor.NavigateToTask(DataContext.Task!.Id))">
         <i class="fa fa-link fa-fixed"></i>
         open...
     </ReactiveButton>

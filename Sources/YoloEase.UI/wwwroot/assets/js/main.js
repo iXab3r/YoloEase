@@ -8,3 +8,13 @@ function initializeCvat(){
         cursor: 'row-resize',
     });
 }
+
+window.yoloEase = window.yoloEase || {};
+window.yoloEase.scrollIntoView = function (elementId) {
+    const element = document.getElementById(elementId);
+    if (!element) {
+        return;
+    }
+
+    element.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' });
+};

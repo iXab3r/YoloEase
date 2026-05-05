@@ -1,10 +1,14 @@
 ﻿using Newtonsoft.Json;
 using PoeShared.Converters;
+using YoloEase.UI.Core;
 using YoloEase.UI.Augmentations;
 using YoloEase.UI.TrainingTimeline;
 
 namespace YoloEase.UI.Prism;
 
+/// <summary>
+/// Stores persisted general application settings that are shared outside a project file.
+/// </summary>
 public sealed record GeneralProperties : IPoeEyeConfigVersioned
 {
     public string Username { get; set; }
@@ -12,6 +16,10 @@ public sealed record GeneralProperties : IPoeEyeConfigVersioned
     [JsonConverter(typeof(SafeDataConverter))] public string Password { get; set; }
 
     public string ServerUrl { get; set; } = "https://cvat.eyeauras.net";
+    
+    public AnnotationBackendMode AnnotationBackendMode { get; set; } = AnnotationBackendMode.Cvat;
+    
+    public string ProjectName { get; set; }
 
     public string[] DataDirectoryPaths { get; set; }
 

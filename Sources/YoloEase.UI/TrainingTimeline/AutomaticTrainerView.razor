@@ -1,9 +1,12 @@
 @using PoeShared.Blazor.Scaffolding
-@using CvatApi
+@using PoeShared.Blazor.Wpf
+@using PoeShared.Services
+@using YoloEase.UI.Core
 @inherits YoloEaseComponent<AutomaticTrainer>
 
-<div class="d-flex flex-column h-100">
-    <div class="d-flex p-0 m-1">
+<TabPageLayout Class="trainer-tab" BodyClass="trainer-page" ScrollBody="false">
+    <TopBar>
+    <div class="trainer-toolbar">
         <div>
             <ReactiveSection Trackers="@(new ReactiveTrackerList().With(this.WhenAnyValue(x => x.DataContext.IsBusy)))">
                 @if (DataContext.IsBusy)
@@ -46,7 +49,7 @@
         <div class="flex-grow-1"></div>
         <div class="d-flex">
             <div class="align-self-center">
-                <RadioGroup @bind-Value="DataContext.TrainingMode" Size="large">
+                <RadioGroup @bind-Value="DataContext.TrainingMode" Size="@(AntSizeLDSType.Small)">
                     <Radio Value="@(AutomaticTrainerMode.Local)" Class="text-body">
                         <img src="/assets/images/desktop-computer-svgrepo-com.svg" alt="Google Colab Logo" width="16" height="16"/>
                         Local Training
@@ -67,13 +70,16 @@
             </ReactiveButton>
         </div>
     </div>
+    </TopBar>
 
-    <div class="flex-grow-1 d-grid p-2 overflow-hidden" style="grid-template-columns: 1fr auto auto">
-        <div class="scroller overflow-x-hidden overflow-y-auto">
+    <ChildContent>
+    <div class="trainer-workspace">
+    <div class="trainer-main">
+        <div class="trainer-timeline-scroll scroller overflow-x-hidden overflow-y-auto">
             <ReactiveSection Trackers="@(new ReactiveTrackerList().With(this.WhenAnyValue(x => x.DataContext.Timeline)))">
                 @if (DataContext.Timeline.Count > 0)
                 {
-                    <Timeline Mode="TimelineMode.Left" Style="margin-left: -80%">
+                    <Timeline Class="trainer-timeline" Mode="TimelineMode.Left">
                         @foreach (var entry in DataContext.Timeline.Items)
                         {
                             <TrainerTimelineItemWrapper DataContext="@entry"/>
@@ -96,15 +102,15 @@
             {
                 <span class="vr mx-1"></span>
 
-                <div class="overflow-x-hidden overflow-y-auto ps-1 pe-2">
+                <div class="trainer-settings-scroll">
                     <AutomaticTrainerTaskSettings DataContext="@DataContext"/>
                 </div>
             }
         </ReactiveSection>
     </div>
 
-    <div class="alert alert-info p-1 m-1">
-        <div class="d-flex align-items-center gap-2">
+    <div class="trainer-bottombar">
+        <div class="trainer-bottom-content">
             <div class="d-flex gap-2">
                 <ReactiveButton
                     Class="@Track(x => x.Project.TrainingBatch.UnannotatedFiles.Count > 0 ? "btn btn-primary" : "btn btn-secondary")" Command="@(async () => await (DataContext.CreateNextTask()))">
@@ -157,24 +163,38 @@
                     </div>
 
                     <div class="flex-grow-1">
-                        <Table TItem="TaskRead" DataSource="@(Track(x => (x.TaskFilter == AutomaticTrainerTaskFilter.All ? x.Project.TrainingBatch.Tasks : x.Project.TrainingBatch.UnannotatedTasks).Collection))">
+                        <Table TItem="AnnotationTaskInfo" DataSource="@(Track(x => (x.TaskFilter == AutomaticTrainerTaskFilter.All ? x.Project.TrainingBatch.Tasks : x.Project.TrainingBatch.UnannotatedTasks).Collection))">
                             <PropertyColumn Property="x => x.Name" Title="Name">
                                 @Track(context, x => x.Name)
                             </PropertyColumn>
                             <ActionColumn>
-                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id.Value))">
+                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id))">
                                     <i class="fa fa-play-circle-o"></i>
                                 </ReactiveButton>
                             </ActionColumn>
                             <ActionColumn>
-                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id.Value))">
+                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.NavigateToTask(context.Id))">
                                     <i class="fa fa-link"></i>
                                 </ReactiveButton>
                             </ActionColumn>
                             <ActionColumn Width="60" Class="text-sm-center">
-                                <ReactiveButton Class="btn btn-link" Command="@(async () => await DataContext.Project.RemoteProject.DeleteTask(context.Id.Value))">
-                                    <i class="fa fa-remove"></i>
-                                </ReactiveButton>
+                                <span class="ye-two-step-icon-group">
+                                    @if (pendingDeleteTaskId == context.Id)
+                                    {
+                                        <ReactiveButton Class="btn btn-link text-danger" Command="@(async () => await ConfirmDeleteTask(context.Id))">
+                                            <i class="fa fa-check"></i>
+                                        </ReactiveButton>
+                                        <button type="button" class="btn btn-link" @onclick="CancelDeleteTask">
+                                            <i class="fa fa-times"></i>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-link text-danger ye-two-step-primary" @onclick="() => BeginDeleteTask(context.Id)">
+                                            <i class="fa fa-remove"></i>
+                                        </button>
+                                    }
+                                </span>
                             </ActionColumn>
                         </Table>
                     </div>
@@ -183,7 +203,7 @@
             <ReactiveButton
                 IsEnabled="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0))"
                 Class="@(Track(x => x.Project.TrainingBatch.UnannotatedTasks.Count > 0 ? "btn btn-primary" : "btn btn-secondary"))"
-                Command="@DataContext.NavigateToNextUnannotatedTask">
+                Command="@(async () => await OpenFirstUnfinishedTask())">
                 <i class="fa fa-link"></i>
                 Annotate Task
             </ReactiveButton>
@@ -198,8 +218,75 @@
             </ToggleButton>
         </div>
     </div>
-</div>
+    </div>
+    </ChildContent>
+</TabPageLayout>
 
 @code {
     bool taskListIsVisible;
+    int? pendingDeleteTaskId;
+
+    [Inject]
+    protected INotificationService NotificationService { get; init; } = default!;
+
+    [Inject]
+    protected IFactory<IBlazorWindow, System.Windows.Threading.Dispatcher> BlazorWindowFactory { get; init; } = default!;
+
+    [Inject]
+    protected IBlazorWindowAccessor BlazorWindowAccessor { get; init; } = default!;
+
+    private async Task OpenFirstUnfinishedTask()
+    {
+        try
+        {
+            var task = DataContext.Project.TrainingBatch.UnannotatedTasks.Items
+                .OrderBy(x => x.CreatedAt ?? x.UpdatedAt ?? DateTimeOffset.MaxValue)
+                .ThenBy(x => x.Id)
+                .FirstOrDefault();
+            if (task == null)
+            {
+                throw new InvalidOperationException("No unfinished tasks to annotate");
+            }
+
+            await TaskAnnotationWindowLauncher.Open(DataContext.Project, task, BlazorWindowAccessor, BlazorWindowFactory);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void BeginDeleteTask(int taskId)
+    {
+        pendingDeleteTaskId = taskId;
+    }
+
+    private void CancelDeleteTask()
+    {
+        pendingDeleteTaskId = null;
+    }
+
+    private async Task ConfirmDeleteTask(int taskId)
+    {
+        try
+        {
+            await DataContext.Project.RemoteProject.DeleteTask(taskId);
+            pendingDeleteTaskId = null;
+            await DataContext.Project.Refresh();
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void ShowError(string message)
+    {
+        NotificationService.Open(new NotificationConfig
+        {
+            NotificationType = NotificationType.Error,
+            Duration = 8,
+            Message = message,
+        }).AndForget();
+    }
 }

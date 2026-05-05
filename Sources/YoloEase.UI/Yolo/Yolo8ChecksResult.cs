@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Contains the environment details parsed from <c>yolo checks</c> output.
+/// </summary>
 public sealed record Yolo8ChecksResult
 {
     public string YoloVersion { get; init; }

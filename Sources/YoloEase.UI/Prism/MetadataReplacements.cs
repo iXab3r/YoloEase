@@ -3,6 +3,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.Prism;
 
+/// <summary>
+/// Supplies metadata replacement values used by PoeEye configuration serialization.
+/// </summary>
 [UsedImplicitly]
 public sealed class MetadataReplacements : IPoeConfigMetadataReplacementProvider
 {

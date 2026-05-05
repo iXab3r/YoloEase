@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Dto;
 
+/// <summary>
+/// Stores rectangle geometry using double-precision coordinates.
+/// </summary>
 public sealed record RectangleD
 {
     public double X { get; private set; }

@@ -9,6 +9,9 @@ using MetadataExtractor.Formats.Png;
 
 namespace YoloEase.UI.Scaffolding;
 
+/// <summary>
+/// Provides lightweight image metadata and legacy image-conversion helpers.
+/// </summary>
 public static class ImageUtils
 {
     [Obsolete("Leaks memory")]

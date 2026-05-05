@@ -4,6 +4,9 @@ using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Represents one predicted label row shown in the prediction timeline output.
+/// </summary>
 public sealed class PredictLabelItem : DisposableReactiveObject
 {
     private static readonly Binder<PredictLabelItem> Binder = new();

@@ -11,6 +11,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Orchestrates the multi-step timeline that creates datasets, trains models, predicts, and updates YOLO outputs.
+/// </summary>
 public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 {
     private static readonly Binder<AutomaticTrainer> Binder = new();
@@ -178,7 +181,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         }.AddTo(timelineSource);
         
         var taskId = await batchEntry.Run(CancellationToken.None);
-        if (AutoAnnotate && batchEntry.Annotations is {Shapes.Count: 0})
+        if (AutoAnnotate && batchEntry.Annotations is { ShapesCount: 0 })
         {
             WhenNotified.OnNext(new NotificationConfig(){
                 NotificationType = NotificationType.Warning,
@@ -197,7 +200,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         }
 
         var task = tasks.First();
-        await Project.RemoteProject.NavigateToTask(task.Id.Value);
+        await Project.RemoteProject.NavigateToTask(task.Id);
     }
 
     public async Task Stop()

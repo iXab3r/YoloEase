@@ -7,6 +7,9 @@ using PoeShared.Scaffolding;
 
 namespace YoloEase.UI.Scaffolding;
 
+/// <summary>
+/// Adapts a Blazor WPF window to the generic window-view-controller contract.
+/// </summary>
 internal sealed class BlazorWindowViewController : DisposableReactiveObject, IWindowViewController
 {
     private readonly IBlazorWindow blazorWindow;

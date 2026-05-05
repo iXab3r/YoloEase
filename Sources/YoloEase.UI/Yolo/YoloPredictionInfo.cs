@@ -2,6 +2,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Represents one raw YOLO prediction before class indexes are resolved to labels.
+/// </summary>
 public readonly record struct YoloPredictionInfo
 {
     /// <summary>

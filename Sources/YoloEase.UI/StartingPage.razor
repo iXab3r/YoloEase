@@ -1,13 +1,11 @@
-﻿@inherits YoloEaseComponent<MainWindowViewModel>
-
-<div class="d-grid-center w-100">
-    <div class="card  w-50">
-        <div class="card-title d-grid m-1 align-items-center" style="grid-template-columns: auto 1fr auto">
-            <h3>
+@inherits YoloEaseComponent<MainWindowViewModel>
+<div class="projects-start-page">
+    <section class="projects-panel ye-panel">
+        <header class="projects-panel-header">
+            <h3 class="projects-panel-title">
                 Projects
             </h3>
-            <div></div>
-            <div>
+            <div class="projects-panel-actions">
                 <ReactiveButton Class="btn btn-primary"
                                 ShowErrorIcon="false"
                                 CommandEx="@DataContext.NewProjectCommand">
@@ -19,27 +17,26 @@
                     <i class="fa fa-folder-open"></i> Open existing...
                 </ReactiveButton>
             </div>
-        </div>
-        <div class="card-body">
-            <div class="alert alert-info">
+        </header>
+        <div class="projects-panel-body">
+            <div class="alert alert-info projects-intro">
                 YoloEase is tool which automates training process of machine-learning models, more specifically
                 <a href="https://github.com/ultralytics/ultralytics">
                     <i class="fa fa-external-link align-middle"></i>
                     Yolo8+
                 </a>
-                
+
                 You can read more about how to set everything up
                 <a href="https://wiki.eyeauras.net/en/YoloEase/getting-started">
                     <i class="fa fa-external-link align-middle"></i>
                     here
                 </a>
             </div>
-            <div class="d-grid-auto-flow-rows gap-2">
-                
+            <div class="projects-recent-list" role="list">
                 @foreach (var project in DataContext.RecentProjects.Items)
                 {
-                    <div @key=@project.FilePath class="w-100 my-1">
-                        <ReactiveButton Class="btn btn-secondary w-100"
+                    <div @key=@project.FilePath class="projects-recent-item" role="listitem">
+                        <ReactiveButton Class="btn btn-secondary w-100 projects-recent-button"
                                         ShowErrorIcon="false"
                                         CommandEx="@DataContext.LoadProjectCommand"
                                         CommandParameter="@project">
@@ -49,7 +46,7 @@
                 }
             </div>
         </div>
-    </div>
+    </section>
 </div>
 
 

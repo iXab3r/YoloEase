@@ -7,18 +7,24 @@ using CliWrap;
 using CliWrap.Builders;
 using CliWrap.EventStream;
 using PoeShared.Logging;
+using YoloEase.UI.Prerequisites;
 
 namespace YoloEase.UI.Cvat;
 
+/// <summary>
+/// Runs managed CVAT CLI commands used to download and update annotation data.
+/// </summary>
 public partial class CvatCliWrapper
 {
     private static readonly IFluentLog Log = typeof(CvatCliWrapper).PrepareLogger();
 
     private const string CvatAppName = "cvat-cli";
     private readonly FileInfo wrapperScript;
+    private readonly IPrerequisitesToolchain toolchain;
 
-    public CvatCliWrapper()
+    public CvatCliWrapper(IPrerequisitesToolchain toolchain)
     {
+        this.toolchain = toolchain;
         var wrapperScriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts", "CVATWrapper.py");
         wrapperScript = new FileInfo(wrapperScriptPath);
         if (!wrapperScript.Exists)
@@ -35,6 +41,18 @@ public partial class CvatCliWrapper
 
     public async Task EnsureInstalled()
     {
+        toolchain.RequireVenvPythonExecutable();
+        toolchain.RequireCvatCliExecutable();
+    }
+
+    private Command CreatePythonCommand()
+    {
+        return Cli.Wrap(toolchain.RequireVenvPythonExecutable().FullName);
+    }
+
+    private Command CreateCvatCliCommand()
+    {
+        return Cli.Wrap(toolchain.RequireCvatCliExecutable().FullName);
     }
 
     public async Task DownloadAnnotations(
@@ -64,7 +82,7 @@ public partial class CvatCliWrapper
 
         var format = "CVAT for images 1.1";
         
-        var cmd = Cli.Wrap(CvatAppName)
+        var cmd = CreateCvatCliCommand()
             .WithWorkingDirectory(AppDomain.CurrentDomain.BaseDirectory)
             .WithArguments(x =>
             {
@@ -139,7 +157,7 @@ public partial class CvatCliWrapper
             await File.WriteAllLinesAsync(tmpFileListFile.File.FullName, filesToUpload.Select(x => x.FullName).ToArray(), CancellationToken.None);
         }
         
-        var cmd = Cli.Wrap("python")
+        var cmd = CreatePythonCommand()
             .WithWorkingDirectory(AppDomain.CurrentDomain.BaseDirectory)
             .WithArguments(x =>
             {
@@ -210,7 +228,7 @@ public partial class CvatCliWrapper
         string taskName,
         IEnumerable<FileInfo> filesToUpload)
     {
-        var cmd = Cli.Wrap(CvatAppName)
+        var cmd = CreateCvatCliCommand()
             .WithWorkingDirectory(AppDomain.CurrentDomain.BaseDirectory)
             .WithArguments(x =>
             {

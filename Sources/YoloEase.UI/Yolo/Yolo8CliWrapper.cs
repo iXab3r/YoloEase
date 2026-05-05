@@ -3,10 +3,15 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using CliWrap;
+using CliWrap.Builders;
 using CliWrap.EventStream;
+using YoloEase.UI.Prerequisites;
 
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Describes the CVAT annotation files and output options used by the YOLO conversion script.
+/// </summary>
 public sealed record Yolo8ConvertAnnotationsArguments
 {
     public DirectoryInfo OutputDirectory { get; init; }
@@ -15,6 +20,9 @@ public sealed record Yolo8ConvertAnnotationsArguments
     public int TrainValPercentage { get; init; } = 80;
 }
 
+/// <summary>
+/// Runs managed Ultralytics YOLO commands and parses progress, health-check, and export output.
+/// </summary>
 public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 {
     [GeneratedRegex("\\s*(?'EpochCurrent'\\d+)\\/(?'EpochMax'\\d+)\\s*(?'VideoRAM'[\\w\\.]+).*?(?'EpochProgressPercentage'\\d+)%", RegexOptions.Compiled | RegexOptions.IgnoreCase)]
@@ -39,9 +47,13 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
     private static partial Regex YoloChecksParserRegex();
 
     private readonly FileInfo conversionScript;
+    private readonly IPrerequisitesToolchain toolchain;
+    private readonly IGpuRuntimeDetector gpuRuntimeDetector;
 
-    public Yolo8CliWrapper()
+    public Yolo8CliWrapper(IPrerequisitesToolchain toolchain, IGpuRuntimeDetector gpuRuntimeDetector)
     {
+        this.toolchain = toolchain;
+        this.gpuRuntimeDetector = gpuRuntimeDetector;
         var conversionScriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts", "ConvertCVATtoYolo8.py");
         conversionScript = new FileInfo(conversionScriptPath);
         if (!conversionScript.Exists)
@@ -53,7 +65,24 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         Environment.SetEnvironmentVariable("YOLO_AUTOINSTALL", "False");
     }
 
-    public async Task ConvertAnnotationsToYolo8FromCvat(Yolo8ConvertAnnotationsArguments settings)
+    private Command CreatePythonCommand()
+    {
+        return WithManagedPythonEnvironment(Cli.Wrap(toolchain.RequireVenvPythonExecutable().FullName));
+    }
+
+    private Command CreateYoloCommand(Action<EnvironmentVariablesBuilder>? configureEnvironment = null)
+    {
+        return Cli.Wrap(toolchain.RequireYoloExecutable().FullName)
+            .WithEnvironmentVariables(x =>
+            {
+                SetManagedPythonEnvironment(x);
+                configureEnvironment?.Invoke(x);
+            });
+    }
+
+    public async Task ConvertAnnotationsToYolo8FromCvat(
+        Yolo8ConvertAnnotationsArguments settings,
+        Action<YoloCommandOutput>? outputHandler = null)
     {
         if (settings.OutputDirectory.Exists)
         {
@@ -72,7 +101,7 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
             await File.WriteAllLinesAsync(tmpFileListFile.File.FullName, settings.Annotations.Select(x => x.FullName).ToArray(), CancellationToken.None);
         }
 
-        var cmd = Cli.Wrap("python")
+        var cmd = CreatePythonCommand()
             .WithArguments(x =>
             {
                 x.Add($"\"{conversionScript.FullName}\"", escape: false);
@@ -98,14 +127,10 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
                 }
             });
 
+        ReportCommandStart(cmd, outputHandler);
         await foreach (var cmdEvent in cmd.ListenAndLogAsync())
         {
-            switch (cmdEvent)
-            {
-                case StandardOutputCommandEvent stdOut:
-
-                    break;
-            }
+            CaptureCommandEvent(cmdEvent, outputHandler);
         }
 
         settings.OutputDirectory.Refresh();
@@ -124,54 +149,44 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         }
     }
 
-    public async Task UpdateYolo(CancellationToken cancellationToken = default)
+    public async Task UpdateYolo(
+        CancellationToken cancellationToken = default,
+        Action<YoloCommandOutput>? outputHandler = default)
     {
         Log.Debug($"Running yolo8 update via pip");
-        var cmd = Cli.Wrap("pip")
+        var cmd = CreatePythonCommand()
             .WithArguments(x =>
             {
                 //pip install -U ultralytics
-                x.Add($"install -U ultralytics", escape: false);
+                x.Add("-m");
+                x.Add("pip");
+                x.Add("install");
+                x.Add("-U");
+                x.Add("ultralytics");
             });
 
+        ReportCommandStart(cmd, outputHandler);
         await foreach (var cmdEvent in cmd.ListenAndLogAsync(cancellationToken: cancellationToken))
         {
-            var text = string.Empty;
-            switch (cmdEvent)
-            {
-                case StandardOutputCommandEvent stdOut:
-                    text = stdOut.Text;
-                    break;
-
-                case StandardErrorCommandEvent stdErr:
-                    text = stdErr.Text;
-                    break;
-            }
+            CaptureCommandEvent(cmdEvent, outputHandler);
         }
     }
 
-    public async Task<Yolo8ChecksResult> RunChecks(CancellationToken cancellationToken = default)
+    public async Task<Yolo8ChecksResult> RunChecks(
+        CancellationToken cancellationToken = default,
+        Action<YoloCommandOutput>? outputHandler = default)
     {
         Log.Debug($"Running yolo8 checks");
-        var cmd = Cli.Wrap("yolo")
+        var cmd = CreateYoloCommand()
             .WithArguments(x => { x.Add($"checks", escape: false); });
 
         var checksParser = YoloChecksParserRegex();
 
         Yolo8ChecksResult checksResult = default;
+        ReportCommandStart(cmd, outputHandler);
         await foreach (var cmdEvent in cmd.ListenAndLogAsync(cancellationToken: cancellationToken))
         {
-            var text = string.Empty;
-            switch (cmdEvent)
-            {
-                case StandardOutputCommandEvent stdOut:
-                    text = stdOut.Text;
-                    break;
-
-                case StandardErrorCommandEvent stdErr:
-                    text = stdErr.Text;
-                    break;
-            }
+            var text = CaptureCommandEvent(cmdEvent, outputHandler);
 
             var checksMatch = checksParser.Match(text);
             if (checksMatch.Success)
@@ -196,7 +211,11 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         return checksResult;
     }
 
-    public async Task<DirectoryInfo> Predict(Yolo8PredictArguments settings, CancellationToken cancellationToken = default, Action<Yolo8PredictProgressUpdate> updateHandler = default)
+    public async Task<DirectoryInfo> Predict(
+        Yolo8PredictArguments settings,
+        CancellationToken cancellationToken = default,
+        Action<Yolo8PredictProgressUpdate>? updateHandler = default,
+        Action<YoloCommandOutput>? outputHandler = default)
     {
         var workingDirectory = settings.WorkingDirectory;
         if (!workingDirectory.Exists)
@@ -207,7 +226,7 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         Log.Debug($"Running prediction using model {settings.Model}, output directory: {workingDirectory}");
         var outputDirectory = workingDirectory.GetSubdirectory("runs");
 
-        var cmd = Cli.Wrap("yolo")
+        var cmd = CreateYoloCommand()
             .WithArguments(x =>
             {
                 x.Add($"predict", escape: false);
@@ -244,19 +263,10 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         var updateParser = UltralyticsUpdateAvailableParserRegex();
         var osErrorParser = OsErrorParserRegex();
 
+        ReportCommandStart(cmd, outputHandler);
         await foreach (var cmdEvent in cmd.ListenAndLogAsync(cancellationToken: cancellationToken))
         {
-            var text = string.Empty;
-            switch (cmdEvent)
-            {
-                case StandardOutputCommandEvent stdOut:
-                    text = stdOut.Text;
-                    break;
-
-                case StandardErrorCommandEvent stdErr:
-                    text = stdErr.Text;
-                    break;
-            }
+            var text = CaptureCommandEvent(cmdEvent, outputHandler);
 
             var osErrorMatch = osErrorParser.Match(text);
             if (osErrorMatch.Success)
@@ -303,7 +313,11 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         return predictOutputDirectory;
     }
 
-    public async Task<FileInfo> Train(Yolo8TrainArguments settings, CancellationToken cancellationToken = default, Action<Yolo8TrainProgressUpdate> updateHandler = default)
+    public async Task<FileInfo> Train(
+        Yolo8TrainArguments settings,
+        CancellationToken cancellationToken = default,
+        Action<Yolo8TrainProgressUpdate> updateHandler = default,
+        Action<YoloCommandOutput>? outputHandler = default)
     {
         var dataYaml = new FileInfo(settings.DataYamlPath);
         if (!dataYaml.Exists)
@@ -324,9 +338,9 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         var scanningProgressParser = TrainScanningProgressParserRegex();
         var updateParser = UltralyticsUpdateAvailableParserRegex();
         var osErrorParser = OsErrorParserRegex();
+        var managedDeviceArgument = await ResolveTrainingDeviceArgumentAsync(settings.AdditionalArguments, cancellationToken);
 
-        var cmd = Cli.Wrap("yolo")
-            .WithEnvironmentVariables(x =>
+        var cmd = CreateYoloCommand(x =>
             {
                 if (settings.MaxCpuCoresCount > 0)
                 {
@@ -353,6 +367,11 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
                     x.Add($"epochs={settings.Epochs.Value.ToString(CultureInfo.InvariantCulture)}", escape: false);
                 }
 
+                if (!string.IsNullOrWhiteSpace(managedDeviceArgument))
+                {
+                    x.Add(managedDeviceArgument, escape: false);
+                }
+
                 if (!string.IsNullOrEmpty(settings.AdditionalArguments))
                 {
                     x.Add(settings.AdditionalArguments, escape: false);
@@ -362,19 +381,10 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 
 
         string modelRelativePath = default;
+        ReportCommandStart(cmd, outputHandler);
         await foreach (var cmdEvent in cmd.ListenAndLogAsync(cancellationToken: cancellationToken))
         {
-            var text = string.Empty;
-            switch (cmdEvent)
-            {
-                case StandardOutputCommandEvent stdOut:
-                    text = stdOut.Text;
-                    break;
-
-                case StandardErrorCommandEvent stdErr:
-                    text = stdErr.Text;
-                    break;
-            }
+            var text = CaptureCommandEvent(cmdEvent, outputHandler);
 
             var osErrorMatch = osErrorParser.Match(text);
             if (osErrorMatch.Success)
@@ -444,7 +454,38 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         return new FileInfo(trainedModel);
     }
 
-    public async Task<FileInfo> Convert(Yolo8ExportArguments settings, CancellationToken cancellationToken = default)
+    private async Task<string> ResolveTrainingDeviceArgumentAsync(string additionalArguments, CancellationToken cancellationToken)
+    {
+        if (gpuRuntimeDetector.HasExplicitDeviceArgument(additionalArguments))
+        {
+            Log.Debug($"Training device is specified by additional arguments: {additionalArguments}");
+            return null;
+        }
+
+        try
+        {
+            var pytorch = await gpuRuntimeDetector.ProbePyTorchAsync(cancellationToken: cancellationToken);
+            var deviceArgument = GpuRuntimeDetector.ResolveYoloTrainingDeviceArgument(pytorch, additionalArguments);
+            if (string.IsNullOrWhiteSpace(deviceArgument))
+            {
+                Log.Debug($"PyTorch CUDA is not available, YOLO will use its default CPU-capable device selection: {pytorch.Summary}");
+                return null;
+            }
+
+            Log.Info($"PyTorch CUDA is available, training will use {deviceArgument}: {pytorch.Summary}");
+            return deviceArgument;
+        }
+        catch (Exception e)
+        {
+            Log.Warn("Failed to probe PyTorch CUDA state before training; YOLO will use its default device selection", e);
+            return null;
+        }
+    }
+
+    public async Task<FileInfo> Convert(
+        Yolo8ExportArguments settings,
+        CancellationToken cancellationToken = default,
+        Action<YoloCommandOutput>? outputHandler = default)
     {
         var model = new FileInfo(settings.Model);
         if (!model.Exists)
@@ -457,7 +498,7 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
 
         var exportResultParser = ExportResultParserRegex();
 
-        var cmd = Cli.Wrap("yolo")
+        var cmd = CreateYoloCommand()
             .WithArguments(x =>
             {
                 x.Add($"export", escape: false);
@@ -468,19 +509,10 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
             .WithWorkingDirectory(outputDirectory.FullName);
 
         string convertedModelPath = default;
+        ReportCommandStart(cmd, outputHandler);
         await foreach (var cmdEvent in cmd.ListenAndLogAsync(cancellationToken))
         {
-            var text = string.Empty;
-            switch (cmdEvent)
-            {
-                case StandardOutputCommandEvent stdOut:
-                    text = stdOut.Text;
-                    break;
-
-                case StandardErrorCommandEvent stdErr:
-                    text = stdErr.Text;
-                    break;
-            }
+            var text = CaptureCommandEvent(cmdEvent, outputHandler);
 
             var resultMatch = exportResultParser.Match(text);
             if (resultMatch.Success)
@@ -506,5 +538,51 @@ public sealed partial class Yolo8CliWrapper : DisposableReactiveObjectWithLogger
         }
 
         return convertedModel;
+    }
+
+    private static void ReportCommandStart(Command command, Action<YoloCommandOutput>? outputHandler)
+    {
+        outputHandler?.Invoke(YoloCommandOutput.Info($"Running command: {command}"));
+    }
+
+    private static string CaptureCommandEvent(CommandEvent cmdEvent, Action<YoloCommandOutput>? outputHandler)
+    {
+        switch (cmdEvent)
+        {
+            case StartedCommandEvent started:
+                outputHandler?.Invoke(YoloCommandOutput.Info($"Process started: {started.ProcessId}"));
+                return string.Empty;
+
+            case StandardOutputCommandEvent stdOut:
+                outputHandler?.Invoke(YoloCommandOutput.Output(stdOut.Text));
+                return stdOut.Text;
+
+            case StandardErrorCommandEvent stdErr:
+                outputHandler?.Invoke(YoloCommandOutput.Error(stdErr.Text));
+                return stdErr.Text;
+
+            case ExitedCommandEvent exited:
+                outputHandler?.Invoke(YoloCommandOutput.Info($"Process exited: {exited.ExitCode}"));
+                return string.Empty;
+
+            default:
+                return string.Empty;
+        }
+    }
+
+    private Command WithManagedPythonEnvironment(Command command)
+    {
+        return command.WithEnvironmentVariables(SetManagedPythonEnvironment);
+    }
+
+    private void SetManagedPythonEnvironment(EnvironmentVariablesBuilder environment)
+    {
+        toolchain.EnsureBaseDirectories();
+        var pipCacheDirectory = Path.Combine(toolchain.DownloadsDirectory.FullName, "pip-cache");
+        Directory.CreateDirectory(pipCacheDirectory);
+        environment.Set("PYTHONUTF8", "1");
+        environment.Set("PYTHONIOENCODING", "utf-8");
+        environment.Set("PIP_DISABLE_PIP_VERSION_CHECK", "1");
+        environment.Set("PIP_CACHE_DIR", pipCacheDirectory);
     }
 }

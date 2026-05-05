@@ -5,6 +5,9 @@ using SixLabors.ImageSharp.Processing;
 
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Flips augmented images and remaps annotation rectangles into the flipped coordinate space.
+/// </summary>
 public sealed class FlipImageEffect : ImageEffectBase<FlipImageEffectProperties>
 {
     private static readonly Binder<FlipImageEffect> Binder = new();

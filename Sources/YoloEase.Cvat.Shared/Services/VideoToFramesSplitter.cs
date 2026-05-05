@@ -6,6 +6,9 @@ using PoeShared.Scaffolding;
 
 namespace YoloEase.Cvat.Shared.Services;
 
+/// <summary>
+/// Extracts selected video frames into image files for annotation-task import.
+/// </summary>
 public sealed class VideoToFramesSplitter : IVideoToFramesSplitter
 {
     private static readonly IFluentLog Log = typeof(VideoToFramesSplitter).PrepareLogger();

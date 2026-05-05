@@ -1,21 +1,24 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using ByteSizeLib;
-using CvatApi;
 using PoeShared.Logging;
 using YoloEase.UI.Dto;
+using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Loads annotation XML files for the current project and exposes task-level annotation metadata.
+/// </summary>
 public class AnnotationsAccessor : RefreshableReactiveObject
 {
     private readonly AnnotationsCache annotationsCache;
     private readonly IConfigSerializer configSerializer;
-    private readonly SourceCache<TaskRead, int> annotatedTaskSource = new(x => x.Id.Value);
+    private readonly SourceCache<AnnotationTaskInfo, int> annotatedTaskSource = new(x => x.Id);
     private readonly SourceCache<TaskAnnotationFileInfo, int> annotationsSource = new(x => x.TaskId);
 
     public AnnotationsAccessor(
-        CvatProjectAccessor remoteProject,
+        AnnotationProjectAccessor remoteProject,
         Yolo8DatasetAccessor training,
         AnnotationsCache annotationsCache,
         IConfigSerializer configSerializer,
@@ -33,9 +36,9 @@ public class AnnotationsAccessor : RefreshableReactiveObject
 
     public IObservableListEx<TaskAnnotationFileInfo> Annotations { get; }
 
-    public IObservableListEx<TaskRead> AnnotatedTasks { get; }
+    public IObservableListEx<AnnotationTaskInfo> AnnotatedTasks { get; }
 
-    public CvatProjectAccessor RemoteProject { get; }
+    public AnnotationProjectAccessor RemoteProject { get; }
 
     public Yolo8DatasetAccessor Training { get; }
 
@@ -55,7 +58,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
 
     protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
-        var annotatedTasks = RemoteProject.Tasks.Items.Where(x => x.Status == JobStatus.Completed).ToArray();
+        var annotatedTasks = RemoteProject.Tasks.Items.Where(x => x.Status == AnnotationTaskStatus.Completed).ToArray();
         annotatedTaskSource.EditDiff(annotatedTasks);
 
         await RefreshAnnotations(downloadIfMissing: false);
@@ -66,39 +69,9 @@ public class AnnotationsAccessor : RefreshableReactiveObject
         return RefreshAnnotations(downloadIfMissing: true);
     }
 
-    public async Task<AnnotationsRead> UploadAnnotations(int taskId, CvatRectangleAnnotation[] labels)
+    public Task<AnnotationUpdateResult> UploadAnnotations(int taskId, CvatRectangleAnnotation[] labels)
     {
-        return await RemoteProject.Client.Api.RunAuthenticated(async httpClient =>
-        {
-            var annotationsClient = new CvatTasksClient(httpClient);
-
-            var body = new PatchedLabeledDataRequest()
-            {
-                Shapes = new List<LabeledShapeRequest>(),
-            };
-
-            foreach (var label in labels)
-            {
-                var yoloRect = label.BoundingBox;
-                body.Shapes.Add(new LabeledShapeRequest()
-                {
-                    Label_id = label.LabelId,
-                    Type = ShapeType.Rectangle,
-                    Frame = label.FrameIndex,
-                    Points = new List<double>()
-                    {
-                        yoloRect.X,
-                        yoloRect.Y,
-                        yoloRect.X + yoloRect.Width,
-                        yoloRect.Y + yoloRect.Height
-                    },
-                    Source = "automatic"
-                });
-            }
-
-            var updatedAnnotations = await annotationsClient.Tasks_partial_update_annotationsAsync(id: taskId, action: Action9.Create, body: body);
-            return updatedAnnotations;
-        });
+        return RemoteProject.UploadAnnotations(taskId, labels);
     }
 
     public async Task RefreshAnnotations(bool downloadIfMissing)
@@ -171,9 +144,7 @@ public class AnnotationsAccessor : RefreshableReactiveObject
             if (!outputFile.Exists && downloadIfMissing)
             {
                 log.Step($"Downloading annotations file to {outputFile.FullName}");
-                await RemoteProject.Client.Cli.DownloadAnnotations(
-                    task.Id.Value,
-                    outputFile: outputFile);
+                await RemoteProject.ExportAnnotations(task.Id, outputFile);
                 log.Step($"Downloaded annotations file to {outputFile.FullName}");
             }
 
@@ -187,39 +158,47 @@ public class AnnotationsAccessor : RefreshableReactiveObject
 
             annotations.Add(new TaskAnnotationFileInfo()
             {
-                TaskId = task.Id.Value,
+                TaskId = task.Id,
                 FilePath = outputFile.FullName,
                 FileSize = outputFile.Length,
-                TaskName = task.Name ?? $"Task #{task.Id}"
+                TaskName = task.Name
             });
         });
 
         annotationsSource.EditDiff(annotations);
     }
 
-    public async Task<DatasetInfo> CreateAnnotatedDataset(IReadOnlyList<FileInfo> annotationFiles)
+    public async Task<DatasetInfo> CreateAnnotatedDataset(
+        IReadOnlyList<FileInfo> annotationFiles,
+        Action<YoloCommandOutput>? outputHandler = null)
     {
         var annotations = Annotations.Items.ToArray();
-        var datasetInfo = await Training.CreateAnnotatedDataset(annotationFiles, RemoteProject);
+        var datasetInfo = await Training.CreateAnnotatedDataset(annotationFiles, RemoteProject, outputHandler);
+        var annotatedTasksById = RemoteProject.Tasks.Items.ToDictionary(x => x.Id);
         return datasetInfo with
         {
             ProjectInfo = datasetInfo.ProjectInfo with
             {
                 Tasks = annotations.Select(x => x.TaskId).ToArray(),
+                TaskRevisions = annotations
+                    .Select(x => annotatedTasksById.GetValueOrDefault(x.TaskId))
+                    .Where(x => x != null)
+                    .Select(x => new TaskRevisionInfo
+                    {
+                        TaskId = x.Id,
+                        Revision = x.Revision,
+                    })
+                    .ToArray(),
             }
         };
     }
     
-    private static TaskAnnotationFileInfo CreateEmpty(TaskRead task)
+    private static TaskAnnotationFileInfo CreateEmpty(AnnotationTaskInfo task)
     {
-        if (task.Id == null)
-        {
-            throw new ArgumentException($"Task Id must be set but was not for {task}");
-        }
         return new TaskAnnotationFileInfo()
         {
-            TaskId = task.Id.Value,
-            TaskName = task.Name ?? $"Task #{task.Id}"
+            TaskId = task.Id,
+            TaskName = task.Name
         };
     }
 }

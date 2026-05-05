@@ -9,6 +9,9 @@ using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Timeline step that prepares project state before training begins.
+/// </summary>
 public class PreTrainingTimelineEntry : RunnableTimelineEntry
 {
     private static readonly IFluentLog Log = typeof(PreTrainingTimelineEntry).PrepareLogger();
@@ -43,7 +46,7 @@ public class PreTrainingTimelineEntry : RunnableTimelineEntry
         var killedProcesses = KillStaleYoloProcesses(DatasetInfo);
         TerminatedStaleProcessCount = killedProcesses.Count;
 
-        ChecksResult = await yolo8DatasetAccessor.RunChecks(cancellationToken);
+        ChecksResult = await yolo8DatasetAccessor.RunChecks(cancellationToken, AppendOutputLog);
         AppendTextLine("Checks completed");
     }
 

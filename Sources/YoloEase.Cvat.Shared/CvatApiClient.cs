@@ -2,6 +2,9 @@
 
 namespace YoloEase.Cvat.Shared;
 
+/// <summary>
+/// Wraps generated CVAT REST clients with token authentication and retry-on-auth-failure behavior.
+/// </summary>
 public class CvatApiClient
 {
     private readonly IHttpClientFactory httpClientFactory;

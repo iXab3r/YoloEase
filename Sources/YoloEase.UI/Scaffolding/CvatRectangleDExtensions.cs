@@ -2,6 +2,9 @@
 
 namespace YoloEase.UI.Scaffolding;
 
+/// <summary>
+/// Converts CVAT rectangle geometry to ImageSharp geometry types.
+/// </summary>
 public static class CvatRectangleDExtensions
 {
     public static SharpRectangleF ToSharpRectangleF(this CvatRectangleD rectangle)

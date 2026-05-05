@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Dto;
 
+/// <summary>
+/// Captures user-facing settings that influence model training.
+/// </summary>
 public sealed record ModelTrainingSettings
 {
     public string Model { get; init; }

@@ -1,0 +1,249 @@
+@using YoloEase.UI.Prerequisites
+@inherits YoloEaseComponent<PrerequisitesViewModel>
+@inject IJSRuntime JavaScriptRuntime
+
+<TabPageLayout Class="@($"prerequisites-page{(Compact ? " prerequisites-page-compact" : string.Empty)}")"
+               BodyClass="prerequisites-body"
+               ScrollBody="false">
+    <TopBar>
+        <div class="prerequisites-toolbar">
+            <div class="prerequisites-heading">
+                <div class="ye-tab-title-row">
+                    <span class="ye-tab-title">Prerequisites</span>
+                    <span class="@($"badge prerequisites-summary-badge {DataContext.HeaderStatusClass}")">@DataContext.HeaderStatusText</span>
+                    @if (!string.IsNullOrWhiteSpace(copyAllStatus))
+                    {
+                        <span class="ye-tab-subtitle">@copyAllStatus</span>
+                    }
+                </div>
+            </div>
+
+            <div class="flex-grow-1"></div>
+
+            <div class="prerequisites-startup form-check form-switch">
+                <input class="form-check-input"
+                       type="checkbox"
+                       id="@StartupCheckId"
+                       checked="@Track(x => x.CheckPrerequisitesAtStartup)"
+                       @onchange="HandleStartupCheckChanged" />
+                <label class="form-check-label" for="@StartupCheckId">Check at startup</label>
+            </div>
+
+            <div class="btn-group btn-group-sm">
+                <ReactiveButton Class="btn btn-outline-secondary"
+                                IsEnabled="@(!Track(x => x.IsOperationBusy))"
+                                Command="@(async () => await DataContext.EvaluateAllAsync())">
+                    <i class="fa fa-refresh"></i>
+                    Check all
+                </ReactiveButton>
+                <ReactiveButton Class="btn btn-primary"
+                                IsEnabled="@(!Track(x => x.IsOperationBusy))"
+                                Command="@(async () => await DataContext.InstallMissingAsync())">
+                    <i class="fa fa-download"></i>
+                    Install missing
+                </ReactiveButton>
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        disabled="@(!DataContext.HasAnyLogs)"
+                        @onclick="CopyAllLogsAsync">
+                    <i class="fa fa-copy"></i>
+                    Copy all
+                </button>
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        disabled="@(!DataContext.HasAnyLogs)"
+                        @onclick="ClearAllLogs">
+                    <i class="fa fa-trash"></i>
+                    Clear all
+                </button>
+                <ReactiveButton Class="btn btn-outline-secondary"
+                                Command="@DataContext.OpenToolsFolder">
+                    <i class="fa fa-folder-open"></i>
+                </ReactiveButton>
+            </div>
+        </div>
+    </TopBar>
+
+    <ChildContent>
+        <div class="@($"prerequisites-progress-strip {DataContext.OperationProgressVisibilityClass}")"
+             role="progressbar"
+             aria-valuemin="0"
+             aria-valuemax="100"
+             aria-valuenow="@DataContext.OperationProgressPercent">
+            <div class="@($"prerequisites-progress-bar {DataContext.OperationProgressClass}")"
+                 style="@DataContext.OperationProgressStyle"></div>
+            <div class="prerequisites-progress-inline">
+                <span>@Track(x => x.OperationStatusText)</span>
+                <span>@Track(x => x.OperationProgressText)</span>
+            </div>
+        </div>
+
+        <div class="prerequisites-workspace">
+            <nav class="prerequisites-fast-lane" aria-label="Prerequisites">
+                @foreach (var check in DataContext.Suite.Checks.Items)
+                {
+                    <a @key="@($"lane-{check.Id}")"
+                       class="@($"prerequisites-fast-lane-item {(check.IsBusy ? "is-busy" : string.Empty)}")"
+                       href="#@GetCheckAnchor(check)"
+                       @onclick="@(() => ScrollToCheckAsync(check))"
+                       @onclick:preventDefault="true"
+                       title="@check.Title">
+                        <span class="@GetFastLaneStatusClass(check)"></span>
+                        <span>@check.Title</span>
+                    </a>
+                }
+            </nav>
+
+            <div class="prerequisites-list">
+                @foreach (var check in DataContext.Suite.Checks.Items)
+                {
+                    <div @key="@check.Id"
+                         id="@GetCheckAnchor(check)"
+                         class="@($"prerequisite-row{(check.IsExpanded ? " is-expanded" : string.Empty)}")">
+                        <button type="button"
+                                class="prerequisite-main"
+                                @onclick="@(() => check.IsExpanded = !check.IsExpanded)">
+                            <span class="@check.StatusClass">@check.StatusText</span>
+                            <span class="prerequisite-title">
+                                @check.Title
+                                @if (!check.IsRequired)
+                                {
+                                    <span class="text-muted small">optional</span>
+                                }
+                            </span>
+                            @if (check.IsBusy)
+                            {
+                                <span class="prerequisite-busy-indicator">
+                                    <span class="spinner-border spinner-border-sm"></span>
+                                    <span>@check.ProgressText</span>
+                                </span>
+                            }
+                        </button>
+
+                        <div class="prerequisite-actions">
+                            @if (check.ShowEvaluateButton)
+                            {
+                                <ReactiveButton Class="btn btn-outline-secondary btn-sm"
+                                                IsEnabled="@(!Track(x => x.IsOperationBusy) && !check.IsBusy && check.CanEvaluate)"
+                                                Command="@(async () => await DataContext.EvaluateCheckAsync(check))">
+                                    Check
+                                </ReactiveButton>
+                            }
+                            @if (check.HasRemediation && check.IsSatisfied != true)
+                            {
+                                <ReactiveButton Class="btn btn-primary btn-sm"
+                                                IsEnabled="@(!Track(x => x.IsOperationBusy) && !check.IsBusy && check.CanRemediate)"
+                                                Command="@(async () => await DataContext.RemediateCheckAsync(check))">
+                                    @check.RemediationLabel
+                                </ReactiveButton>
+                            }
+                        </div>
+
+                        @if (check.IsExpanded || check.LastError != null || !string.IsNullOrWhiteSpace(check.ProgressStatus))
+                        {
+                            <div class="prerequisite-details">
+                                @if (!string.IsNullOrWhiteSpace(check.Details))
+                                {
+                                    <div>@check.Details</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(check.ProgressStatus))
+                                {
+                                    <div class="text-warning">@check.ProgressStatus</div>
+                                }
+                                @if (check.IsBusy)
+                                {
+                                    <div class="prerequisite-row-progress">
+                                        <div class="prerequisite-row-progress-bar"></div>
+                                    </div>
+                                }
+                                @if (check.IsBlocked)
+                                {
+                                    <div class="text-warning">@check.DependencyStatusText</div>
+                                }
+                                @if (check.LastError != null)
+                                {
+                                    <div class="text-danger">Error: @check.LastError.Value.Message</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(check.LastOutput))
+                                {
+                                    <pre>@check.LastOutput</pre>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </ChildContent>
+</TabPageLayout>
+
+@code {
+    [Parameter]
+    public bool Compact { get; set; }
+
+    private string StartupCheckId { get; } = $"startup-check-{Guid.NewGuid():N}";
+
+    public PrerequisitesView()
+    {
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsOperationBusy));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.SummaryText));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.HeaderStatusText));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.HeaderStatusClass));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.CheckPrerequisitesAtStartup));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.HasAnyLogs));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.OperationStatusText));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.OperationProgressText));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.OperationProgressStyle));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.OperationProgressClass));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.OperationProgressVisibilityClass));
+        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Suite.Checks).Select(x => x.Connect()).Select(x => x.WhenAnyPropertyChanged()));
+    }
+
+    private async Task HandleStartupCheckChanged(ChangeEventArgs args)
+    {
+        var value = args.Value is bool boolValue && boolValue;
+        await DataContext.SetCheckPrerequisitesAtStartup(value);
+    }
+
+    private async Task CopyAllLogsAsync()
+    {
+        try
+        {
+            await JavaScriptRuntime.InvokeVoidAsync("navigator.clipboard.writeText", DataContext.BuildAllLogsText());
+            copyAllStatus = "Copied";
+        }
+        catch
+        {
+            copyAllStatus = "Copy failed";
+        }
+    }
+
+    private void ClearAllLogs()
+    {
+        DataContext.ClearAllLogs();
+        copyAllStatus = string.Empty;
+    }
+
+    private async Task ScrollToCheckAsync(CheckItem check)
+    {
+        await JavaScriptRuntime.InvokeVoidAsync("yoloEase.scrollIntoView", GetCheckAnchor(check));
+    }
+
+    private static string GetCheckAnchor(CheckItem check)
+    {
+        return $"prerequisite-{check.Name}";
+    }
+
+    private static string GetFastLaneStatusClass(CheckItem check)
+    {
+        return check.IsSatisfied switch
+        {
+            true => "prerequisites-fast-lane-status is-ready",
+            false when check.IsRequired => "prerequisites-fast-lane-status is-missing",
+            false => "prerequisites-fast-lane-status is-warning",
+            _ => "prerequisites-fast-lane-status"
+        };
+    }
+
+    private string copyAllStatus = string.Empty;
+}

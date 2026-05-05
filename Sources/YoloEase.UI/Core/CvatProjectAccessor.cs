@@ -6,6 +6,9 @@ using YoloEase.UI.Scaffolding;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Provides project-scoped CVAT operations used by the legacy annotation workflow.
+/// </summary>
 public class CvatProjectAccessor : RefreshableReactiveObject
 {
     private static readonly Binder<CvatProjectAccessor> Binder = new();

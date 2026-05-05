@@ -11,6 +11,9 @@ using YoloEase.UI.Yolo;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Runs YOLO predictions for the project and exposes prediction threshold settings.
+/// </summary>
 public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
 {
     private static readonly Binder<Yolo8PredictAccessor> Binder = new();
@@ -92,7 +95,8 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
     public async Task<DatasetPredictInfo?> Predict(
         PredictArgs args,
         Action<Yolo8PredictProgressUpdate> updateHandler = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<YoloCommandOutput>? outputHandler = null)
     {
         var modelFile = args.Model.ModelFile;
         if (!modelFile.Exists)
@@ -136,7 +140,7 @@ public class Yolo8PredictAccessor : DisposableReactiveObjectWithLogger
             IoU = IoUThresholdPercentage / 100,
             ImageSize = yoloModel.Description.Size.Width.ToString(),
             AdditionalArguments = PredictAdditionalArguments,
-        }, updateHandler: updateHandler, cancellationToken: cancellationToken);
+        }, updateHandler: updateHandler, cancellationToken: cancellationToken, outputHandler: outputHandler);
         
         return await GetPredictionsOrDefault(args.Model, predictDirectory, yoloModel.Description);
     }

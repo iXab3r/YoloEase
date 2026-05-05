@@ -5,6 +5,9 @@ using SixLabors.ImageSharp.Processing;
 
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Rotates augmented images and remaps annotation rectangles into the rotated coordinate space.
+/// </summary>
 public sealed class RotateImageEffect : ImageEffectBase<RotateImageEffectProperties>
 {
     private static readonly Binder<RotateImageEffect> Binder = new();

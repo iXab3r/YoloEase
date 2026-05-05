@@ -2,6 +2,9 @@ using PoeShared.Logging;
 
 namespace YoloEase.UI;
 
+/// <summary>
+/// Hosts the desktop application entry point and top-level exception logging.
+/// </summary>
 public static class Program
 {
     private static readonly IFluentLog Log = typeof(Program).PrepareLogger();

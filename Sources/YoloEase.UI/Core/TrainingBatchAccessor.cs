@@ -1,16 +1,16 @@
 using System.Linq;
-using CvatApi;
 using JetBrains.Annotations;
 
 namespace YoloEase.UI.Core;
 
+/// <summary>
+/// Tracks the batch percentage used to select training tasks.
+/// </summary>
 public class TrainingBatchAccessor : RefreshableReactiveObject
 {
     private static readonly Binder<TrainingBatchAccessor> Binder = new();
 
     private readonly SourceCacheEx<FileInfo, string> batchFileSources = new(x => x.FullName);
-    private readonly ICvatClient cvatClient;
-
     private readonly SourceCacheEx<FileInfo, string> unannotatedFilesSource = new(x => x.FullName);
 
     static TrainingBatchAccessor()
@@ -19,20 +19,18 @@ public class TrainingBatchAccessor : RefreshableReactiveObject
     }
 
     public TrainingBatchAccessor(
-        CvatProjectAccessor project,
-        IFileAssetsAccessor assets,
-        ICvatClient cvatClient)
+        AnnotationProjectAccessor project,
+        IFileAssetsAccessor assets)
     {
         Project = project;
         Assets = assets;
-        this.cvatClient = cvatClient;
 
         UnannotatedFiles = unannotatedFilesSource.ToSourceListEx().AddTo(Anchors);
         BatchFiles = batchFileSources.ToSourceListEx().AddTo(Anchors);
         
         UnannotatedTasks = Project.Tasks
             .Connect()
-            .Filter(x => x.Status != JobStatus.Completed)
+            .Filter(x => x.Status != AnnotationTaskStatus.Completed)
             .RemoveKey()
             .ToSourceListEx()
             .AddTo(Anchors);
@@ -46,7 +44,7 @@ public class TrainingBatchAccessor : RefreshableReactiveObject
         Binder.Attach(this).AddTo(Anchors);
     }
 
-    public CvatProjectAccessor Project { get; }
+    public AnnotationProjectAccessor Project { get; }
     public IFileAssetsAccessor Assets { get; }
 
     public int MinBatchPercentage { get; private set; } = 1;
@@ -55,15 +53,15 @@ public class TrainingBatchAccessor : RefreshableReactiveObject
 
     public int BatchSize { get; [UsedImplicitly] private set; }
     
-    public IObservableListEx<TaskRead> Tasks { get; }
+    public IObservableListEx<AnnotationTaskInfo> Tasks { get; }
 
     public IObservableListEx<FileInfo> UnannotatedFiles { get; }
     
-    public IObservableListEx<TaskRead> UnannotatedTasks { get; }
+    public IObservableListEx<AnnotationTaskInfo> UnannotatedTasks { get; }
 
     public IObservableListEx<FileInfo> BatchFiles { get; }
     
-    public async Task<TaskRead> CreateNextTask()
+    public async Task<AnnotationTaskInfo> CreateNextTask()
     {
         var nextBatch = batchFileSources.Items.ToArray();
         var task = await Project.CreateTask(nextBatch);

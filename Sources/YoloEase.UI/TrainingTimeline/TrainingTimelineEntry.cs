@@ -10,6 +10,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Timeline step that starts YOLO training and reports the produced model file.
+/// </summary>
 public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
 {
     private static readonly IFluentLog Log = typeof(TrainingTimelineEntry).PrepareLogger();
@@ -81,18 +84,22 @@ public class TrainingTimelineEntry : RunnableTimelineEntry<TrainedModelFileInfo>
 
         try
         {
-            var modelFile = await yolo8DatasetAccessor.TrainModel(DatasetInfo, update =>
-            {
-                ProgressPercent = (int)update.ProgressPercentage;
-                if (string.IsNullOrEmpty(update.Text))
+            var modelFile = await yolo8DatasetAccessor.TrainModel(
+                DatasetInfo,
+                update =>
                 {
-                    Text = $"{update.ProgressPercentage:F0}% in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}, epochs: {update.EpochCurrent}/{update.EpochMax}, VideoRAM: {update.VideoRAM}";
-                }
-                else
-                {
-                    Text = update.Text;
-                }
-            }, cancellationToken);
+                    ProgressPercent = (int) update.ProgressPercentage;
+                    if (string.IsNullOrEmpty(update.Text))
+                    {
+                        Text = $"{update.ProgressPercentage:F0}% in {sw.Elapsed.Humanize(culture: CultureInfo.InvariantCulture)}, epochs: {update.EpochCurrent}/{update.EpochMax}, VideoRAM: {update.VideoRAM}";
+                    }
+                    else
+                    {
+                        Text = update.Text;
+                    }
+                },
+                cancellationToken,
+                AppendOutputLog);
 
             var modelName = DatasetInfo.ProjectInfo.ModelTrainingSettings.Model;
             var projectName = string.IsNullOrEmpty(DatasetInfo.ProjectInfo.ProjectName) ? string.Empty : $"{Humanizer.InflectorExtensions.Pascalize(DatasetInfo.ProjectInfo.ProjectName)}_";

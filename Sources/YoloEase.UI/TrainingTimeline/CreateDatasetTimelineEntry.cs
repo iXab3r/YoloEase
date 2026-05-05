@@ -8,6 +8,9 @@ using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Timeline step that converts current annotations into a YOLO dataset.
+/// </summary>
 public class CreateDatasetTimelineEntry : RunnableTimelineEntry<DatasetInfo>
 {
     private readonly AnnotationsAccessor annotationsAccessor;
@@ -69,7 +72,7 @@ public class CreateDatasetTimelineEntry : RunnableTimelineEntry<DatasetInfo>
         }
 
         AppendTextLine($"Building dataset out of {preparedAnnotations.Count()} annotation files");
-        var datasetInfo = await annotationsAccessor.CreateAnnotatedDataset(preparedAnnotations);
+        var datasetInfo = await annotationsAccessor.CreateAnnotatedDataset(preparedAnnotations, AppendOutputLog);
         AppendTextLine($"Dataset: {"image".ToQuantity(datasetInfo.ImagesCount)} (train {datasetInfo.ImagesTrainingCount}/val {datasetInfo.ImagesValidationCount})");
 
         Dataset = datasetInfo;

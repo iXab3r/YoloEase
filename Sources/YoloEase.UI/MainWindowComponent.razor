@@ -17,33 +17,25 @@
     }
     else
     {
-        <div class="top-right-menu">
-            <a href="https://wiki.eyeauras.net/en/YoloEase/getting-started">
-                <i class="fa fa-external-link align-middle"></i>
-                Getting started
-            </a>
-        </div>
-        <div id="mainContent">
-            <Tabs Class="h-100"
-                  @bind-ActiveKey="@(DataContext.ActiveTabId)"
-                  TabBarClass="top-menu">
-                @foreach (var tab in DataContext.Tabs.Items)
-                {
-                    if (!tab.IsVisible)
-                    {
-                        continue;
-                    }
-
-                    <TabPane Tab="@(Track(tab, tab => tab.Title))" Key="@tab.Id">
-                        <BlazorContentPresenter Content="@tab.DataContext"/>
-                    </TabPane>
-                }
-            </Tabs>
+        <div class="yolo-window-shell">
+            <div id="mainContent" class="@($"golden-layout-host{(isLayoutLoading || goldenLayout == null ? " is-loading" : string.Empty)}")" @ref="@ElementRef">
+            </div>
+            @if (isLayoutLoading || goldenLayout == null)
+            {
+                <div class="golden-layout-loading">
+                    <div class="spinner-border spinner-border-sm"></div>
+                    <span>Preparing workspace...</span>
+                </div>
+            }
         </div>
     }
 </div>
 <div id="statusBar">
     <div id="statusLeft" class="d-flex">
+        <a class="status-link" href="https://wiki.eyeauras.net/en/YoloEase/getting-started">
+            <i class="fa fa-external-link align-middle"></i>
+            Getting started
+        </a>
     </div>
     <div id="statusMiddle">
     </div>

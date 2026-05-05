@@ -4,6 +4,9 @@ using YoloEase.UI.Core;
 
 namespace YoloEase.UI.Scaffolding;
 
+/// <summary>
+/// Provides convenience methods for common authenticated CVAT project, task, and label operations.
+/// </summary>
 public static class CvatClientExtensions
 {
     public static async Task<OrganizationRead> RetrieveOrganization(this ICvatClient cvatClient, int organizationId)

@@ -5,6 +5,9 @@ using SixLabors.ImageSharp.Processing;
 
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Adds randomized noise to augmented image copies while preserving annotation boxes.
+/// </summary>
 public sealed class NoiseImageEffect : ImageEffectBase<NoiseImageEffectProperties>
 {
     private static readonly Binder<NoiseImageEffect> Binder = new();

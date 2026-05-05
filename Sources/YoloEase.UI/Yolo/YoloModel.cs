@@ -5,6 +5,9 @@ using PoeShared.Logging;
 
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Loads a YOLO ONNX model, exposes its metadata, and owns the inference session lifetime.
+/// </summary>
 public sealed class YoloModel : DisposableReactiveObject
 {
     private static readonly IFluentLog Log = typeof(YoloModel).PrepareLogger();

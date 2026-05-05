@@ -1,18 +1,20 @@
 using System.Linq;
 using System.Threading;
-using CvatApi;
 using YoloEase.UI.Core;
 using YoloEase.UI.Dto;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Timeline step that detects project changes before later training operations run.
+/// </summary>
 public class ChangesetTimelineEntry : RunnableTimelineEntry<IReadOnlyList<Changeset>>
 {
     private readonly DatasetInfo lastDatasetInfo;
     private readonly ModelTrainingSettings lastModelTrainingSettings;
     private readonly ModelTrainingSettings actualModelTrainingSettings;
     private readonly AnnotationsAccessor annotationsAccessor;
-    private readonly CvatProjectAccessor projectAccessor;
+    private readonly AnnotationProjectAccessor projectAccessor;
     private readonly SourceListEx<int> newTasksSource = new();
 
     public ChangesetTimelineEntry(
@@ -20,7 +22,7 @@ public class ChangesetTimelineEntry : RunnableTimelineEntry<IReadOnlyList<Change
         ModelTrainingSettings lastModelTrainingSettings,
         ModelTrainingSettings actualModelTrainingSettings,
         AnnotationsAccessor annotationsAccessor, 
-        CvatProjectAccessor projectAccessor)
+        AnnotationProjectAccessor projectAccessor)
     {
         this.lastDatasetInfo = lastDatasetInfo;
         this.lastModelTrainingSettings = lastModelTrainingSettings;
@@ -41,7 +43,7 @@ public class ChangesetTimelineEntry : RunnableTimelineEntry<IReadOnlyList<Change
 
         var trainingChangeset = GetChangeset(lastModelTrainingSettings, actualModelTrainingSettings);
         var projectChangeset = GetChangeset(
-            lastTrainedProject.Tasks, 
+            lastTrainedProject.TaskRevisions.EmptyIfNull(), 
             annotationsAccessor.AnnotatedTasks.Items, 
             projectAccessor.ProjectFiles.Items);
 
@@ -57,7 +59,7 @@ public class ChangesetTimelineEntry : RunnableTimelineEntry<IReadOnlyList<Change
         if (!projectChangeset.IsEmpty)
         {
             changes.Add($"Annotated tasks have changed");
-            newTasksSource.EditDiff(projectChangeset.NewAnnotatedTasks);
+            newTasksSource.EditDiff(projectChangeset.ChangedAnnotatedTasks);
         }
 
         Text = changes.Any() ? string.Join(", ", changes) : "No changes detected";
@@ -81,31 +83,39 @@ public class ChangesetTimelineEntry : RunnableTimelineEntry<IReadOnlyList<Change
     }
     
     private static ProjectChangeset GetChangeset(
-        IEnumerable<int> trainedTasks, 
-        IEnumerable<TaskRead> annotatedTasks, 
+        IEnumerable<TaskRevisionInfo> trainedTasks, 
+        IEnumerable<AnnotationTaskInfo> annotatedTasks, 
         IEnumerable<TaskFileInfo> projectFiles)
     {
-        var annotatedTasksById = annotatedTasks
-            .ToDictionary(x => x.Id, x => x);
+        var annotatedTasksById = annotatedTasks.ToDictionary(x => x.Id, x => x);
         var annotatedFiles = projectFiles
             .Where(x => x.TaskId != null)
-            .Where(x => annotatedTasksById.ContainsKey(x.TaskId.Value))
+            .Where(x => x.TaskId is { } taskId && annotatedTasksById.ContainsKey(taskId))
             .ToArray();
 
+        var trainedTaskRevisions = trainedTasks.ToDictionary(x => x.TaskId, x => x.Revision);
         var remoteSnapshot = new YoloEaseProjectInfo
         {
             Files = annotatedFiles.Select(x => x.FileName).ToArray(),
-            Tasks = annotatedTasksById.Keys.Select(x => x.Value).ToArray()
+            Tasks = annotatedTasksById.Keys.ToArray(),
+            TaskRevisions = annotatedTasksById.Values.Select(x => new TaskRevisionInfo
+            {
+                TaskId = x.Id,
+                Revision = x.Revision,
+            }).ToArray(),
         };
-        var newTasks = remoteSnapshot.Tasks.Except(trainedTasks).ToList();
-        if (newTasks.IsEmpty())
+        var changedTasks = remoteSnapshot.TaskRevisions
+            .Where(x => !trainedTaskRevisions.TryGetValue(x.TaskId, out var revision) || revision != x.Revision)
+            .Select(x => x.TaskId)
+            .ToList();
+        if (changedTasks.IsEmpty())
         {
             return ProjectChangeset.Empty;
         }
 
         return new ProjectChangeset()
         {
-            NewAnnotatedTasks = newTasks
+            ChangedAnnotatedTasks = changedTasks,
         };
     }
 }

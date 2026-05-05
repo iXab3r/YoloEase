@@ -6,6 +6,9 @@ using YoloEase.Cvat.Shared.Services;
 
 namespace YoloEase.UI;
 
+/// <summary>
+/// Tracks the UI state and progress for splitting one video into annotation frames.
+/// </summary>
 public sealed class VideoFileSplitRow : DisposableReactiveObject, IHasError
 {
     private static readonly Binder<VideoFileSplitRow> Binder = new();

@@ -4,6 +4,9 @@ using PropertyChanged;
 
 namespace YoloEase.UI.Augmentations;
 
+/// <summary>
+/// Base class for configurable YOLO pipeline objects that can save and restore settings.
+/// </summary>
 public abstract class YoloObjectBase : DisposableReactiveObjectWithLogger, IYoloObject
 {
     private static readonly Binder<YoloObjectBase> Binder = new();
@@ -62,6 +65,9 @@ public abstract class YoloObjectBase : DisposableReactiveObjectWithLogger, IYolo
     protected abstract IPoeEyeConfigVersioned SaveProperties();
 }
 
+/// <summary>
+/// Typed base class for YOLO pipeline objects backed by a versioned properties record.
+/// </summary>
 public abstract class YoloObjectBase<T> : YoloObjectBase where T : IPoeEyeConfigVersioned, new()
 {
     [DoNotNotify]

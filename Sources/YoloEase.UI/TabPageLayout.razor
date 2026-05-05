@@ -1,0 +1,47 @@
+<div class="@RootClass">
+    @if (TopBar != null)
+    {
+        <div class="ye-tab-topbar">
+            @TopBar
+        </div>
+    }
+
+    <div class="@ContentClass">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public RenderFragment? TopBar { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+
+    [Parameter]
+    public string? BodyClass { get; set; }
+
+    [Parameter]
+    public bool ScrollBody { get; set; } = true;
+
+    private string RootClass => string.Join(
+        " ",
+        new[]
+        {
+            "ye-tab-page",
+            TopBar == null ? null : "has-topbar",
+            Class
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private string ContentClass => string.Join(
+        " ",
+        new[]
+        {
+            "ye-tab-body",
+            ScrollBody ? null : "ye-tab-body-no-scroll",
+            BodyClass
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+}

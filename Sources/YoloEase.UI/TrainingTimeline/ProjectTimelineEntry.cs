@@ -5,6 +5,9 @@ using YoloEase.UI.Core;
 
 namespace YoloEase.UI.TrainingTimeline;
 
+/// <summary>
+/// Timeline step that represents the currently loaded project.
+/// </summary>
 public class ProjectTimelineEntry : RunnableTimelineEntry
 {
     public YoloEaseProject Project { get; }

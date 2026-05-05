@@ -1,0 +1,2855 @@
+@using System.Globalization
+@using System.Threading
+@using AntDesign
+@using Microsoft.JSInterop
+@using PoeShared.Blazor.Scaffolding
+@using PoeShared.Blazor.Wpf
+@using YoloEase.UI.Core
+@using YoloEase.UI.Dto
+@using YoloEase.UI.Scaffolding
+@inherits PoeShared.Blazor.BlazorReactiveComponent<TaskWindowContext>
+
+<div class="task-editor-window"
+     tabindex="0"
+     @ref="editorElement"
+     @onkeydown="HandleKeyDown">
+    <main class="task-editor-main task-editor-golden-layout">
+        <aside class="task-editor-toolbar" aria-label="Annotation tools">
+            <button type="button"
+                    class="@GetToolClass(EditorTool.Select)"
+                    title="Select / pan"
+                    @onclick="() => SelectTool(EditorTool.Select)">
+                <i class="fa fa-mouse-pointer"></i>
+            </button>
+            <button type="button"
+                    class="@GetToolClass(EditorTool.Pan)"
+                    title="Pan"
+                    @onclick="() => SelectTool(EditorTool.Pan)">
+                <i class="fa fa-arrows"></i>
+            </button>
+            @if (HasLabels)
+            {
+                <button type="button"
+                        class="@GetToolClass(EditorTool.Rectangle)"
+                        title="Rectangle (N)"
+                        @onclick="StartRectangleTool">
+                    <span class="task-editor-rectangle-glyph" aria-hidden="true"></span>
+                </button>
+            }
+            <span class="task-editor-tool-separator"></span>
+            <button type="button"
+                    class="task-editor-tool"
+                    title="Cut (Ctrl+X)"
+                    disabled="@(!CanCopySelection)"
+                    @onclick="CutSelection">
+                <i class="fa fa-scissors"></i>
+            </button>
+            <button type="button"
+                    class="task-editor-tool"
+                    title="Copy (Ctrl+C)"
+                    disabled="@(!CanCopySelection)"
+                    @onclick="CopySelection">
+                <i class="fa fa-copy"></i>
+            </button>
+            <button type="button"
+                    class="@GetToolClass(EditorTool.Paste)"
+                    title="Paste (Ctrl+V)"
+                    disabled="@(!CanPasteClipboard)"
+                    @onclick="BeginPaste">
+                <i class="fa fa-clipboard"></i>
+            </button>
+            <span class="task-editor-tool-separator"></span>
+            <button type="button"
+                    class="task-editor-tool"
+                    title="Undo"
+                    disabled="@(!CanUndo)"
+                    @onclick="Undo">
+                <i class="fa fa-undo"></i>
+            </button>
+            <button type="button"
+                    class="task-editor-tool"
+                    title="Redo"
+                    disabled="@(!CanRedo)"
+                    @onclick="Redo">
+                <i class="fa fa-repeat"></i>
+            </button>
+            <button type="button"
+                    class="task-editor-tool"
+                    title="Reset zoom"
+                    @onclick="ResetZoom">
+                <i class="fa fa-compress"></i>
+            </button>
+        </aside>
+
+        <section class="task-editor-canvas" aria-label="Image editor">
+            <nav class="task-editor-frame-nav" aria-label="Frame navigation">
+                <button type="button" class="task-editor-icon-button" title="First frame" @onclick="GoFirst">
+                    <i class="fa fa-fast-backward"></i>
+                </button>
+                <button type="button" class="task-editor-icon-button" title="Step back (C)" @onclick="GoPreviousStep">
+                    <i class="fa fa-step-backward"></i>
+                </button>
+                <button type="button" class="task-editor-icon-button" title="Back (D)" @onclick="GoPrevious">
+                    <i class="fa fa-chevron-left"></i>
+                </button>
+                <span class="task-editor-frame-index">@CurrentFrameLabel</span>
+                <button type="button" class="task-editor-icon-button" title="Next (F)" @onclick="GoNext">
+                    <i class="fa fa-chevron-right"></i>
+                </button>
+                <button type="button" class="task-editor-icon-button" title="Step forward (V)" @onclick="GoNextStep">
+                    <i class="fa fa-step-forward"></i>
+                </button>
+                <button type="button" class="task-editor-icon-button" title="Last frame" @onclick="GoLast">
+                    <i class="fa fa-fast-forward"></i>
+                </button>
+            </nav>
+
+            <div class="task-editor-viewport"
+                 @ref="editorViewport">
+                <div class="task-editor-image-layer" style="@ImageLayerStyle">
+                    @if (!string.IsNullOrWhiteSpace(currentImageDataUrl))
+                    {
+                        <img class="task-editor-image"
+                             src="@currentImageDataUrl"
+                             draggable="false"
+                             alt="@CurrentFileLabel" />
+                    }
+                    else
+                    {
+                        <div class="task-editor-image-placeholder">
+                            <div class="task-editor-placeholder-mark">
+                                <i class="fa fa-image"></i>
+                            </div>
+                            <div class="fw-semibold">Image unavailable</div>
+                            <div class="text-muted small">@CurrentFileLabel</div>
+                        </div>
+                    }
+
+                    @if (ShouldShowCreationGuide)
+                    {
+                        <div class="task-editor-guide task-editor-guide-vertical" style="@GetVerticalGuideStyle()"></div>
+                        <div class="task-editor-guide task-editor-guide-horizontal" style="@GetHorizontalGuideStyle()"></div>
+                        <div class="task-editor-guide-cross" style="@GetGuideCrossStyle()"></div>
+                    }
+
+                    @foreach (var shape in CurrentFrameShapes)
+                    {
+                        var label = GetLabel(shape.LabelId);
+                        <div class="@GetShapeClass(shape)"
+                             style="@GetShapeStyle(shape, label)">
+                            @if (ShouldShowShapeDetails(shape))
+                            {
+                                <span class="task-editor-shape-caption">
+                                    <span>@FormatShapeLabel(label)</span>
+                                    <span>@FormatRect(shape)</span>
+                                </span>
+                            }
+                            @if (ShouldShowShapeHandles(shape))
+                            {
+                                <span class="task-editor-rotate-stem"></span>
+                                <span class="@GetRotateHandleClass(shape)"></span>
+                                @foreach (var handle in ResizeHandles)
+                                {
+                                    <span class="@GetHandleClass(shape, handle)" style="@GetHandleStyle(handle)"></span>
+                                }
+                            }
+                        </div>
+                    }
+
+                    @if (ShouldShowSelectionBounds)
+                    {
+                        <div class="task-editor-selection-bounds" style="@GetSelectionBoundsStyle()">
+                            <span class="task-editor-rotate-stem"></span>
+                            <span class="@GetSelectionRotateHandleClass()"></span>
+                            @foreach (var handle in ResizeHandles)
+                            {
+                                <span class="@GetSelectionHandleClass(handle)" style="@GetHandleStyle(handle)"></span>
+                            }
+                        </div>
+                    }
+
+                    @foreach (var shape in PendingPasteShapes)
+                    {
+                        var label = GetLabel(shape.LabelId);
+                        <div class="@GetPasteShapeClass(shape)"
+                             style="@GetShapeStyle(shape, label)">
+                            <span class="task-editor-shape-caption">
+                                <span>@FormatShapeLabel(label)</span>
+                                <span>@FormatRect(shape)</span>
+                            </span>
+                        </div>
+                    }
+
+                    @if (draftRectangle != null)
+                    {
+                        <div class="task-editor-object-rect is-draft"
+                             style="@GetDraftShapeStyle()">
+                            <span class="task-editor-shape-size">@FormatRect(draftRectangle)</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="@GetHitLayerClass()"
+                     @onmousedown="HandleCanvasMouseDown"
+                     @onmousemove="HandleCanvasMouseMove"
+                     @onmouseup="HandleCanvasMouseUp"
+                     @onmouseleave="HandleCanvasMouseLeave"
+                     @onwheel="HandleCanvasWheel"
+                     @onwheel:preventDefault="true"
+                     @oncontextmenu:preventDefault="true"></div>
+            </div>
+
+            <div class="task-editor-view-hud">
+                <span>@($"{ZoomPercent}%")</span>
+                <span>@($"x {viewOffsetX:F0}")</span>
+                <span>@($"y {viewOffsetY:F0}")</span>
+            </div>
+        </section>
+
+        <aside class="task-editor-inspector">
+            <section class="task-editor-gl-pane task-editor-shapes-pane">
+                <header class="task-editor-gl-header">
+                    <span>Shapes</span>
+                    <span class="task-editor-gl-count">@CurrentFrameShapes.Count</span>
+                </header>
+                <div class="task-editor-gl-body">
+                    @if (CurrentFrameShapes.Count <= 0)
+                    {
+                        <div class="task-editor-empty">No objects on this frame.</div>
+                    }
+                    else
+                    {
+                        <div class="task-editor-object-list">
+                            @foreach (var shape in CurrentFrameShapes)
+                            {
+                                var label = GetLabel(shape.LabelId);
+                                <button type="button"
+                                        class="@GetObjectListItemClass(shape)"
+                                        @onclick="args => SelectShapeFromList(shape.Id, args)"
+                                        @onmouseenter="() => SetHoveredShape(shape.Id)"
+                                        @onmouseleave="() => ClearHoveredShape(shape.Id)">
+                                    <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
+                                    <span class="text-truncate">@label.Name</span>
+                                    <span class="task-editor-object-meta">@FormatRect(shape)</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="task-editor-gl-pane task-editor-label-section">
+                <header class="task-editor-gl-header">
+                    <span>Labels</span>
+                    <span class="task-editor-shortcuts">Ctrl+N · Ctrl+1..9</span>
+                </header>
+                <div class="task-editor-gl-body">
+                    @if (!HasLabels)
+                    {
+                        <div class="task-editor-empty">No labels configured.</div>
+                    }
+                    else
+                    {
+                        <div class="task-editor-label-list">
+                            @foreach (var labelInfo in OrderedLabels.Select((Label, Index) => new { Label, Index }))
+                            {
+                                var label = labelInfo.Label;
+                                <button type="button"
+                                        class="@GetLabelPillClass(label)"
+                                        @onclick="() => SelectLabel(label.Id)">
+                                    <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
+                                    <span class="text-truncate">@label.Name</span>
+                                    <span class="task-editor-label-shortcut">@GetLabelShortcutText(labelInfo.Index)</span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        </aside>
+    </main>
+
+    <footer class="task-editor-bottombar">
+        <div class="task-editor-job-state">
+            <span class="@GetStatusClass(TaskInfo.Status)">@FormatStatus(TaskInfo.Status)</span>
+            <span class="task-editor-bottom-meta">@($"{editorShapes.Count} objects")</span>
+            @if (isDirty)
+            {
+                <span class="task-editor-bottom-meta">Unsaved changes</span>
+            }
+            @if (isAutoSaving)
+            {
+                <span class="task-editor-bottom-meta">Saving...</span>
+            }
+            else if (lastSavedAt != null)
+            {
+                <span class="task-editor-bottom-meta">@($"Saved {lastSavedAt.Value.LocalDateTime:T}")</span>
+            }
+        </div>
+
+        <div class="task-editor-bottom-telemetry" aria-label="Editor position">
+            <span>@ImageSizeStatus</span>
+            <span>@CursorPositionStatus</span>
+            <span>@SelectionPositionStatus</span>
+        </div>
+
+        <div class="task-editor-bottom-actions">
+            @if (CanRemoveCurrentFrame)
+            {
+                <div class="btn-group btn-group-sm ye-two-step-group ye-two-step-group--wide">
+                    @if (pendingRemoveFrameIndex == EffectiveFrameIndex)
+                    {
+                        <ReactiveButton Class="btn btn-danger btn-sm ye-two-step-confirm"
+                                        Command="@(async () => await RemoveCurrentFrame())">
+                            <i class="fa fa-trash"></i>
+                            Remove image
+                        </ReactiveButton>
+                        <button type="button" class="btn btn-outline-secondary btn-sm ye-two-step-cancel" @onclick="CancelRemoveCurrentFrame">
+                            Cancel
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-outline-danger btn-sm ye-two-step-primary" @onclick="BeginRemoveCurrentFrame">
+                            <i class="fa fa-trash"></i>
+                            Remove image
+                        </button>
+                    }
+                </div>
+            }
+            <ReactiveButton Class="btn btn-primary btn-sm"
+                            Command="@(async () => await FinishJob())">
+                <i class="fa fa-check"></i>
+                Finish Job
+            </ReactiveButton>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CloseWindow">
+                Close
+            </button>
+        </div>
+    </footer>
+</div>
+
+@code {
+    private const int FrameStep = 10;
+    private const double ViewPadding = 32;
+    private const double MinZoom = 0.05;
+    private const double MaxZoom = 24;
+    private const double WheelZoomFactor = 1.12;
+    private const double MinShapeSize = 4;
+    private const double HitTolerancePixels = 8;
+    private const double RotateHandleOffset = 28;
+    private const double RotationSnapDegrees = 15;
+    private const string JsModulePath = "./assets/js/taskAnnotationEditor.js";
+    private static readonly TimeSpan AutoSaveInterval = TimeSpan.FromSeconds(5);
+
+    private static readonly EditorHandle[] ResizeHandles =
+    {
+        EditorHandle.NorthWest,
+        EditorHandle.North,
+        EditorHandle.NorthEast,
+        EditorHandle.East,
+        EditorHandle.SouthEast,
+        EditorHandle.South,
+        EditorHandle.SouthWest,
+        EditorHandle.West,
+    };
+
+    private ElementReference editorElement;
+    private ElementReference editorViewport;
+    private DotNetObjectReference<TaskAnnotationWindow>? dotNetRef;
+    private IJSObjectReference? jsModule;
+    private IJSObjectReference? resizeObserver;
+
+    private readonly List<EditorShape[]> history = new();
+    private readonly Dictionary<string, string> imageDataUrlCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> selectedShapeIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<EditorShape> clipboardShapes = new();
+    private readonly SemaphoreSlim saveLock = new(1, 1);
+
+    private IReadOnlyList<AnnotationFrameInfo> frames = Array.Empty<AnnotationFrameInfo>();
+    private List<EditorShape> editorShapes = new();
+    private EditorRect? draftRectangle;
+    private DragState? dragState;
+    private EditorPoint? rectangleAnchor;
+    private EditorPoint? cursorImagePoint;
+    private string? currentImageDataUrl;
+    private int currentFrameIndex;
+    private int activeLabelId;
+    private int historyIndex = -1;
+    private int imageWidth = 1280;
+    private int imageHeight = 720;
+    private double viewportWidth;
+    private double viewportHeight;
+    private double viewScale = 1;
+    private double viewOffsetX;
+    private double viewOffsetY;
+    private bool hasUserViewTransform;
+    private bool isDirty;
+    private bool isAutoSaving;
+    private EditorTool activeTool = EditorTool.Select;
+    private string? hoveredShapeId;
+    private string? flashingShapeId;
+    private EditorPoint? pendingPasteCursor;
+    private EditorHandle hoveredHandle = EditorHandle.None;
+    private int selectionFlashVersion;
+    private int editorRevision;
+    private int pendingRemoveFrameIndex = -1;
+    private DateTimeOffset? lastSavedAt;
+    private CancellationTokenSource? autoSaveCancellationTokenSource;
+
+    [Inject]
+    protected INotificationService NotificationService { get; init; } = default!;
+
+    [Inject]
+    protected IBlazorWindowAccessor BlazorWindowAccessor { get; init; } = default!;
+
+    [Inject]
+    protected IJSRuntime JavaScriptRuntime { get; init; } = default!;
+
+    private YoloEaseProject Project => DataContext.Project;
+
+    private AnnotationTaskInfo TaskInfo => Project.RemoteProject.Tasks.Items.FirstOrDefault(x => x.Id == DataContext.Task.Id) ?? DataContext.Task;
+
+    private int FrameCount => frames.Count;
+
+    private int EffectiveFrameIndex => FrameCount <= 0 ? 0 : Math.Clamp(currentFrameIndex, 0, FrameCount - 1);
+
+    private AnnotationFrameInfo? CurrentFrame => FrameCount <= 0 ? null : frames[EffectiveFrameIndex];
+
+    private string CurrentFrameLabel => FrameCount <= 0 ? "0 / 0" : $"{EffectiveFrameIndex + 1} / {FrameCount}";
+
+    private string CurrentFileLabel => string.IsNullOrWhiteSpace(CurrentFrame?.Name) ? "No file selected" : CurrentFrame.Name;
+
+    private int ZoomPercent => (int)Math.Round(viewScale * 100);
+
+    private bool CanUndo => historyIndex > 0;
+
+    private bool CanRedo => historyIndex >= 0 && historyIndex < history.Count - 1;
+
+    private bool CanCopySelection => EffectiveShapes.Any();
+
+    private bool CanPasteClipboard => clipboardShapes.Count > 0;
+
+    private bool CanRemoveCurrentFrame => Project.RemoteProject.Mode == AnnotationBackendMode.Offline && FrameCount > 0 && CurrentFrame != null;
+
+    private IReadOnlyList<AnnotationLabelInfo> OrderedLabels => Project.RemoteProject.Labels.Items
+        .OrderBy(x => x.Name)
+        .ToArray();
+
+    private bool HasLabels => OrderedLabels.Count > 0;
+
+    private bool ShouldShowCreationGuide => activeTool == EditorTool.Rectangle && cursorImagePoint != null && HasLabels;
+
+    private bool IsPasting => activeTool == EditorTool.Paste && pendingPasteCursor != null && clipboardShapes.Count > 0;
+
+    private IReadOnlyList<EditorShape> CurrentFrameShapes => editorShapes
+        .Where(x => x.FrameIndex == EffectiveFrameIndex)
+        .OrderBy(x => x.Id)
+        .ToArray();
+
+    private IReadOnlyList<EditorShape> SelectedCurrentFrameShapes => CurrentFrameShapes
+        .Where(x => selectedShapeIds.Contains(x.Id))
+        .ToArray();
+
+    private IReadOnlyList<EditorShape> EffectiveShapes
+    {
+        get
+        {
+            var selected = SelectedCurrentFrameShapes.ToList();
+            if (!string.IsNullOrWhiteSpace(hoveredShapeId) &&
+                selected.All(x => x.Id != hoveredShapeId) &&
+                editorShapes.FirstOrDefault(x => x.Id == hoveredShapeId && x.FrameIndex == EffectiveFrameIndex) is { } hovered)
+            {
+                selected.Add(hovered);
+            }
+
+            return selected;
+        }
+    }
+
+    private EditorShape? EffectiveShape => EffectiveShapes.FirstOrDefault();
+
+    private SelectionBounds? SelectedSelectionBounds => SelectionBounds.FromShapes(SelectedCurrentFrameShapes);
+
+    private SelectionBounds? EffectiveSelectionBounds => SelectionBounds.FromShapes(EffectiveShapes);
+
+    private bool ShouldShowSelectionBounds => SelectedCurrentFrameShapes.Count > 1 && SelectedSelectionBounds != null;
+
+    private IReadOnlyList<EditorShape> PendingPasteShapes => IsPasting && pendingPasteCursor != null
+        ? CreatePasteShapes(pendingPasteCursor, assignNewIds: false).ToArray()
+        : Array.Empty<EditorShape>();
+
+    private string ImageSizeStatus => $"Image {imageWidth}x{imageHeight}";
+
+    private string CursorPositionStatus => cursorImagePoint == null
+        ? "Cursor -"
+        : $"Cursor x {cursorImagePoint.X:F0}, y {cursorImagePoint.Y:F0}";
+
+    private string SelectionPositionStatus => EffectiveShape is { } shape
+        ? EffectiveShapes.Count <= 1
+            ? $"Selection x {shape.X:F1}, y {shape.Y:F1}, {FormatRect(shape)}"
+            : EffectiveSelectionBounds is { } bounds
+                ? $"Selection {EffectiveShapes.Count} objects, x {bounds.X:F1}, y {bounds.Y:F1}, {bounds.Width:F1}x{bounds.Height:F1}px"
+                : "Selection -"
+        : "Selection -";
+
+    private string ImageLayerStyle => string.Format(
+        CultureInfo.InvariantCulture,
+        "width:{0}px;height:{1}px;transform:translate({2}px,{3}px) scale({4});",
+        imageWidth,
+        imageHeight,
+        viewOffsetX,
+        viewOffsetY,
+        viewScale);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await editorElement.FocusAsync();
+        await InitializeResizeObserver();
+        await LoadEditorData();
+        StartAutoSaveLoop();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        autoSaveCancellationTokenSource?.Cancel();
+        autoSaveCancellationTokenSource?.Dispose();
+        autoSaveCancellationTokenSource = null;
+
+        if (resizeObserver != null)
+        {
+            await resizeObserver.InvokeVoidAsync("dispose");
+            await resizeObserver.DisposeAsync();
+        }
+
+        if (jsModule != null)
+        {
+            await jsModule.DisposeAsync();
+        }
+
+        dotNetRef?.Dispose();
+        saveLock.Dispose();
+        await base.DisposeAsync();
+    }
+
+    [JSInvokable]
+    public async Task OnTaskEditorViewportResized(double width, double height)
+    {
+        viewportWidth = Math.Max(1, width);
+        viewportHeight = Math.Max(1, height);
+
+        if (!hasUserViewTransform)
+        {
+            FitImageToView();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task InitializeResizeObserver()
+    {
+        dotNetRef = DotNetObjectReference.Create(this);
+        jsModule = await JavaScriptRuntime.InvokeAsync<IJSObjectReference>("import", JsModulePath);
+        resizeObserver = await jsModule.InvokeAsync<IJSObjectReference>("observeSize", editorViewport, dotNetRef);
+    }
+
+    private async Task LoadEditorData()
+    {
+        try
+        {
+            var metadata = await Project.RemoteProject.RetrieveMetadata(TaskInfo.Id);
+            frames = metadata.Frames.EmptyIfNull().ToArray();
+            editorShapes = (await Project.RemoteProject.RetrieveTaskAnnotations(TaskInfo.Id))
+                .Select(EditorShape.FromAnnotation)
+                .ToList();
+
+            EnsureActiveLabel();
+            history.Clear();
+            historyIndex = -1;
+            selectedShapeIds.Clear();
+            hoveredShapeId = null;
+            isDirty = false;
+            PushHistorySnapshot(markDirty: false);
+            await LoadCurrentFrameImage(resetView: true);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void StartAutoSaveLoop()
+    {
+        autoSaveCancellationTokenSource?.Cancel();
+        autoSaveCancellationTokenSource?.Dispose();
+        autoSaveCancellationTokenSource = new CancellationTokenSource();
+        AutoSaveLoop(autoSaveCancellationTokenSource.Token).AndForget();
+    }
+
+    private async Task AutoSaveLoop(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(AutoSaveInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await AutoSaveIfNeeded(force: false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private async Task AutoSaveIfNeeded(bool force)
+    {
+        if (Project.RemoteProject.Mode != AnnotationBackendMode.Offline)
+        {
+            return;
+        }
+
+        if (!force && (!isDirty || dragState != null || activeTool is EditorTool.Rectangle or EditorTool.Paste))
+        {
+            return;
+        }
+
+        if (!isDirty && !force)
+        {
+            return;
+        }
+
+        await PersistEditorAnnotations(GetAutoSaveStatus(), clearDirty: true);
+    }
+
+    private AnnotationTaskStatus GetAutoSaveStatus()
+    {
+        return TaskInfo.Status == AnnotationTaskStatus.Completed ? AnnotationTaskStatus.Completed : AnnotationTaskStatus.InProgress;
+    }
+
+    private async Task PersistEditorAnnotations(AnnotationTaskStatus status, bool clearDirty)
+    {
+        var revisionAtSaveStart = editorRevision;
+        await saveLock.WaitAsync();
+        try
+        {
+            isAutoSaving = true;
+            await InvokeAsync(StateHasChanged);
+
+            var annotations = editorShapes.Select(x => x.ToAnnotation()).ToArray();
+            await Project.RemoteProject.SaveTaskAnnotations(TaskInfo.Id, annotations, status);
+            lastSavedAt = DateTimeOffset.Now;
+
+            if (clearDirty && editorRevision == revisionAtSaveStart)
+            {
+                isDirty = false;
+            }
+        }
+        finally
+        {
+            isAutoSaving = false;
+            saveLock.Release();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadCurrentFrameImage(bool resetView)
+    {
+        var frame = CurrentFrame;
+        currentImageDataUrl = null;
+        selectedShapeIds.Clear();
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+        draftRectangle = null;
+        rectangleAnchor = null;
+        cursorImagePoint = null;
+        dragState = null;
+        pendingPasteCursor = null;
+
+        imageWidth = frame?.Width > 0 ? frame.Width : 1280;
+        imageHeight = frame?.Height > 0 ? frame.Height : 720;
+
+        var imageFile = ResolveCurrentImageFile();
+        if (imageFile?.Exists == true)
+        {
+            try
+            {
+                var imageSize = ImageUtils.GetImageSize(imageFile);
+                imageWidth = imageSize.Width;
+                imageHeight = imageSize.Height;
+                currentImageDataUrl = await GetImageDataUrl(imageFile);
+            }
+            catch (Exception e)
+            {
+                ShowError($"Failed to load image {imageFile.Name}: {e.Message}");
+            }
+        }
+
+        if (resetView)
+        {
+            ResetZoom();
+        }
+    }
+
+    private FileInfo? ResolveCurrentImageFile()
+    {
+        var frameName = CurrentFrame?.Name;
+        if (string.IsNullOrWhiteSpace(frameName))
+        {
+            return null;
+        }
+
+        var offlineFile = Project.RemoteProject.ResolveTaskFrameFile(frameName);
+        if (offlineFile?.Exists == true)
+        {
+            return offlineFile;
+        }
+
+        var fileName = Path.GetFileName(frameName);
+        return Project.Assets.Files.Items.FirstOrDefault(x =>
+            x.Name.Equals(frameName, StringComparison.OrdinalIgnoreCase) ||
+            x.Name.Equals(fileName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<string> GetImageDataUrl(FileInfo imageFile)
+    {
+        if (imageDataUrlCache.TryGetValue(imageFile.FullName, out var cached))
+        {
+            return cached;
+        }
+
+        var imageBytes = await File.ReadAllBytesAsync(imageFile.FullName);
+        var mimeType = imageFile.Extension.ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".bmp" => "image/bmp",
+            ".gif" => "image/gif",
+            _ => "image/png",
+        };
+        var dataUrl = $"data:{mimeType};base64,{Convert.ToBase64String(imageBytes)}";
+        imageDataUrlCache[imageFile.FullName] = dataUrl;
+        return dataUrl;
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            CancelActiveOperation(clearSelection: true);
+            return;
+        }
+
+        if (args.CtrlKey || args.MetaKey)
+        {
+            var key = args.Key?.ToUpperInvariant();
+            if (key == "A")
+            {
+                SelectAllCurrentFrameShapes();
+                return;
+            }
+
+            if (key == "X")
+            {
+                CutSelection();
+                return;
+            }
+
+            if (key == "C")
+            {
+                CopySelection();
+                return;
+            }
+
+            if (key == "V")
+            {
+                BeginPaste();
+                return;
+            }
+
+            if (key == "N")
+            {
+                CycleEffectiveShapeLabel();
+                return;
+            }
+
+            if (TrySelectLabelByShortcut(key))
+            {
+                return;
+            }
+
+            if (key == "Z" && !args.ShiftKey)
+            {
+                Undo();
+                return;
+            }
+
+            if (key == "Y" || (key == "Z" && args.ShiftKey))
+            {
+                Redo();
+                return;
+            }
+
+            return;
+        }
+
+        if (args.Key is "Delete" or "Backspace")
+        {
+            DeleteEffectiveShape();
+            return;
+        }
+
+        if (args.AltKey)
+        {
+            return;
+        }
+
+        switch (args.Key?.ToUpperInvariant())
+        {
+            case "N":
+                StartRectangleTool();
+                break;
+            case "D":
+                GoPrevious();
+                break;
+            case "F":
+                GoNext();
+                break;
+            case "C":
+                GoPreviousStep();
+                break;
+            case "V":
+                GoNextStep();
+                break;
+        }
+    }
+
+    private void HandleCanvasMouseDown(MouseEventArgs args)
+    {
+        editorElement.FocusAsync().AndForget();
+
+        var screenPoint = new EditorPoint(args.OffsetX, args.OffsetY);
+        var imagePoint = ScreenToImage(screenPoint);
+        cursorImagePoint = ClampToImage(imagePoint);
+        dragState = null;
+
+        if (IsPasting && args.Button == 0)
+        {
+            CommitPaste(cursorImagePoint);
+            return;
+        }
+
+        if (activeTool == EditorTool.Rectangle && args.Button == 0)
+        {
+            HandleRectangleClick(imagePoint);
+            return;
+        }
+
+        if (activeTool == EditorTool.Pan || args.Button == 1)
+        {
+            dragState = DragState.ForPan(screenPoint, viewOffsetX, viewOffsetY);
+            hoveredHandle = EditorHandle.None;
+            return;
+        }
+
+        if (args.Button != 0)
+        {
+            return;
+        }
+
+        var hit = HitTest(imagePoint, includeHandles: true);
+        hoveredHandle = hit.Handle;
+        hoveredShapeId = hit.Shape?.Id;
+
+        if (args.CtrlKey && hit.Shape != null)
+        {
+            ToggleShapeSelection(hit.Shape.Id);
+            activeTool = EditorTool.Select;
+            return;
+        }
+
+        if (hit.IsGroup && hit.Handle != EditorHandle.None)
+        {
+            activeTool = EditorTool.Select;
+            dragState = hit.Handle == EditorHandle.Rotate
+                ? DragState.ForRotate(screenPoint, imagePoint, SelectedCurrentFrameShapes, SelectedSelectionBounds)
+                : DragState.ForResize(screenPoint, imagePoint, SelectedCurrentFrameShapes, hit.Handle, SelectedSelectionBounds);
+            return;
+        }
+
+        if (hit.Shape != null)
+        {
+            if (!selectedShapeIds.Contains(hit.Shape.Id))
+            {
+                SelectOnlyShape(hit.Shape.Id);
+                FlashShapeSelection(hit.Shape.Id).AndForget();
+            }
+
+            activeTool = EditorTool.Select;
+            var dragShapes = SelectedCurrentFrameShapes.Any(x => x.Id == hit.Shape.Id)
+                ? SelectedCurrentFrameShapes
+                : new[] { hit.Shape };
+            dragState = hit.Handle switch
+            {
+                EditorHandle.Rotate => DragState.ForRotate(screenPoint, imagePoint, dragShapes, SelectionBounds.FromShapes(dragShapes)),
+                EditorHandle.None => DragState.ForShapeMove(screenPoint, imagePoint, dragShapes, SelectionBounds.FromShapes(dragShapes)),
+                _ => DragState.ForResize(screenPoint, imagePoint, dragShapes, hit.Handle, SelectionBounds.FromShapes(dragShapes)),
+            };
+            return;
+        }
+
+        selectedShapeIds.Clear();
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+        dragState = DragState.ForPan(screenPoint, viewOffsetX, viewOffsetY);
+    }
+
+    private void HandleCanvasMouseMove(MouseEventArgs args)
+    {
+        var screenPoint = new EditorPoint(args.OffsetX, args.OffsetY);
+        var imagePoint = ScreenToImage(screenPoint);
+        cursorImagePoint = ClampToImage(imagePoint);
+
+        if (IsPasting)
+        {
+            pendingPasteCursor = cursorImagePoint;
+        }
+
+        if (activeTool == EditorTool.Rectangle && rectangleAnchor != null)
+        {
+            draftRectangle = EditorRect.FromPoints(rectangleAnchor, cursorImagePoint).Clamp(imageWidth, imageHeight);
+        }
+
+        if (dragState == null)
+        {
+            UpdateHover(imagePoint);
+            return;
+        }
+
+        switch (dragState.Mode)
+        {
+            case DragMode.Pan:
+                viewOffsetX = dragState.StartOffsetX + screenPoint.X - dragState.StartScreenPoint.X;
+                viewOffsetY = dragState.StartOffsetY + screenPoint.Y - dragState.StartScreenPoint.Y;
+                hasUserViewTransform = true;
+                dragState.Moved = true;
+                break;
+            case DragMode.MoveShape:
+                MoveDraggedShapes(imagePoint);
+                break;
+            case DragMode.ResizeShape:
+                ResizeDraggedShapes(imagePoint, args.ShiftKey);
+                break;
+            case DragMode.RotateShape:
+                RotateDraggedShapes(imagePoint, args.ShiftKey);
+                break;
+        }
+    }
+
+    private void HandleCanvasMouseUp(MouseEventArgs args)
+    {
+        if (dragState == null)
+        {
+            return;
+        }
+
+        if (dragState.Mode is DragMode.MoveShape or DragMode.ResizeShape or DragMode.RotateShape)
+        {
+            var changedShapes = dragState.StartShapes
+                .Select(x => editorShapes.FirstOrDefault(shape => shape.Id == x.Key) is { } shape && !shape.HasSameGeometry(x.Value) ? shape : null)
+                .Where(x => x != null)
+                .Cast<EditorShape>()
+                .ToArray();
+            if (changedShapes.Length > 0)
+            {
+                foreach (var shape in changedShapes)
+                {
+                    shape.Source = "manual";
+                }
+
+                PushHistorySnapshot(markDirty: true);
+            }
+        }
+
+        dragState = null;
+    }
+
+    private void HandleCanvasMouseLeave(MouseEventArgs args)
+    {
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+
+        if (dragState?.Mode == DragMode.Pan)
+        {
+            dragState = null;
+        }
+    }
+
+    private void HandleCanvasWheel(WheelEventArgs args)
+    {
+        var screenPoint = new EditorPoint(args.OffsetX, args.OffsetY);
+        var imagePoint = ScreenToImage(screenPoint);
+        var nextScale = args.DeltaY < 0 ? viewScale * WheelZoomFactor : viewScale / WheelZoomFactor;
+        nextScale = Clamp(nextScale, MinZoom, MaxZoom);
+
+        viewOffsetX = screenPoint.X - imagePoint.X * nextScale;
+        viewOffsetY = screenPoint.Y - imagePoint.Y * nextScale;
+        viewScale = nextScale;
+        hasUserViewTransform = true;
+    }
+
+    private void HandleRectangleClick(EditorPoint imagePoint)
+    {
+        if (!HasLabels)
+        {
+            SelectTool(EditorTool.Select);
+            return;
+        }
+
+        if (!IsInsideImage(imagePoint))
+        {
+            return;
+        }
+
+        var point = ClampToImage(imagePoint);
+        cursorImagePoint = point;
+
+        if (rectangleAnchor == null)
+        {
+            EnsureActiveLabel();
+            rectangleAnchor = point;
+            draftRectangle = EditorRect.FromPoints(point, point).Clamp(imageWidth, imageHeight);
+            selectedShapeIds.Clear();
+            return;
+        }
+
+        var rectangle = EditorRect.FromPoints(rectangleAnchor, point).Clamp(imageWidth, imageHeight);
+        if (rectangle.Width < MinShapeSize || rectangle.Height < MinShapeSize)
+        {
+            draftRectangle = rectangle;
+            return;
+        }
+
+        var shape = new EditorShape
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Kind = CvatAnnotationShapeKind.Rectangle,
+            FrameIndex = EffectiveFrameIndex,
+            LabelId = activeLabelId,
+            X = rectangle.X,
+            Y = rectangle.Y,
+            Width = rectangle.Width,
+            Height = rectangle.Height,
+            RotationDegrees = 0,
+            Source = "manual",
+        };
+
+        editorShapes.Add(shape);
+        SelectOnlyShape(shape.Id);
+        hoveredShapeId = shape.Id;
+        rectangleAnchor = null;
+        draftRectangle = null;
+        activeTool = EditorTool.Select;
+        PushHistorySnapshot(markDirty: true);
+    }
+
+    private void MoveDraggedShapes(EditorPoint imagePoint)
+    {
+        if (dragState == null || dragState.StartShapes.Count <= 0)
+        {
+            return;
+        }
+
+        var deltaX = imagePoint.X - dragState.StartImagePoint.X;
+        var deltaY = imagePoint.Y - dragState.StartImagePoint.Y;
+
+        if (dragState.StartBounds is { } bounds)
+        {
+            deltaX = Clamp(deltaX, -bounds.X, imageWidth - bounds.Right);
+            deltaY = Clamp(deltaY, -bounds.Y, imageHeight - bounds.Bottom);
+        }
+
+        foreach (var startShape in dragState.StartShapes.Values)
+        {
+            var shape = editorShapes.FirstOrDefault(x => x.Id == startShape.Id);
+            if (shape == null)
+            {
+                continue;
+            }
+
+            shape.X = Clamp(startShape.X + deltaX, 0, Math.Max(0, imageWidth - shape.Width));
+            shape.Y = Clamp(startShape.Y + deltaY, 0, Math.Max(0, imageHeight - shape.Height));
+        }
+    }
+
+    private void ResizeDraggedShapes(EditorPoint imagePoint, bool preserveAspectRatio)
+    {
+        if (dragState == null || dragState.StartShapes.Count <= 0)
+        {
+            return;
+        }
+
+        if (dragState.StartShapes.Count == 1)
+        {
+            var startShape = dragState.StartShapes.Values.First();
+            var shape = editorShapes.FirstOrDefault(x => x.Id == startShape.Id);
+            if (shape == null)
+            {
+                return;
+            }
+
+            var resized = startShape.ResizeFromHandle(dragState.Handle, imagePoint, MinShapeSize, preserveAspectRatio);
+            resized.ClampUnrotatedBounds(imageWidth, imageHeight);
+            shape.CopyGeometryFrom(resized);
+            return;
+        }
+
+        if (dragState.StartBounds == null)
+        {
+            return;
+        }
+
+        var nextBounds = dragState.StartBounds
+            .ResizeFromHandle(dragState.Handle, imagePoint, MinShapeSize, preserveAspectRatio)
+            .Clamp(imageWidth, imageHeight, MinShapeSize);
+        var scaleX = nextBounds.Width / Math.Max(MinShapeSize, dragState.StartBounds.Width);
+        var scaleY = nextBounds.Height / Math.Max(MinShapeSize, dragState.StartBounds.Height);
+
+        foreach (var startShape in dragState.StartShapes.Values)
+        {
+            var shape = editorShapes.FirstOrDefault(x => x.Id == startShape.Id);
+            if (shape == null)
+            {
+                continue;
+            }
+
+            var startCenter = startShape.Center;
+            var relativeX = (startCenter.X - dragState.StartBounds.X) / Math.Max(MinShapeSize, dragState.StartBounds.Width);
+            var relativeY = (startCenter.Y - dragState.StartBounds.Y) / Math.Max(MinShapeSize, dragState.StartBounds.Height);
+            var nextWidth = Math.Max(MinShapeSize, startShape.Width * scaleX);
+            var nextHeight = Math.Max(MinShapeSize, startShape.Height * scaleY);
+            var nextCenter = new EditorPoint(
+                nextBounds.X + relativeX * nextBounds.Width,
+                nextBounds.Y + relativeY * nextBounds.Height);
+
+            shape.X = Clamp(nextCenter.X - nextWidth / 2.0, 0, Math.Max(0, imageWidth - nextWidth));
+            shape.Y = Clamp(nextCenter.Y - nextHeight / 2.0, 0, Math.Max(0, imageHeight - nextHeight));
+            shape.Width = Clamp(nextWidth, MinShapeSize, imageWidth);
+            shape.Height = Clamp(nextHeight, MinShapeSize, imageHeight);
+            shape.RotationDegrees = startShape.RotationDegrees;
+        }
+    }
+
+    private void RotateDraggedShapes(EditorPoint imagePoint, bool snapToGrid)
+    {
+        if (dragState == null || dragState.StartShapes.Count <= 0)
+        {
+            return;
+        }
+
+        if (dragState.StartShapes.Count == 1)
+        {
+            var startShape = dragState.StartShapes.Values.First();
+            var shape = editorShapes.FirstOrDefault(x => x.Id == startShape.Id);
+            if (shape == null)
+            {
+                return;
+            }
+
+            var center = startShape.Center;
+            var rotation = NormalizeRotation(RadiansToDegrees(Math.Atan2(imagePoint.Y - center.Y, imagePoint.X - center.X)) + 90);
+            shape.RotationDegrees = snapToGrid
+                ? NormalizeRotation(Math.Round(rotation / RotationSnapDegrees) * RotationSnapDegrees)
+                : rotation;
+            return;
+        }
+
+        if (dragState.StartBounds == null)
+        {
+            return;
+        }
+
+        var centerPoint = dragState.StartBounds.Center;
+        var startAngle = RadiansToDegrees(Math.Atan2(dragState.StartImagePoint.Y - centerPoint.Y, dragState.StartImagePoint.X - centerPoint.X));
+        var nextAngle = RadiansToDegrees(Math.Atan2(imagePoint.Y - centerPoint.Y, imagePoint.X - centerPoint.X));
+        var delta = NormalizeSignedRotation(nextAngle - startAngle);
+        if (snapToGrid)
+        {
+            delta = Math.Round(delta / RotationSnapDegrees) * RotationSnapDegrees;
+        }
+
+        foreach (var startShape in dragState.StartShapes.Values)
+        {
+            var shape = editorShapes.FirstOrDefault(x => x.Id == startShape.Id);
+            if (shape == null)
+            {
+                continue;
+            }
+
+            var nextCenter = RotatePoint(startShape.Center, centerPoint, delta);
+            shape.X = Clamp(nextCenter.X - startShape.Width / 2.0, 0, Math.Max(0, imageWidth - startShape.Width));
+            shape.Y = Clamp(nextCenter.Y - startShape.Height / 2.0, 0, Math.Max(0, imageHeight - startShape.Height));
+            shape.Width = startShape.Width;
+            shape.Height = startShape.Height;
+            shape.RotationDegrees = NormalizeRotation(startShape.RotationDegrees + delta);
+        }
+    }
+
+    private void GoFirst()
+    {
+        SetFrameIndex(0).AndForget();
+    }
+
+    private void GoPreviousStep()
+    {
+        MoveFrame(-FrameStep).AndForget();
+    }
+
+    private void GoPrevious()
+    {
+        MoveFrame(-1).AndForget();
+    }
+
+    private void GoNext()
+    {
+        MoveFrame(1).AndForget();
+    }
+
+    private void GoNextStep()
+    {
+        MoveFrame(FrameStep).AndForget();
+    }
+
+    private void GoLast()
+    {
+        SetFrameIndex(FrameCount - 1).AndForget();
+    }
+
+    private async Task MoveFrame(int delta)
+    {
+        await SetFrameIndex(EffectiveFrameIndex + delta);
+    }
+
+    private async Task SetFrameIndex(int frameIndex)
+    {
+        currentFrameIndex = FrameCount <= 0 ? 0 : Math.Clamp(frameIndex, 0, FrameCount - 1);
+        await LoadCurrentFrameImage(resetView: true);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectTool(EditorTool tool)
+    {
+        if (tool == EditorTool.Rectangle && !HasLabels)
+        {
+            tool = EditorTool.Select;
+        }
+
+        activeTool = tool;
+        draftRectangle = null;
+        rectangleAnchor = null;
+        dragState = null;
+        pendingPasteCursor = null;
+    }
+
+    private void StartRectangleTool()
+    {
+        if (!HasLabels)
+        {
+            return;
+        }
+
+        EnsureActiveLabel();
+        SelectTool(EditorTool.Rectangle);
+        selectedShapeIds.Clear();
+    }
+
+    private void SelectLabel(int labelId)
+    {
+        if (!Project.RemoteProject.Labels.Items.Any(x => x.Id == labelId))
+        {
+            return;
+        }
+
+        activeLabelId = labelId;
+
+        var shapes = EffectiveShapes.Where(x => x.LabelId != labelId).ToArray();
+        if (shapes.Length <= 0)
+        {
+            return;
+        }
+
+        foreach (var shape in shapes)
+        {
+            shape.LabelId = labelId;
+            shape.Source = "manual";
+        }
+
+        PushHistorySnapshot(markDirty: true);
+    }
+
+    private void SelectShapeFromList(string shapeId, MouseEventArgs args)
+    {
+        if (args.CtrlKey || args.MetaKey)
+        {
+            ToggleShapeSelection(shapeId);
+            return;
+        }
+
+        SelectShape(shapeId);
+    }
+
+    private void SelectShape(string shapeId)
+    {
+        SelectOnlyShape(shapeId);
+        hoveredShapeId = shapeId;
+        activeTool = EditorTool.Select;
+        FlashShapeSelection(shapeId).AndForget();
+
+        var shape = editorShapes.FirstOrDefault(x => x.Id == shapeId);
+        if (shape != null)
+        {
+            activeLabelId = shape.LabelId;
+        }
+    }
+
+    private void SelectOnlyShape(string shapeId)
+    {
+        selectedShapeIds.Clear();
+        if (!string.IsNullOrWhiteSpace(shapeId))
+        {
+            selectedShapeIds.Add(shapeId);
+        }
+    }
+
+    private void ToggleShapeSelection(string shapeId)
+    {
+        if (selectedShapeIds.Contains(shapeId))
+        {
+            selectedShapeIds.Remove(shapeId);
+        }
+        else
+        {
+            selectedShapeIds.Add(shapeId);
+            FlashShapeSelection(shapeId).AndForget();
+        }
+
+        hoveredShapeId = shapeId;
+    }
+
+    private void SelectAllCurrentFrameShapes()
+    {
+        selectedShapeIds.Clear();
+        foreach (var shape in CurrentFrameShapes)
+        {
+            selectedShapeIds.Add(shape.Id);
+        }
+
+        activeTool = EditorTool.Select;
+        pendingPasteCursor = null;
+    }
+
+    private void SetHoveredShape(string shapeId)
+    {
+        hoveredShapeId = shapeId;
+    }
+
+    private void ClearHoveredShape(string shapeId)
+    {
+        if (hoveredShapeId == shapeId)
+        {
+            hoveredShapeId = null;
+        }
+    }
+
+    private void CancelActiveOperation(bool clearSelection)
+    {
+        if (dragState != null)
+        {
+            if (dragState.Mode == DragMode.Pan)
+            {
+                viewOffsetX = dragState.StartOffsetX;
+                viewOffsetY = dragState.StartOffsetY;
+            }
+            else if (dragState.StartShapes.Count > 0)
+            {
+                foreach (var startShape in dragState.StartShapes.Values)
+                {
+                    var shape = editorShapes.FirstOrDefault(x => x.Id == startShape.Id);
+                    shape?.CopyGeometryFrom(startShape);
+                }
+            }
+        }
+
+        draftRectangle = null;
+        rectangleAnchor = null;
+        dragState = null;
+        activeTool = EditorTool.Select;
+        pendingPasteCursor = null;
+        hoveredHandle = EditorHandle.None;
+
+        if (clearSelection)
+        {
+            selectedShapeIds.Clear();
+            hoveredShapeId = null;
+        }
+    }
+
+    private void DeleteEffectiveShape()
+    {
+        var shapeIds = EffectiveShapes.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (shapeIds.Count <= 0)
+        {
+            return;
+        }
+
+        var removed = editorShapes.RemoveAll(x => shapeIds.Contains(x.Id));
+        if (removed <= 0)
+        {
+            return;
+        }
+
+        selectedShapeIds.RemoveWhere(shapeIds.Contains);
+        if (!string.IsNullOrWhiteSpace(hoveredShapeId) && shapeIds.Contains(hoveredShapeId))
+        {
+            hoveredShapeId = null;
+        }
+
+        PushHistorySnapshot(markDirty: true);
+    }
+
+    private void CopySelection()
+    {
+        var shapes = EffectiveShapes.ToArray();
+        if (shapes.Length <= 0)
+        {
+            return;
+        }
+
+        clipboardShapes.Clear();
+        clipboardShapes.AddRange(shapes.Select(x => x.Clone()));
+    }
+
+    private void CutSelection()
+    {
+        if (!CanCopySelection)
+        {
+            return;
+        }
+
+        CopySelection();
+        DeleteEffectiveShape();
+    }
+
+    private void BeginPaste()
+    {
+        if (!CanPasteClipboard)
+        {
+            return;
+        }
+
+        CancelActiveOperation(clearSelection: false);
+        activeTool = EditorTool.Paste;
+        pendingPasteCursor = cursorImagePoint ?? new EditorPoint(imageWidth / 2.0, imageHeight / 2.0);
+        selectedShapeIds.Clear();
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+    }
+
+    private void CommitPaste(EditorPoint imagePoint)
+    {
+        if (!CanPasteClipboard)
+        {
+            return;
+        }
+
+        var pastedShapes = CreatePasteShapes(imagePoint, assignNewIds: true).ToArray();
+        if (pastedShapes.Length <= 0)
+        {
+            return;
+        }
+
+        editorShapes.AddRange(pastedShapes);
+        selectedShapeIds.Clear();
+        foreach (var shape in pastedShapes)
+        {
+            selectedShapeIds.Add(shape.Id);
+        }
+
+        hoveredShapeId = pastedShapes.FirstOrDefault()?.Id;
+        pendingPasteCursor = null;
+        activeTool = EditorTool.Select;
+        PushHistorySnapshot(markDirty: true);
+    }
+
+    private IEnumerable<EditorShape> CreatePasteShapes(EditorPoint cursorPoint, bool assignNewIds)
+    {
+        if (clipboardShapes.Count <= 0)
+        {
+            yield break;
+        }
+
+        var bounds = SelectionBounds.FromShapes(clipboardShapes);
+        if (bounds == null)
+        {
+            yield break;
+        }
+
+        var targetX = Clamp(cursorPoint.X - bounds.Width / 2.0, 0, Math.Max(0, imageWidth - bounds.Width));
+        var targetY = Clamp(cursorPoint.Y - bounds.Height / 2.0, 0, Math.Max(0, imageHeight - bounds.Height));
+        var deltaX = targetX - bounds.X;
+        var deltaY = targetY - bounds.Y;
+        var index = 0;
+
+        foreach (var shape in clipboardShapes)
+        {
+            var clone = shape.CloneWithId(assignNewIds ? Guid.NewGuid().ToString("N") : $"paste-preview-{index++}");
+            clone.FrameIndex = EffectiveFrameIndex;
+            clone.X = Clamp(shape.X + deltaX, 0, Math.Max(0, imageWidth - shape.Width));
+            clone.Y = Clamp(shape.Y + deltaY, 0, Math.Max(0, imageHeight - shape.Height));
+            clone.Source = "manual";
+            yield return clone;
+        }
+    }
+
+    private async Task FlashShapeSelection(string shapeId)
+    {
+        var version = ++selectionFlashVersion;
+        flashingShapeId = shapeId;
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(260);
+
+        if (selectionFlashVersion != version || flashingShapeId != shapeId)
+        {
+            return;
+        }
+
+        flashingShapeId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Undo()
+    {
+        if (!CanUndo)
+        {
+            return;
+        }
+
+        historyIndex--;
+        RestoreHistorySnapshot(history[historyIndex]);
+        MarkDirty();
+    }
+
+    private void Redo()
+    {
+        if (!CanRedo)
+        {
+            return;
+        }
+
+        historyIndex++;
+        RestoreHistorySnapshot(history[historyIndex]);
+        MarkDirty();
+    }
+
+    private void ResetZoom()
+    {
+        hasUserViewTransform = false;
+        FitImageToView();
+    }
+
+    private void FitImageToView()
+    {
+        var width = Math.Max(1, viewportWidth);
+        var height = Math.Max(1, viewportHeight);
+        var usableWidth = Math.Max(1, width - ViewPadding * 2);
+        var usableHeight = Math.Max(1, height - ViewPadding * 2);
+        var scale = Math.Min(usableWidth / Math.Max(1, imageWidth), usableHeight / Math.Max(1, imageHeight));
+
+        viewScale = Clamp(scale, MinZoom, MaxZoom);
+        viewOffsetX = (width - imageWidth * viewScale) / 2;
+        viewOffsetY = (height - imageHeight * viewScale) / 2;
+    }
+
+    private void UpdateHover(EditorPoint imagePoint)
+    {
+        if (activeTool == EditorTool.Rectangle)
+        {
+            hoveredShapeId = null;
+            hoveredHandle = EditorHandle.None;
+            return;
+        }
+
+        var hit = HitTest(imagePoint, includeHandles: true);
+        hoveredShapeId = hit.Shape?.Id;
+        hoveredHandle = hit.Handle;
+    }
+
+    private EditorHit HitTest(EditorPoint imagePoint, bool includeHandles)
+    {
+        if (!IsInsideImage(imagePoint))
+        {
+            return EditorHit.None;
+        }
+
+        var tolerance = Math.Max(3, HitTolerancePixels / Math.Max(MinZoom, viewScale));
+
+        if (includeHandles)
+        {
+            if (SelectedCurrentFrameShapes.Count > 1 && SelectedSelectionBounds is { } groupBounds)
+            {
+                var groupHandle = groupBounds.HitHandle(imagePoint, tolerance, RotateHandleOffset);
+                if (groupHandle != EditorHandle.None)
+                {
+                    return new EditorHit(null, groupHandle, IsGroup: true);
+                }
+            }
+
+            var handleShapeIds = selectedShapeIds
+                .Concat(string.IsNullOrWhiteSpace(hoveredShapeId) ? Array.Empty<string>() : new[] { hoveredShapeId })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            foreach (var shapeId in handleShapeIds)
+            {
+                var handleShape = CurrentFrameShapes.FirstOrDefault(x => x.Id == shapeId);
+                var handle = handleShape?.HitHandle(imagePoint, tolerance, RotateHandleOffset) ?? EditorHandle.None;
+                if (handleShape != null && handle != EditorHandle.None)
+                {
+                    return new EditorHit(handleShape, handle);
+                }
+
+                if (handleShape != null && handleShape.Contains(imagePoint, tolerance + RotateHandleOffset))
+                {
+                    return new EditorHit(handleShape, EditorHandle.None);
+                }
+            }
+        }
+
+        foreach (var shape in CurrentFrameShapes.Reverse())
+        {
+            if (shape.Contains(imagePoint, tolerance))
+            {
+                return new EditorHit(shape, EditorHandle.None);
+            }
+        }
+
+        return EditorHit.None;
+    }
+
+    private EditorPoint ScreenToImage(EditorPoint screenPoint)
+    {
+        return new EditorPoint(
+            (screenPoint.X - viewOffsetX) / viewScale,
+            (screenPoint.Y - viewOffsetY) / viewScale);
+    }
+
+    private EditorPoint ClampToImage(EditorPoint imagePoint)
+    {
+        return new EditorPoint(
+            Clamp(imagePoint.X, 0, imageWidth),
+            Clamp(imagePoint.Y, 0, imageHeight));
+    }
+
+    private bool IsInsideImage(EditorPoint imagePoint)
+    {
+        return imagePoint.X >= 0 &&
+               imagePoint.Y >= 0 &&
+               imagePoint.X <= imageWidth &&
+               imagePoint.Y <= imageHeight;
+    }
+
+    private bool TrySelectLabelByShortcut(string? key)
+    {
+        if (key is not { Length: 1 } || !char.IsDigit(key[0]))
+        {
+            return false;
+        }
+
+        var index = key[0] - '1';
+        if (index < 0)
+        {
+            return false;
+        }
+
+        var labels = OrderedLabels;
+        if (index >= labels.Count)
+        {
+            return true;
+        }
+
+        SelectLabel(labels[index].Id);
+        return true;
+    }
+
+    private void CycleEffectiveShapeLabel()
+    {
+        var labels = OrderedLabels;
+        if (labels.Count <= 0)
+        {
+            return;
+        }
+
+        var currentLabelId = EffectiveShape?.LabelId ?? activeLabelId;
+        var currentIndex = labels.ToList().FindIndex(x => x.Id == currentLabelId);
+        var nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % labels.Count;
+        SelectLabel(labels[nextIndex].Id);
+    }
+
+    private void PushHistorySnapshot(bool markDirty)
+    {
+        var snapshot = editorShapes.Select(x => x.Clone()).ToArray();
+        if (historyIndex >= 0 && SnapshotsEqual(history[historyIndex], snapshot))
+        {
+            return;
+        }
+
+        if (historyIndex < history.Count - 1)
+        {
+            history.RemoveRange(historyIndex + 1, history.Count - historyIndex - 1);
+        }
+
+        history.Add(snapshot);
+        historyIndex = history.Count - 1;
+        if (markDirty)
+        {
+            MarkDirty();
+        }
+    }
+
+    private void MarkDirty()
+    {
+        isDirty = true;
+        editorRevision++;
+    }
+
+    private void RestoreHistorySnapshot(EditorShape[] snapshot)
+    {
+        editorShapes = snapshot.Select(x => x.Clone()).ToList();
+        selectedShapeIds.RemoveWhere(x => editorShapes.All(shape => shape.Id != x));
+        hoveredShapeId = null;
+        hoveredHandle = EditorHandle.None;
+        draftRectangle = null;
+        rectangleAnchor = null;
+        dragState = null;
+        pendingPasteCursor = null;
+    }
+
+    private static bool SnapshotsEqual(IReadOnlyList<EditorShape> left, IReadOnlyList<EditorShape> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        return left.Zip(right).All(x => x.First.HasSameGeometry(x.Second));
+    }
+
+    private async Task FinishJob()
+    {
+        try
+        {
+            if (Project.RemoteProject.Mode != AnnotationBackendMode.Offline)
+            {
+                await Project.RemoteProject.UpdateTaskStatus(TaskInfo.Id, AnnotationTaskStatus.Completed);
+                await Project.Refresh();
+                isDirty = false;
+                CloseWindowCore();
+                return;
+            }
+
+            await PersistEditorAnnotations(AnnotationTaskStatus.Completed, clearDirty: true);
+            await Project.Refresh();
+            isDirty = false;
+            CloseWindowCore();
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private async Task CloseWindow()
+    {
+        try
+        {
+            await AutoSaveIfNeeded(force: true);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+
+        CloseWindowCore();
+    }
+
+    private void CloseWindowCore()
+    {
+        BlazorWindowAccessor.Window.Close();
+    }
+
+    private void BeginRemoveCurrentFrame()
+    {
+        pendingRemoveFrameIndex = EffectiveFrameIndex;
+    }
+
+    private void CancelRemoveCurrentFrame()
+    {
+        pendingRemoveFrameIndex = -1;
+    }
+
+    private async Task RemoveCurrentFrame()
+    {
+        if (!CanRemoveCurrentFrame || pendingRemoveFrameIndex != EffectiveFrameIndex)
+        {
+            return;
+        }
+
+        try
+        {
+            await PersistEditorAnnotations(GetAutoSaveStatus(), clearDirty: false);
+            await Project.RemoteProject.RemoveTaskFrame(TaskInfo.Id, EffectiveFrameIndex, deleteImageFile: true);
+            pendingRemoveFrameIndex = -1;
+
+            if (currentFrameIndex >= FrameCount - 1)
+            {
+                currentFrameIndex = Math.Max(0, currentFrameIndex - 1);
+            }
+
+            imageDataUrlCache.Clear();
+            await LoadEditorData();
+            currentFrameIndex = FrameCount <= 0 ? 0 : Math.Clamp(currentFrameIndex, 0, FrameCount - 1);
+            await LoadCurrentFrameImage(resetView: true);
+            isDirty = false;
+            await Project.Refresh();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception e)
+        {
+            ShowError(e.Message);
+        }
+    }
+
+    private void EnsureActiveLabel()
+    {
+        if (Project.RemoteProject.Labels.Items.Any(x => x.Id == activeLabelId))
+        {
+            return;
+        }
+
+        activeLabelId = OrderedLabels.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private AnnotationLabelInfo GetLabel(int labelId)
+    {
+        return Project.RemoteProject.Labels.Items.FirstOrDefault(x => x.Id == labelId)
+               ?? Project.RemoteProject.Labels.Items.FirstOrDefault()
+               ?? new AnnotationLabelInfo
+               {
+                   Id = labelId,
+                   Name = $"Label #{labelId}",
+               };
+    }
+
+    private string GetToolClass(EditorTool tool)
+    {
+        return tool == activeTool ? "task-editor-tool is-active" : "task-editor-tool";
+    }
+
+    private string GetHitLayerClass()
+    {
+        var classes = "task-editor-hit-layer";
+        if (dragState?.Mode == DragMode.Pan)
+        {
+            return $"{classes} is-panning";
+        }
+
+        if (dragState?.Mode == DragMode.MoveShape)
+        {
+            return $"{classes} is-moving-shape";
+        }
+
+        if (dragState?.Mode == DragMode.ResizeShape)
+        {
+            return $"{classes} {GetHandleCursorClass(dragState.Handle)}";
+        }
+
+        if (dragState?.Mode == DragMode.RotateShape)
+        {
+            return $"{classes} is-rotate";
+        }
+
+        if (activeTool == EditorTool.Rectangle)
+        {
+            return $"{classes} is-crosshair";
+        }
+
+        if (activeTool == EditorTool.Paste)
+        {
+            return $"{classes} is-paste";
+        }
+
+        if (activeTool == EditorTool.Pan)
+        {
+            return $"{classes} is-pan";
+        }
+
+        if (hoveredHandle != EditorHandle.None)
+        {
+            return $"{classes} {GetHandleCursorClass(hoveredHandle)}";
+        }
+
+        return string.IsNullOrWhiteSpace(hoveredShapeId) ? $"{classes} is-pan" : $"{classes} is-moving-shape";
+    }
+
+    private string GetShapeClass(EditorShape shape)
+    {
+        var classes = "task-editor-object-rect";
+        if (selectedShapeIds.Contains(shape.Id))
+        {
+            classes += " is-selected";
+        }
+
+        if (shape.Id == hoveredShapeId)
+        {
+            classes += " is-hovered";
+        }
+
+        if (shape.Id == flashingShapeId)
+        {
+            classes += " is-flashing";
+        }
+
+        return classes;
+    }
+
+    private string GetPasteShapeClass(EditorShape shape)
+    {
+        return $"{GetShapeClass(shape)} is-paste-preview";
+    }
+
+    private string GetObjectListItemClass(EditorShape shape)
+    {
+        if (selectedShapeIds.Contains(shape.Id))
+        {
+            return "task-editor-object-row is-selected";
+        }
+
+        return shape.Id == hoveredShapeId ? "task-editor-object-row is-hovered" : "task-editor-object-row";
+    }
+
+    private string GetLabelPillClass(AnnotationLabelInfo label)
+    {
+        var effectiveShapes = EffectiveShapes;
+        var isActive = effectiveShapes.Count > 0
+            ? effectiveShapes.Any(x => x.LabelId == label.Id)
+            : label.Id == activeLabelId;
+        return isActive ? "task-editor-label-pill is-active" : "task-editor-label-pill";
+    }
+
+    private static string GetLabelShortcutText(int labelIndex)
+    {
+        return labelIndex < 9 ? $"Ctrl+{labelIndex + 1}" : string.Empty;
+    }
+
+    private bool ShouldShowShapeHandles(EditorShape shape)
+    {
+        return !ShouldShowSelectionBounds && (selectedShapeIds.Contains(shape.Id) || shape.Id == hoveredShapeId);
+    }
+
+    private bool ShouldShowShapeDetails(EditorShape shape)
+    {
+        return selectedShapeIds.Contains(shape.Id) || shape.Id == hoveredShapeId;
+    }
+
+    private string GetShapeStyle(EditorShape shape, AnnotationLabelInfo label)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "left:{0}px;top:{1}px;width:{2}px;height:{3}px;border-color:{4};background:{5};--shape-color:{4};--shape-caption-scale:{6};transform:rotate({7}deg);",
+            shape.X,
+            shape.Y,
+            shape.Width,
+            shape.Height,
+            label.Color,
+            ToRgba(label.Color, 0.22),
+            GetShapeCaptionScale(),
+            shape.RotationDegrees);
+    }
+
+    private string GetDraftShapeStyle()
+    {
+        return draftRectangle == null
+            ? string.Empty
+            : string.Format(
+                CultureInfo.InvariantCulture,
+                "left:{0}px;top:{1}px;width:{2}px;height:{3}px;--shape-caption-scale:{4};",
+                draftRectangle.X,
+                draftRectangle.Y,
+                draftRectangle.Width,
+                draftRectangle.Height,
+                GetShapeCaptionScale());
+    }
+
+    private double GetShapeCaptionScale()
+    {
+        return viewScale < 1
+            ? 1 / Math.Sqrt(Math.Max(viewScale, MinZoom))
+            : 1;
+    }
+
+    private string GetVerticalGuideStyle()
+    {
+        return cursorImagePoint == null
+            ? string.Empty
+            : string.Format(CultureInfo.InvariantCulture, "left:{0}px;height:{1}px;", cursorImagePoint.X, imageHeight);
+    }
+
+    private string GetHorizontalGuideStyle()
+    {
+        return cursorImagePoint == null
+            ? string.Empty
+            : string.Format(CultureInfo.InvariantCulture, "top:{0}px;width:{1}px;", cursorImagePoint.Y, imageWidth);
+    }
+
+    private string GetGuideCrossStyle()
+    {
+        return cursorImagePoint == null
+            ? string.Empty
+            : string.Format(CultureInfo.InvariantCulture, "left:{0}px;top:{1}px;", cursorImagePoint.X, cursorImagePoint.Y);
+    }
+
+    private static string GetHandleStyle(EditorHandle handle)
+    {
+        return handle switch
+        {
+            EditorHandle.NorthWest => "left:0%;top:0%;",
+            EditorHandle.North => "left:50%;top:0%;",
+            EditorHandle.NorthEast => "left:100%;top:0%;",
+            EditorHandle.East => "left:100%;top:50%;",
+            EditorHandle.SouthEast => "left:100%;top:100%;",
+            EditorHandle.South => "left:50%;top:100%;",
+            EditorHandle.SouthWest => "left:0%;top:100%;",
+            EditorHandle.West => "left:0%;top:50%;",
+            _ => string.Empty,
+        };
+    }
+
+    private string GetRotateHandleClass(EditorShape shape)
+    {
+        var classes = "task-editor-shape-handle is-rotate";
+        return shape.Id == hoveredShapeId && hoveredHandle == EditorHandle.Rotate
+            ? $"{classes} is-hovered"
+            : classes;
+    }
+
+    private string GetHandleClass(EditorShape shape, EditorHandle handle)
+    {
+        var classes = $"task-editor-shape-handle is-resize {GetHandleCursorClass(handle)}";
+        return shape.Id == hoveredShapeId && hoveredHandle == handle
+            ? $"{classes} is-hovered"
+            : classes;
+    }
+
+    private string GetSelectionBoundsStyle()
+    {
+        var bounds = SelectedSelectionBounds;
+        return bounds == null
+            ? string.Empty
+            : string.Format(
+                CultureInfo.InvariantCulture,
+                "left:{0}px;top:{1}px;width:{2}px;height:{3}px;--shape-caption-scale:{4};",
+                bounds.X,
+                bounds.Y,
+                bounds.Width,
+                bounds.Height,
+                GetShapeCaptionScale());
+    }
+
+    private string GetSelectionRotateHandleClass()
+    {
+        var classes = "task-editor-shape-handle is-rotate";
+        return hoveredHandle == EditorHandle.Rotate ? $"{classes} is-hovered" : classes;
+    }
+
+    private string GetSelectionHandleClass(EditorHandle handle)
+    {
+        var classes = $"task-editor-shape-handle is-resize {GetHandleCursorClass(handle)}";
+        return hoveredHandle == handle ? $"{classes} is-hovered" : classes;
+    }
+
+    private static string GetHandleCursorClass(EditorHandle handle)
+    {
+        return handle switch
+        {
+            EditorHandle.NorthWest => "is-resize-nw",
+            EditorHandle.North => "is-resize-n",
+            EditorHandle.NorthEast => "is-resize-ne",
+            EditorHandle.East => "is-resize-e",
+            EditorHandle.SouthEast => "is-resize-se",
+            EditorHandle.South => "is-resize-s",
+            EditorHandle.SouthWest => "is-resize-sw",
+            EditorHandle.West => "is-resize-w",
+            EditorHandle.Rotate => "is-rotate",
+            _ => string.Empty,
+        };
+    }
+
+    private static string FormatRect(EditorShape shape)
+    {
+        var rotation = Math.Abs(NormalizeRotation(shape.RotationDegrees)) < 0.1
+            ? string.Empty
+            : $" · {NormalizeRotation(shape.RotationDegrees):F0}°";
+        return $"{shape.Width:F1}x{shape.Height:F1}px{rotation}";
+    }
+
+    private static string FormatShapeLabel(AnnotationLabelInfo label)
+    {
+        return string.IsNullOrWhiteSpace(label.Name)
+            ? $"LABEL #{label.Id}"
+            : label.Name.ToUpperInvariant();
+    }
+
+    private static string FormatRect(EditorRect rectangle)
+    {
+        return $"{rectangle.Width:F1}x{rectangle.Height:F1}px";
+    }
+
+    private static string FormatStatus(AnnotationTaskStatus status)
+    {
+        return status switch
+        {
+            AnnotationTaskStatus.InProgress => "In progress",
+            _ => status.ToString(),
+        };
+    }
+
+    private static string GetStatusClass(AnnotationTaskStatus status)
+    {
+        return status switch
+        {
+            AnnotationTaskStatus.Completed => "badge text-bg-success",
+            AnnotationTaskStatus.InProgress => "badge text-bg-warning",
+            _ => "badge text-bg-secondary",
+        };
+    }
+
+    private static string ToRgba(string? color, double alpha)
+    {
+        color = color?.Trim();
+        if (string.IsNullOrWhiteSpace(color) || !color.StartsWith("#", StringComparison.Ordinal))
+        {
+            return $"rgba(40, 196, 215, {alpha.ToString(CultureInfo.InvariantCulture)})";
+        }
+
+        var hex = color.TrimStart('#');
+        if (hex.Length == 3)
+        {
+            hex = string.Concat(hex.Select(x => $"{x}{x}"));
+        }
+
+        if (hex.Length != 6 ||
+            !int.TryParse(hex[0..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r) ||
+            !int.TryParse(hex[2..4], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g) ||
+            !int.TryParse(hex[4..6], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b))
+        {
+            return $"rgba(40, 196, 215, {alpha.ToString(CultureInfo.InvariantCulture)})";
+        }
+
+        return $"rgba({r}, {g}, {b}, {alpha.ToString(CultureInfo.InvariantCulture)})";
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        return Math.Max(min, Math.Min(max, value));
+    }
+
+    private static double NormalizeRotation(double rotationDegrees)
+    {
+        var normalized = rotationDegrees % 360;
+        return normalized < 0 ? normalized + 360 : normalized;
+    }
+
+    private static double NormalizeSignedRotation(double rotationDegrees)
+    {
+        var normalized = (rotationDegrees + 180) % 360;
+        if (normalized < 0)
+        {
+            normalized += 360;
+        }
+
+        return normalized - 180;
+    }
+
+    private static EditorPoint RotatePoint(EditorPoint point, EditorPoint center, double rotationDegrees)
+    {
+        var radians = DegreesToRadians(rotationDegrees);
+        var cos = Math.Cos(radians);
+        var sin = Math.Sin(radians);
+        var dx = point.X - center.X;
+        var dy = point.Y - center.Y;
+        return new EditorPoint(
+            center.X + dx * cos - dy * sin,
+            center.Y + dx * sin + dy * cos);
+    }
+
+    private static double RotationDistance(double leftDegrees, double rightDegrees)
+    {
+        var delta = Math.Abs(NormalizeRotation(leftDegrees) - NormalizeRotation(rightDegrees));
+        return Math.Min(delta, 360 - delta);
+    }
+
+    private static double DegreesToRadians(double degrees)
+    {
+        return degrees * Math.PI / 180.0;
+    }
+
+    private static double RadiansToDegrees(double radians)
+    {
+        return radians * 180.0 / Math.PI;
+    }
+
+    private void ShowError(string message)
+    {
+        NotificationService.Open(new NotificationConfig
+        {
+            NotificationType = NotificationType.Error,
+            Duration = 8,
+            Message = message,
+        }).AndForget();
+    }
+
+    private enum EditorTool
+    {
+        Select,
+        Pan,
+        Rectangle,
+        Paste,
+    }
+
+    private enum DragMode
+    {
+        Pan,
+        MoveShape,
+        ResizeShape,
+        RotateShape,
+    }
+
+    private enum EditorHandle
+    {
+        None,
+        NorthWest,
+        North,
+        NorthEast,
+        East,
+        SouthEast,
+        South,
+        SouthWest,
+        West,
+        Rotate,
+    }
+
+    private sealed record EditorPoint(double X, double Y);
+
+    private sealed record EditorHit(EditorShape? Shape, EditorHandle Handle, bool IsGroup = false)
+    {
+        public static EditorHit None { get; } = new(null, EditorHandle.None);
+    }
+
+    private sealed class DragState
+    {
+        private DragState()
+        {
+        }
+
+        public DragMode Mode { get; private init; }
+
+        public EditorHandle Handle { get; private init; }
+
+        public EditorPoint StartScreenPoint { get; private init; } = new(0, 0);
+
+        public EditorPoint StartImagePoint { get; private init; } = new(0, 0);
+
+        public double StartOffsetX { get; private init; }
+
+        public double StartOffsetY { get; private init; }
+
+        public IReadOnlyDictionary<string, EditorShape> StartShapes { get; private init; } = new Dictionary<string, EditorShape>();
+
+        public SelectionBounds? StartBounds { get; private init; }
+
+        public bool Moved { get; set; }
+
+        public static DragState ForPan(EditorPoint screenPoint, double offsetX, double offsetY)
+        {
+            return new DragState
+            {
+                Mode = DragMode.Pan,
+                StartScreenPoint = screenPoint,
+                StartOffsetX = offsetX,
+                StartOffsetY = offsetY,
+            };
+        }
+
+        public static DragState ForShapeMove(EditorPoint screenPoint, EditorPoint imagePoint, IEnumerable<EditorShape> shapes, SelectionBounds? bounds)
+        {
+            return new DragState
+            {
+                Mode = DragMode.MoveShape,
+                StartScreenPoint = screenPoint,
+                StartImagePoint = imagePoint,
+                StartShapes = shapes.ToDictionary(x => x.Id, x => x.Clone(), StringComparer.OrdinalIgnoreCase),
+                StartBounds = bounds,
+            };
+        }
+
+        public static DragState ForResize(EditorPoint screenPoint, EditorPoint imagePoint, IEnumerable<EditorShape> shapes, EditorHandle handle, SelectionBounds? bounds)
+        {
+            return new DragState
+            {
+                Mode = DragMode.ResizeShape,
+                Handle = handle,
+                StartScreenPoint = screenPoint,
+                StartImagePoint = imagePoint,
+                StartShapes = shapes.ToDictionary(x => x.Id, x => x.Clone(), StringComparer.OrdinalIgnoreCase),
+                StartBounds = bounds,
+            };
+        }
+
+        public static DragState ForRotate(EditorPoint screenPoint, EditorPoint imagePoint, IEnumerable<EditorShape> shapes, SelectionBounds? bounds)
+        {
+            return new DragState
+            {
+                Mode = DragMode.RotateShape,
+                Handle = EditorHandle.Rotate,
+                StartScreenPoint = screenPoint,
+                StartImagePoint = imagePoint,
+                StartShapes = shapes.ToDictionary(x => x.Id, x => x.Clone(), StringComparer.OrdinalIgnoreCase),
+                StartBounds = bounds,
+            };
+        }
+    }
+
+    private sealed record SelectionBounds(double X, double Y, double Width, double Height)
+    {
+        public double Right => X + Width;
+
+        public double Bottom => Y + Height;
+
+        public EditorPoint Center => new(X + Width / 2.0, Y + Height / 2.0);
+
+        public static SelectionBounds? FromShapes(IEnumerable<EditorShape> shapes)
+        {
+            var shapeArray = shapes.ToArray();
+            if (shapeArray.Length <= 0)
+            {
+                return null;
+            }
+
+            var left = shapeArray.Min(x => x.X);
+            var top = shapeArray.Min(x => x.Y);
+            var right = shapeArray.Max(x => x.X + x.Width);
+            var bottom = shapeArray.Max(x => x.Y + x.Height);
+            return new SelectionBounds(left, top, Math.Max(MinShapeSize, right - left), Math.Max(MinShapeSize, bottom - top));
+        }
+
+        public bool Contains(EditorPoint imagePoint, double tolerance)
+        {
+            return imagePoint.X >= X - tolerance &&
+                   imagePoint.X <= Right + tolerance &&
+                   imagePoint.Y >= Y - tolerance &&
+                   imagePoint.Y <= Bottom + tolerance;
+        }
+
+        public EditorHandle HitHandle(EditorPoint imagePoint, double tolerance, double rotateHandleOffset)
+        {
+            foreach (var handle in ResizeHandles)
+            {
+                if (Distance(imagePoint, GetHandlePoint(handle, rotateHandleOffset)) <= tolerance)
+                {
+                    return handle;
+                }
+            }
+
+            return Distance(imagePoint, GetHandlePoint(EditorHandle.Rotate, rotateHandleOffset)) <= tolerance
+                ? EditorHandle.Rotate
+                : EditorHandle.None;
+        }
+
+        public SelectionBounds ResizeFromHandle(EditorHandle handle, EditorPoint imagePoint, double minSize, bool preserveAspectRatio)
+        {
+            var left = X;
+            var right = Right;
+            var top = Y;
+            var bottom = Bottom;
+
+            switch (handle)
+            {
+                case EditorHandle.NorthWest:
+                    left = Math.Min(imagePoint.X, right - minSize);
+                    top = Math.Min(imagePoint.Y, bottom - minSize);
+                    break;
+                case EditorHandle.North:
+                    top = Math.Min(imagePoint.Y, bottom - minSize);
+                    break;
+                case EditorHandle.NorthEast:
+                    right = Math.Max(imagePoint.X, left + minSize);
+                    top = Math.Min(imagePoint.Y, bottom - minSize);
+                    break;
+                case EditorHandle.East:
+                    right = Math.Max(imagePoint.X, left + minSize);
+                    break;
+                case EditorHandle.SouthEast:
+                    right = Math.Max(imagePoint.X, left + minSize);
+                    bottom = Math.Max(imagePoint.Y, top + minSize);
+                    break;
+                case EditorHandle.South:
+                    bottom = Math.Max(imagePoint.Y, top + minSize);
+                    break;
+                case EditorHandle.SouthWest:
+                    left = Math.Min(imagePoint.X, right - minSize);
+                    bottom = Math.Max(imagePoint.Y, top + minSize);
+                    break;
+                case EditorHandle.West:
+                    left = Math.Min(imagePoint.X, right - minSize);
+                    break;
+            }
+
+            if (preserveAspectRatio)
+            {
+                PreserveAspectRatio(handle, ref left, ref right, ref top, ref bottom, minSize);
+            }
+
+            return new SelectionBounds(left, top, Math.Max(minSize, right - left), Math.Max(minSize, bottom - top));
+        }
+
+        public SelectionBounds Clamp(double maxWidth, double maxHeight, double minSize)
+        {
+            var width = Math.Min(Math.Max(minSize, Width), maxWidth);
+            var height = Math.Min(Math.Max(minSize, Height), maxHeight);
+            return new SelectionBounds(
+                TaskAnnotationWindow.Clamp(X, 0, Math.Max(0, maxWidth - width)),
+                TaskAnnotationWindow.Clamp(Y, 0, Math.Max(0, maxHeight - height)),
+                width,
+                height);
+        }
+
+        private void PreserveAspectRatio(EditorHandle handle, ref double left, ref double right, ref double top, ref double bottom, double minSize)
+        {
+            var aspectRatio = Math.Max(minSize, Width) / Math.Max(minSize, Height);
+            var currentWidth = Math.Max(minSize, right - left);
+            var currentHeight = Math.Max(minSize, bottom - top);
+
+            if (handle is EditorHandle.East or EditorHandle.West)
+            {
+                var nextHeight = Math.Max(minSize, currentWidth / aspectRatio);
+                var centerY = (top + bottom) / 2.0;
+                top = centerY - nextHeight / 2.0;
+                bottom = centerY + nextHeight / 2.0;
+                return;
+            }
+
+            if (handle is EditorHandle.North or EditorHandle.South)
+            {
+                var nextWidth = Math.Max(minSize, currentHeight * aspectRatio);
+                var centerX = (left + right) / 2.0;
+                left = centerX - nextWidth / 2.0;
+                right = centerX + nextWidth / 2.0;
+                return;
+            }
+
+            if (currentWidth / currentHeight > aspectRatio)
+            {
+                currentWidth = currentHeight * aspectRatio;
+            }
+            else
+            {
+                currentHeight = currentWidth / aspectRatio;
+            }
+
+            if (handle is EditorHandle.NorthWest or EditorHandle.SouthWest)
+            {
+                left = right - currentWidth;
+            }
+            else
+            {
+                right = left + currentWidth;
+            }
+
+            if (handle is EditorHandle.NorthWest or EditorHandle.NorthEast)
+            {
+                top = bottom - currentHeight;
+            }
+            else
+            {
+                bottom = top + currentHeight;
+            }
+        }
+
+        private EditorPoint GetHandlePoint(EditorHandle handle, double rotateHandleOffset)
+        {
+            return handle switch
+            {
+                EditorHandle.NorthWest => new EditorPoint(X, Y),
+                EditorHandle.North => new EditorPoint(X + Width / 2.0, Y),
+                EditorHandle.NorthEast => new EditorPoint(Right, Y),
+                EditorHandle.East => new EditorPoint(Right, Y + Height / 2.0),
+                EditorHandle.SouthEast => new EditorPoint(Right, Bottom),
+                EditorHandle.South => new EditorPoint(X + Width / 2.0, Bottom),
+                EditorHandle.SouthWest => new EditorPoint(X, Bottom),
+                EditorHandle.West => new EditorPoint(X, Y + Height / 2.0),
+                EditorHandle.Rotate => new EditorPoint(X + Width / 2.0, Y - rotateHandleOffset),
+                _ => Center,
+            };
+        }
+
+        private static double Distance(EditorPoint left, EditorPoint right)
+        {
+            var dx = left.X - right.X;
+            var dy = left.Y - right.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+    }
+
+    private sealed class EditorShape
+    {
+        public string Id { get; init; } = Guid.NewGuid().ToString("N");
+
+        public CvatAnnotationShapeKind Kind { get; set; } = CvatAnnotationShapeKind.Rectangle;
+
+        public int FrameIndex { get; set; }
+
+        public int LabelId { get; set; }
+
+        public double X { get; set; }
+
+        public double Y { get; set; }
+
+        public double Width { get; set; }
+
+        public double Height { get; set; }
+
+        public double RotationDegrees { get; set; }
+
+        public string? Source { get; set; }
+
+        public EditorPoint Center => new(X + Width / 2.0, Y + Height / 2.0);
+
+        public EditorShape Clone()
+        {
+            return new EditorShape
+            {
+                Id = Id,
+                Kind = Kind,
+                FrameIndex = FrameIndex,
+                LabelId = LabelId,
+                X = X,
+                Y = Y,
+                Width = Width,
+                Height = Height,
+                RotationDegrees = RotationDegrees,
+                Source = Source,
+            };
+        }
+
+        public EditorShape CloneWithId(string id)
+        {
+            return new EditorShape
+            {
+                Id = id,
+                Kind = Kind,
+                FrameIndex = FrameIndex,
+                LabelId = LabelId,
+                X = X,
+                Y = Y,
+                Width = Width,
+                Height = Height,
+                RotationDegrees = RotationDegrees,
+                Source = Source,
+            };
+        }
+
+        public void CopyGeometryFrom(EditorShape other)
+        {
+            X = other.X;
+            Y = other.Y;
+            Width = other.Width;
+            Height = other.Height;
+            RotationDegrees = other.RotationDegrees;
+        }
+
+        public bool HasSameGeometry(EditorShape other)
+        {
+            return Id == other.Id &&
+                   Kind == other.Kind &&
+                   FrameIndex == other.FrameIndex &&
+                   LabelId == other.LabelId &&
+                   Math.Abs(X - other.X) < 0.001 &&
+                   Math.Abs(Y - other.Y) < 0.001 &&
+                   Math.Abs(Width - other.Width) < 0.001 &&
+                   Math.Abs(Height - other.Height) < 0.001 &&
+                   RotationDistance(RotationDegrees, other.RotationDegrees) < 0.001 &&
+                   string.Equals(Source, other.Source, StringComparison.Ordinal);
+        }
+
+        public bool Contains(EditorPoint imagePoint, double tolerance)
+        {
+            var local = ToLocal(imagePoint);
+            return local.X >= -Width / 2.0 - tolerance &&
+                   local.X <= Width / 2.0 + tolerance &&
+                   local.Y >= -Height / 2.0 - tolerance &&
+                   local.Y <= Height / 2.0 + tolerance;
+        }
+
+        public EditorHandle HitHandle(EditorPoint imagePoint, double tolerance, double rotateHandleOffset)
+        {
+            foreach (var handle in ResizeHandles)
+            {
+                var handlePoint = LocalToImage(GetHandleLocalPoint(handle, rotateHandleOffset));
+                if (Distance(imagePoint, handlePoint) <= tolerance)
+                {
+                    return handle;
+                }
+            }
+
+            var rotatePoint = LocalToImage(GetHandleLocalPoint(EditorHandle.Rotate, rotateHandleOffset));
+            return Distance(imagePoint, rotatePoint) <= tolerance ? EditorHandle.Rotate : EditorHandle.None;
+        }
+
+        public EditorShape ResizeFromHandle(EditorHandle handle, EditorPoint imagePoint, double minSize, bool preserveAspectRatio)
+        {
+            var localPoint = ToLocal(imagePoint);
+            var left = -Width / 2.0;
+            var right = Width / 2.0;
+            var top = -Height / 2.0;
+            var bottom = Height / 2.0;
+
+            switch (handle)
+            {
+                case EditorHandle.NorthWest:
+                    left = Math.Min(localPoint.X, right - minSize);
+                    top = Math.Min(localPoint.Y, bottom - minSize);
+                    break;
+                case EditorHandle.North:
+                    top = Math.Min(localPoint.Y, bottom - minSize);
+                    break;
+                case EditorHandle.NorthEast:
+                    right = Math.Max(localPoint.X, left + minSize);
+                    top = Math.Min(localPoint.Y, bottom - minSize);
+                    break;
+                case EditorHandle.East:
+                    right = Math.Max(localPoint.X, left + minSize);
+                    break;
+                case EditorHandle.SouthEast:
+                    right = Math.Max(localPoint.X, left + minSize);
+                    bottom = Math.Max(localPoint.Y, top + minSize);
+                    break;
+                case EditorHandle.South:
+                    bottom = Math.Max(localPoint.Y, top + minSize);
+                    break;
+                case EditorHandle.SouthWest:
+                    left = Math.Min(localPoint.X, right - minSize);
+                    bottom = Math.Max(localPoint.Y, top + minSize);
+                    break;
+                case EditorHandle.West:
+                    left = Math.Min(localPoint.X, right - minSize);
+                    break;
+            }
+
+            if (preserveAspectRatio)
+            {
+                PreserveAspectRatio(handle, ref left, ref right, ref top, ref bottom, minSize);
+            }
+
+            var newWidth = Math.Max(minSize, right - left);
+            var newHeight = Math.Max(minSize, bottom - top);
+            var localCenter = new EditorPoint((left + right) / 2.0, (top + bottom) / 2.0);
+            var imageCenter = LocalToImage(localCenter);
+
+            return new EditorShape
+            {
+                Id = Id,
+                Kind = Kind,
+                FrameIndex = FrameIndex,
+                LabelId = LabelId,
+                X = imageCenter.X - newWidth / 2.0,
+                Y = imageCenter.Y - newHeight / 2.0,
+                Width = newWidth,
+                Height = newHeight,
+                RotationDegrees = RotationDegrees,
+                Source = Source,
+            };
+        }
+
+        private void PreserveAspectRatio(EditorHandle handle, ref double left, ref double right, ref double top, ref double bottom, double minSize)
+        {
+            var aspectRatio = Math.Max(minSize, Width) / Math.Max(minSize, Height);
+            var currentWidth = Math.Max(minSize, right - left);
+            var currentHeight = Math.Max(minSize, bottom - top);
+
+            if (handle is EditorHandle.East or EditorHandle.West)
+            {
+                var nextHeight = Math.Max(minSize, currentWidth / aspectRatio);
+                top = -nextHeight / 2.0;
+                bottom = nextHeight / 2.0;
+                return;
+            }
+
+            if (handle is EditorHandle.North or EditorHandle.South)
+            {
+                var nextWidth = Math.Max(minSize, currentHeight * aspectRatio);
+                left = -nextWidth / 2.0;
+                right = nextWidth / 2.0;
+                return;
+            }
+
+            if (currentWidth / currentHeight > aspectRatio)
+            {
+                currentWidth = currentHeight * aspectRatio;
+            }
+            else
+            {
+                currentHeight = currentWidth / aspectRatio;
+            }
+
+            if (handle is EditorHandle.NorthWest or EditorHandle.SouthWest)
+            {
+                left = right - currentWidth;
+            }
+            else
+            {
+                right = left + currentWidth;
+            }
+
+            if (handle is EditorHandle.NorthWest or EditorHandle.NorthEast)
+            {
+                top = bottom - currentHeight;
+            }
+            else
+            {
+                bottom = top + currentHeight;
+            }
+        }
+
+        public void ClampUnrotatedBounds(double maxWidth, double maxHeight)
+        {
+            Width = Clamp(Width, MinShapeSize, maxWidth);
+            Height = Clamp(Height, MinShapeSize, maxHeight);
+            X = Clamp(X, 0, Math.Max(0, maxWidth - Width));
+            Y = Clamp(Y, 0, Math.Max(0, maxHeight - Height));
+        }
+
+        public CvatRectangleAnnotation ToAnnotation()
+        {
+            return new CvatRectangleAnnotation
+            {
+                Kind = Kind,
+                FrameIndex = FrameIndex,
+                LabelId = LabelId,
+                BoundingBox = new RectangleD(X, Y, Width, Height),
+                RotationDegrees = NormalizeRotation(RotationDegrees),
+                Source = string.IsNullOrWhiteSpace(Source) ? "manual" : Source,
+            };
+        }
+
+        public static EditorShape FromAnnotation(CvatRectangleAnnotation annotation)
+        {
+            return new EditorShape
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Kind = annotation.Kind,
+                FrameIndex = annotation.FrameIndex,
+                LabelId = annotation.LabelId,
+                X = annotation.BoundingBox.X,
+                Y = annotation.BoundingBox.Y,
+                Width = annotation.BoundingBox.Width,
+                Height = annotation.BoundingBox.Height,
+                RotationDegrees = NormalizeRotation(annotation.RotationDegrees),
+                Source = annotation.Source,
+            };
+        }
+
+        private EditorPoint ToLocal(EditorPoint imagePoint)
+        {
+            var center = Center;
+            var dx = imagePoint.X - center.X;
+            var dy = imagePoint.Y - center.Y;
+            var radians = DegreesToRadians(-RotationDegrees);
+            var cos = Math.Cos(radians);
+            var sin = Math.Sin(radians);
+            return new EditorPoint(dx * cos - dy * sin, dx * sin + dy * cos);
+        }
+
+        private EditorPoint LocalToImage(EditorPoint localPoint)
+        {
+            var center = Center;
+            var radians = DegreesToRadians(RotationDegrees);
+            var cos = Math.Cos(radians);
+            var sin = Math.Sin(radians);
+            return new EditorPoint(
+                center.X + localPoint.X * cos - localPoint.Y * sin,
+                center.Y + localPoint.X * sin + localPoint.Y * cos);
+        }
+
+        private EditorPoint GetHandleLocalPoint(EditorHandle handle, double rotateHandleOffset)
+        {
+            return handle switch
+            {
+                EditorHandle.NorthWest => new EditorPoint(-Width / 2.0, -Height / 2.0),
+                EditorHandle.North => new EditorPoint(0, -Height / 2.0),
+                EditorHandle.NorthEast => new EditorPoint(Width / 2.0, -Height / 2.0),
+                EditorHandle.East => new EditorPoint(Width / 2.0, 0),
+                EditorHandle.SouthEast => new EditorPoint(Width / 2.0, Height / 2.0),
+                EditorHandle.South => new EditorPoint(0, Height / 2.0),
+                EditorHandle.SouthWest => new EditorPoint(-Width / 2.0, Height / 2.0),
+                EditorHandle.West => new EditorPoint(-Width / 2.0, 0),
+                EditorHandle.Rotate => new EditorPoint(0, -Height / 2.0 - rotateHandleOffset),
+                _ => new EditorPoint(0, 0),
+            };
+        }
+
+        private static double Distance(EditorPoint left, EditorPoint right)
+        {
+            var dx = left.X - right.X;
+            var dy = left.Y - right.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+    }
+
+    private sealed record EditorRect(double X, double Y, double Width, double Height)
+    {
+        public static EditorRect FromPoints(EditorPoint start, EditorPoint end)
+        {
+            var left = Math.Min(start.X, end.X);
+            var top = Math.Min(start.Y, end.Y);
+            return new EditorRect(left, top, Math.Abs(end.X - start.X), Math.Abs(end.Y - start.Y));
+        }
+
+        public EditorRect Clamp(double maxWidth, double maxHeight)
+        {
+            var left = ClampValue(X, 0, maxWidth);
+            var top = ClampValue(Y, 0, maxHeight);
+            var right = ClampValue(X + Width, 0, maxWidth);
+            var bottom = ClampValue(Y + Height, 0, maxHeight);
+
+            return new EditorRect(
+                Math.Min(left, right),
+                Math.Min(top, bottom),
+                Math.Abs(right - left),
+                Math.Abs(bottom - top));
+        }
+
+        private static double ClampValue(double value, double min, double max)
+        {
+            return Math.Max(min, Math.Min(max, value));
+        }
+    }
+}

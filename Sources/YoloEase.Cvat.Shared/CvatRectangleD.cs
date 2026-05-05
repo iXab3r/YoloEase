@@ -1,5 +1,8 @@
 ﻿namespace YoloEase.Cvat.Shared;
 
+/// <summary>
+/// Stores a CVAT rectangle using absolute pixel-space corner coordinates.
+/// </summary>
 public readonly record struct CvatRectangleD
 {
 	public CvatRectangleD(double x, double y, double width, double height)

@@ -6,6 +6,9 @@ using PoeShared.Services;
 
 namespace YoloEase.UI.Services;
 
+/// <summary>
+/// Loads YOLO models from disk and caches them by file path and timestamp.
+/// </summary>
 public class YoloModelCachingService : DisposableReactiveObjectWithLogger, IYoloModelCachingService
 {
     private static readonly Binder<YoloModelCachingService> Binder = new();

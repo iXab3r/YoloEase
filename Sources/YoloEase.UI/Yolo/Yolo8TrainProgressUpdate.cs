@@ -1,5 +1,8 @@
 namespace YoloEase.UI.Yolo;
 
+/// <summary>
+/// Reports parsed training progress from the YOLO command-line output.
+/// </summary>
 public sealed record Yolo8TrainProgressUpdate
 {
     public int EpochCurrent { get; init; }
