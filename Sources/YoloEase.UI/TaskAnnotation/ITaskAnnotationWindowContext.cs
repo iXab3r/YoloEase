@@ -48,6 +48,8 @@ public interface ITaskAnnotationWindowContext
 
     bool CanCopySelection { get; }
 
+    bool CanDeleteSelection { get; }
+
     bool CanPasteClipboard { get; }
 
     bool CanCopyPreviousFrameAnnotations { get; }
@@ -203,6 +205,8 @@ public interface ITaskAnnotationWindowContext
     void CutSelection();
 
     void CopySelection();
+
+    void DeleteSelection();
 
     void BeginPaste();
 

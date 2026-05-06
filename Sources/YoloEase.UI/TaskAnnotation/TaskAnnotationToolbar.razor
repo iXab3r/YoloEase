@@ -50,6 +50,14 @@
         <i class="fa fa-copy"></i>
     </button>
     <button type="button"
+            class="task-editor-tool"
+            title="Delete selection (Delete / Q)"
+            aria-label="Delete selection (Delete or Q)"
+            disabled="@(!Context.CanDeleteSelection)"
+            @onclick="Context.DeleteSelection">
+        <i class="fa fa-trash"></i>
+    </button>
+    <button type="button"
             class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.Paste)"
             title="Paste (Ctrl+V)"
             disabled="@(!Context.CanPasteClipboard)"

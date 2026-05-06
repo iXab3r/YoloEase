@@ -104,6 +104,8 @@ public partial class TaskAnnotationWindow
 
     bool ITaskAnnotationWindowContext.CanCopySelection => CanCopySelection;
 
+    bool ITaskAnnotationWindowContext.CanDeleteSelection => CanDeleteSelection;
+
     bool ITaskAnnotationWindowContext.CanPasteClipboard => CanPasteClipboard;
 
     bool ITaskAnnotationWindowContext.CanCopyPreviousFrameAnnotations => CanCopyPreviousFrameAnnotations;
@@ -259,6 +261,8 @@ public partial class TaskAnnotationWindow
     void ITaskAnnotationWindowContext.CutSelection() => CutSelection();
 
     void ITaskAnnotationWindowContext.CopySelection() => CopySelection();
+
+    void ITaskAnnotationWindowContext.DeleteSelection() => DeleteSelection();
 
     void ITaskAnnotationWindowContext.BeginPaste() => BeginPaste();
 
@@ -499,6 +503,8 @@ public partial class TaskAnnotationWindow
     private bool CanRedo => !IsCanvasInteractionBlocked && historyIndex >= 0 && historyIndex < history.Count - 1;
 
     private bool CanCopySelection => !IsCanvasInteractionBlocked && EffectiveShapes.Any();
+
+    private bool CanDeleteSelection => !IsCanvasInteractionBlocked && EffectiveShapes.Any();
 
     private bool CanPasteClipboard => !IsCanvasInteractionBlocked && clipboardShapes.Count > 0;
 
@@ -2136,6 +2142,16 @@ public partial class TaskAnnotationWindow
         }
 
         PushHistorySnapshot(markDirty: true);
+    }
+
+    private void DeleteSelection()
+    {
+        if (!CanDeleteSelection)
+        {
+            return;
+        }
+
+        DeleteEffectiveShape();
     }
 
     private void CopySelection()
