@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Reactive.Linq;
+using System.Xml.Linq;
 using Moq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -13,8 +14,10 @@ namespace YoloEase.Tests.UI.Core;
 
 public class AnnotationProjectAccessorFixture
 {
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+
     [Test]
-    public async Task ShouldRecoverOfflineTasksAndLabelsFromAnnotationXml()
+    public async Task ShouldRecoverTasksAndLabelsFromAnnotationXml()
     {
         using var temp = new TemporaryDirectory();
         var storageDirectory = new DirectoryInfo(Path.Combine(temp.Path, "storage"));
@@ -54,7 +57,7 @@ public class AnnotationProjectAccessorFixture
 
         var instance = CreateInstance(storageDirectory);
 
-        await instance.Refresh().WaitAsync(TimeSpan.FromSeconds(5));
+        await instance.Refresh().WaitAsync(Timeout);
 
         var task = instance.Tasks.Items.ShouldHaveSingleItem();
         task.Id.ShouldBe(1286);
@@ -72,11 +75,11 @@ public class AnnotationProjectAccessorFixture
     }
 
     /// <summary>
-    /// WHAT: Offline project identity and next ids are derived from workspace files instead of a project.json sidecar.
+    /// WHAT: Project identity and next ids are derived from workspace files instead of a project.json sidecar.
     /// HOW: Creates labels, tasks, and annotations, then verifies the former state file is never written.
     /// </summary>
     [Test]
-    public async Task ShouldNotCreateProjectStateFileForOfflineWorkspace()
+    public async Task ShouldNotCreateProjectStateFileForProjectWorkspace()
     {
         // Given
         using var temp = new TemporaryDirectory();
@@ -87,7 +90,7 @@ public class AnnotationProjectAccessorFixture
         var projectStateFile = Path.Combine(storageDirectory.FullName, "annotation", "project.json");
 
         // When
-        await instance.Refresh().WaitAsync(TimeSpan.FromSeconds(5));
+        await instance.Refresh().WaitAsync(Timeout);
         await instance.AddLabel("Flower");
         var task = await instance.CreateTask(new[] { imageFile });
         var label = instance.Labels.Items.ShouldHaveSingleItem();
@@ -110,11 +113,11 @@ public class AnnotationProjectAccessorFixture
     }
 
     /// <summary>
-    /// WHAT: Saving one offline task must not temporarily remove files that belong to another task from the shared task-file cache.
-    /// HOW: Creates two offline tasks, records project-file cache snapshots while finishing the first task, and checks the second task file remains present.
+    /// WHAT: Saving one task must not temporarily remove files that belong to another task from the shared task-file cache.
+    /// HOW: Creates two tasks, records project-file cache snapshots while finishing the first task, and checks the second task file remains present.
     /// </summary>
     [Test]
-    public async Task ShouldKeepOtherTaskFilesVisibleWhenSavingOfflineTask()
+    public async Task ShouldKeepOtherTaskFilesVisibleWhenSavingTask()
     {
         // Given
         using var temp = new TemporaryDirectory();
@@ -150,6 +153,130 @@ public class AnnotationProjectAccessorFixture
         instance.Tasks.Items.Single(x => x.Id == firstTask.Id).Status.ShouldBe(AnnotationTaskStatus.Completed);
     }
 
+    /// <summary>
+    /// WHAT: Annotation reads, writes, and status updates for one project are serialized through one project queue.
+    /// HOW: Runs saves, annotation reads, and status changes concurrently against the same task, then verifies the final XML and task state.
+    /// </summary>
+    [Test]
+    public async Task ShouldSerializeConcurrentAnnotationOperations()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var storageDirectory = new DirectoryInfo(Path.Combine(temp.Path, "storage"));
+        var instance = CreateInstance(storageDirectory);
+        var setup = await CreateSingleFrameTask(instance, temp);
+
+        // When
+        var operations = Enumerable.Range(0, 45).Select(async index =>
+        {
+            switch (index % 3)
+            {
+                case 0:
+                    await instance.SaveTaskAnnotations(setup.Task.Id, new[] { CreateBox(setup.Label.Id, index + 1) }, AnnotationTaskStatus.InProgress);
+                    break;
+                case 1:
+                    _ = await instance.RetrieveTaskAnnotations(setup.Task.Id);
+                    break;
+                default:
+                    await instance.UpdateTaskStatus(setup.Task.Id, index % 2 == 0 ? AnnotationTaskStatus.Completed : AnnotationTaskStatus.InProgress);
+                    break;
+            }
+        });
+        await Task.WhenAll(operations).WaitAsync(Timeout);
+
+        await instance.SaveTaskAnnotations(setup.Task.Id, new[] { CreateBox(setup.Label.Id, 99) }, AnnotationTaskStatus.Completed).WaitAsync(Timeout);
+
+        // Then
+        var annotations = await instance.RetrieveTaskAnnotations(setup.Task.Id).WaitAsync(Timeout);
+        annotations.ShouldHaveSingleItem().BoundingBox.X.ShouldBe(99);
+        instance.Tasks.Items.Single(x => x.Id == setup.Task.Id).Status.ShouldBe(AnnotationTaskStatus.Completed);
+        XDocument.Load(GetAnnotationsXmlFile(storageDirectory, setup.Task.Id).FullName)
+            .Descendants("box")
+            .Count()
+            .ShouldBe(1);
+    }
+
+    /// <summary>
+    /// WHAT: A short-lived external read handle on the annotation XML should not crash a save.
+    /// HOW: Locks the existing XML with a read-only sharing mode, starts a save, releases the lock, and verifies the retry succeeds.
+    /// </summary>
+    [Test]
+    public async Task ShouldRetryAnnotationSaveWhenXmlFileIsTemporarilyLocked()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var storageDirectory = new DirectoryInfo(Path.Combine(temp.Path, "storage"));
+        var instance = CreateInstance(storageDirectory);
+        var setup = await CreateSingleFrameTask(instance, temp);
+        await instance.SaveTaskAnnotations(setup.Task.Id, new[] { CreateBox(setup.Label.Id, 1) }, AnnotationTaskStatus.InProgress).WaitAsync(Timeout);
+
+        var annotationsFile = GetAnnotationsXmlFile(storageDirectory, setup.Task.Id);
+        using var lockedStream = new FileStream(annotationsFile.FullName, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        // When
+        var saveTask = instance.SaveTaskAnnotations(setup.Task.Id, new[] { CreateBox(setup.Label.Id, 42) }, AnnotationTaskStatus.Completed);
+        await Task.Delay(300);
+        lockedStream.Dispose();
+        await saveTask.WaitAsync(Timeout);
+
+        // Then
+        var annotations = await instance.RetrieveTaskAnnotations(setup.Task.Id).WaitAsync(Timeout);
+        annotations.ShouldHaveSingleItem().BoundingBox.X.ShouldBe(42);
+        instance.Tasks.Items.Single(x => x.Id == setup.Task.Id).Status.ShouldBe(AnnotationTaskStatus.Completed);
+    }
+
+    /// <summary>
+    /// WHAT: Rapid annotation saves should leave a complete CVAT XML file after each atomic replacement.
+    /// HOW: Saves several annotation revisions and parses the XML from disk after every save.
+    /// </summary>
+    [Test]
+    public async Task ShouldLeaveValidXmlAfterRapidAnnotationSaves()
+    {
+        // Given
+        using var temp = new TemporaryDirectory();
+        var storageDirectory = new DirectoryInfo(Path.Combine(temp.Path, "storage"));
+        var instance = CreateInstance(storageDirectory);
+        var setup = await CreateSingleFrameTask(instance, temp);
+        var annotationsFile = GetAnnotationsXmlFile(storageDirectory, setup.Task.Id);
+
+        // When / Then
+        for (var index = 0; index < 20; index++)
+        {
+            await instance.SaveTaskAnnotations(setup.Task.Id, new[] { CreateBox(setup.Label.Id, index + 1) }, AnnotationTaskStatus.InProgress).WaitAsync(Timeout);
+            var document = XDocument.Load(annotationsFile.FullName);
+            document.Root?.Name.LocalName.ShouldBe("annotations");
+            document.Descendants("box").ShouldHaveSingleItem();
+        }
+    }
+
+    private static async Task<(AnnotationTaskInfo Task, AnnotationLabelInfo Label)> CreateSingleFrameTask(AnnotationProjectAccessor instance, TemporaryDirectory temp)
+    {
+        var imageFile = new FileInfo(Path.Combine(temp.Path, "frame-a.png"));
+        await File.WriteAllTextAsync(imageFile.FullName, string.Empty);
+        await instance.Refresh().WaitAsync(Timeout);
+        await instance.AddLabel("Flower").WaitAsync(Timeout);
+        var task = await instance.CreateTask(new[] { imageFile }).WaitAsync(Timeout);
+        var label = instance.Labels.Items.ShouldHaveSingleItem();
+        return (task, label);
+    }
+
+    private static CvatRectangleAnnotation CreateBox(int labelId, double x)
+    {
+        return new CvatRectangleAnnotation
+        {
+            Kind = CvatAnnotationShapeKind.Rectangle,
+            FrameIndex = 0,
+            LabelId = labelId,
+            BoundingBox = new RectangleD(x, 2, 3, 4),
+            Source = "manual",
+        };
+    }
+
+    private static FileInfo GetAnnotationsXmlFile(DirectoryInfo storageDirectory, int taskId)
+    {
+        return new FileInfo(Path.Combine(storageDirectory.FullName, "assets", "training", $"annotations.project.1.task.{taskId}.xml"));
+    }
+
     private static AnnotationProjectAccessor CreateInstance(DirectoryInfo storageDirectory)
     {
         var cvatClient = new Mock<ICvatClient>();
@@ -164,7 +291,7 @@ public class AnnotationProjectAccessorFixture
         {
             Mode = AnnotationBackendMode.Offline,
             StorageDirectory = storageDirectory,
-            ProjectName = "Offline",
+            ProjectName = "Project",
         };
     }
 

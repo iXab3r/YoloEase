@@ -26,15 +26,13 @@ The app is project-based. A user opens a `.yeproj` file, and that project become
 - generated datasets
 - training history and automation state
 
-The app is now oriented around the built-in offline annotation workspace. The overall training pipeline still expects CVAT-shaped annotation exports so the downstream dataset creation flow stays stable.
+The app is now oriented around the built-in project annotation workspace. The overall training pipeline still expects CVAT-shaped annotation exports so the downstream dataset creation flow stays stable.
 
-## Current Annotation Backend
+## Current Annotation Storage
 
-YoloEase keeps the backend seam internally, but the user-facing app now operates in offline mode only:
+YoloEase keeps the old backend seam internally, but the user-facing app now stores annotation state in the project workspace:
 
-- `Offline` mode: keeps annotation state inside the project workspace on disk and exposes a built-in project tab inside the app
-
-Offline mode is intended to be portable. The `.yeproj` file is the entry point, and the offline workspace lives in a sibling folder next to that file. Copy both and you copy the full project state. Legacy project files that still say `CVAT` are opened as offline projects while preserving their stored project workspace path where possible.
+The `.yeproj` file is the entry point, and the annotation workspace lives in a sibling folder next to that file. Copy both and you copy the full project state. Legacy project files that still say `CVAT` are opened into the built-in project workspace while preserving their stored project workspace path where possible.
 
 ## High-Level Workflow
 
@@ -48,18 +46,18 @@ The app selects the next batch of files that should be annotated. This can be dr
 
 ### 3. Annotation
 
-Historically this step was done through CVAT. The offline backend keeps the same mental model:
+Historically this step was done through CVAT. The project workspace keeps the same mental model:
 
 - tasks
 - jobs
 - labels with colors
 - task status changes such as new, in progress, completed
 
-Offline mode manages labels, task metadata, jobs, files, and task state inside project storage.
+The app manages labels, task metadata, jobs, files, and task state inside project storage.
 
 ### 4. Dataset Preparation
 
-Annotated tasks are exported in a CVAT-style format. That export is then converted into YOLO dataset structure so the rest of the training stack does not need to care whether the annotations came from CVAT or from the offline backend.
+Annotated tasks are exported in a CVAT-style format. That export is then converted into YOLO dataset structure so the rest of the training stack does not need to care where the annotations were edited.
 
 ### 5. Augmentation and Training
 
@@ -95,7 +93,7 @@ The main desktop application. This contains:
 - the app shell and tabs
 - project settings UI
 - data source and local file handling
-- offline annotation backend integration
+- project annotation storage integration
 - training workflow UI
 - augmentation features
 - YOLO integration
@@ -123,9 +121,9 @@ Automated tests.
 
 Third-party or shared dependencies brought in as git submodules.
 
-## Offline Mode Storage Model
+## Project Storage Model
 
-Offline mode is meant to be self-contained and easy to move around. The intended shape is:
+Project storage is meant to be self-contained and easy to move around. The intended shape is:
 
 - `.yeproj` file as the project entry point
 - sibling workspace folder holding synced assets and annotation state
@@ -139,13 +137,15 @@ That workspace mirrors annotation concepts that previously lived in CVAT, such a
 - annotation exports
 - task status and revision-like state
 
-Offline project identity, display name, and next label/task ids are derived from the project file and current workspace files instead of a separate project-state sidecar. Durable state lives in the label list, per-task task files, project-owned assets, and CVAT-style XML exports. This keeps the system understandable, reduces desync risk, and makes it easier to preserve the existing training pipeline.
+Project identity, display name, and next label/task ids are derived from the project file and current workspace files instead of a separate project-state sidecar. Durable state lives in the label list, per-task task files, project-owned assets, and CVAT-style XML exports. This keeps the system understandable, reduces desync risk, and makes it easier to preserve the existing training pipeline.
+
+Project disk access is serialized by `AnnotationProjectAccessor` through an in-memory queue owned by the loaded project instance. Reads, writes, stats refreshes, task status changes, frame removal, and exports share that queue, while JSON/XML writes go through same-directory temporary files and atomic replacement with bounded retry. This keeps the existing storage format while avoiding same-process races around task metadata and annotation XML files.
 
 ## Boundaries And Current Constraints
 
-- The app is offline-first and no longer exposes a CVAT backend selection mechanism.
+- The app uses project-local annotation storage and no longer exposes a CVAT backend selection mechanism.
 - The rest of the pipeline still benefits from CVAT-compatible exports.
-- Offline annotation editing is not feature-complete yet; task-state flow exists first.
+- Annotation editing is not feature-complete yet; task-state flow exists first.
 - Sync currently copies source files into project storage, and that behavior is intentionally preserved for now.
 - The project is optimized for iterative improvement of a dataset and model over time, not for one-off import/export only.
 

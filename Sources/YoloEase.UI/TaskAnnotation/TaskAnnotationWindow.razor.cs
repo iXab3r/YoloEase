@@ -845,7 +845,7 @@ public partial class TaskAnnotationWindow
             var annotations = editorShapes.Select(x => x.ToAnnotation()).ToArray();
             var remoteProject = Project.RemoteProject;
 
-            await Task.Run(() => remoteProject.SaveTaskAnnotations(taskId, annotations, status));
+            await remoteProject.SaveTaskAnnotations(taskId, annotations, status);
             lastSavedAt = DateTimeOffset.Now;
 
             if (clearDirty && editorRevision == revisionAtSaveStart)
@@ -955,10 +955,10 @@ public partial class TaskAnnotationWindow
             return null;
         }
 
-        var offlineFile = Project.RemoteProject.ResolveTaskFrameFile(frameName);
-        if (offlineFile?.Exists == true)
+        var projectFile = Project.RemoteProject.ResolveTaskFrameFile(frameName);
+        if (projectFile?.Exists == true)
         {
-            return offlineFile;
+            return projectFile;
         }
 
         var fileName = Path.GetFileName(frameName);
@@ -2587,6 +2587,7 @@ public partial class TaskAnnotationWindow
         catch (Exception e)
         {
             ShowError(e.Message);
+            return;
         }
 
         CloseWindowCore();

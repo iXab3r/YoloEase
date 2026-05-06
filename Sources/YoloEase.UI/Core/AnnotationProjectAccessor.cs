@@ -1,6 +1,9 @@
 using System.Linq;
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Xml;
 using System.Xml.Linq;
 using AntDesign;
 using CvatApi;
@@ -11,7 +14,7 @@ using YoloEase.UI.Scaffolding;
 namespace YoloEase.UI.Core;
 
 /// <summary>
-/// Coordinates CVAT and offline annotation projects, task metadata, labels, frames, and annotation XML storage.
+/// Coordinates annotation project metadata, labels, frames, and annotation XML storage.
 /// </summary>
 public class AnnotationProjectAccessor : RefreshableReactiveObject
 {
@@ -19,10 +22,13 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     private static readonly Regex OfflineAnnotationFileNameRegex = new(
         @"annotations\.project\.(?<projectId>\d+)\.task\.(?<taskId>\d+)\.xml$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Encoding StorageEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private const int FileOperationRetryCount = 20;
 
     private readonly ICvatClient cvatClient;
     private readonly IUniqueIdGenerator idGenerator;
     private readonly IConfigSerializer configSerializer;
+    private readonly ProjectStorageOperationQueue projectStorageOperations;
     private readonly SourceCacheEx<TaskFileInfo, string> projectFileSource = new(GetTaskFileCacheKey);
     private readonly SourceCacheEx<AnnotationTaskInfo, int> taskSource = new(x => x.Id);
     private readonly SourceCacheEx<AnnotationProjectInfoItem, int> projectsSources = new(x => x.Id);
@@ -45,6 +51,15 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         this.cvatClient = cvatClient;
         this.idGenerator = idGenerator;
         this.configSerializer = configSerializer;
+        projectStorageOperations = new ProjectStorageOperationQueue(
+            message =>
+            {
+                if (Log.IsDebugEnabled)
+                {
+                    Log.Debug(message);
+                }
+            },
+            message => Log.Warn(message)).AddTo(Anchors);
         Binder.Attach(this).AddTo(Anchors);
     }
 
@@ -66,7 +81,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
 
     public string? OrganizationName { get; private set; }
 
-    public string ProjectName { get; set; } = "Offline Project";
+    public string ProjectName { get; set; } = "YoloEase Project";
 
     public bool IsReady { get; private set; }
 
@@ -114,7 +129,11 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             {
                 Username = string.IsNullOrWhiteSpace(Username) ? Environment.UserName : Username,
             };
-            EnsureOfflineProjectIdentity();
+            await RunProjectStorageWrite("ensure project identity", () =>
+            {
+                EnsureOfflineProjectIdentity();
+                return Task.CompletedTask;
+            });
             await Refresh();
             return;
         }
@@ -159,16 +178,25 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode == AnnotationBackendMode.Offline)
         {
-            var taskDirectory = GetOfflineTaskDirectory(taskId);
-            if (taskDirectory.Exists)
+            await RunProjectStorageWrite($"delete task {taskId}", async () =>
             {
-                taskDirectory.Delete(recursive: true);
-            }
+                var taskDirectory = GetOfflineTaskDirectory(taskId);
+                if (taskDirectory.Exists)
+                {
+                    await DeleteDirectoryWithRetry(taskDirectory);
+                }
 
-            if (ActiveTaskId == taskId)
-            {
-                ActiveTaskId = null;
-            }
+                var annotationsFile = GetOfflineTaskAnnotationsXmlFile(taskId);
+                if (annotationsFile.Exists)
+                {
+                    await DeleteFileWithRetry(annotationsFile);
+                }
+
+                if (ActiveTaskId == taskId)
+                {
+                    ActiveTaskId = null;
+                }
+            });
 
             await Refresh();
             return;
@@ -199,7 +227,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode == AnnotationBackendMode.Offline)
         {
-            return $"offline://project/{projectId}";
+            return $"yoloease://project/{projectId}";
         }
 
         return $"{ResolveServerUrl()}/projects/{projectId}";
@@ -215,10 +243,15 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                 throw new InvalidOperationException("Storage directory is not configured");
             }
 
-            if (!directory.Exists)
+            await RunProjectStorageWrite("ensure project folder", () =>
             {
-                directory.Create();
-            }
+                if (!directory.Exists)
+                {
+                    directory.Create();
+                }
+
+                return Task.CompletedTask;
+            });
             await ProcessUtils.OpenFolder(directory);
             return;
         }
@@ -230,7 +263,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode == AnnotationBackendMode.Offline)
         {
-            return await RetrieveOfflineMetadata(taskId);
+            return await RunProjectStorageRead($"retrieve task {taskId} metadata", () => RetrieveOfflineMetadata(taskId));
         }
 
         return await cvatClient.Api.RunAuthenticated(async httpClient =>
@@ -276,7 +309,9 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
 
         if (Mode == AnnotationBackendMode.Offline)
         {
-            return await CreateOfflineTask(filesToAdd);
+            var taskInfo = await RunProjectStorageWrite("create task", () => CreateOfflineTask(filesToAdd));
+            await Refresh();
+            return taskInfo;
         }
 
         var taskId = await cvatClient.Cli.CreateTask(
@@ -305,7 +340,9 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode == AnnotationBackendMode.Offline)
         {
-            await SaveOfflineTaskAnnotations(taskId, labels, labels.Any() ? AnnotationTaskStatus.InProgress : AnnotationTaskStatus.New);
+            await RunProjectStorageWrite(
+                $"upload task {taskId} annotations",
+                () => SaveOfflineTaskAnnotations(taskId, labels, labels.Any() ? AnnotationTaskStatus.InProgress : AnnotationTaskStatus.New));
             return new AnnotationUpdateResult
             {
                 ShapesCount = labels.Length,
@@ -358,7 +395,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode == AnnotationBackendMode.Offline)
         {
-            await ExportOfflineAnnotations(taskId, outputFile);
+            await RunProjectStorageRead($"export task {taskId} annotations", () => ExportOfflineAnnotations(taskId, outputFile));
             return;
         }
 
@@ -372,31 +409,34 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             return Array.Empty<CvatRectangleAnnotation>();
         }
 
-        var annotationsXmlFile = GetOfflineTaskAnnotationsXmlFile(taskId);
-        if (annotationsXmlFile.Exists)
+        return await RunProjectStorageRead($"retrieve task {taskId} annotations", async () =>
         {
-            return await ReadOfflineTaskAnnotationsXml(taskId, annotationsXmlFile);
-        }
+            var annotationsXmlFile = GetOfflineTaskAnnotationsXmlFile(taskId);
+            if (annotationsXmlFile.Exists)
+            {
+                return await ReadOfflineTaskAnnotationsXml(taskId, annotationsXmlFile);
+            }
 
-        var annotationsJsonFile = GetOfflineTaskAnnotationsJsonFile(taskId);
-        if (!annotationsJsonFile.Exists)
-        {
-            return Array.Empty<CvatRectangleAnnotation>();
-        }
+            var annotationsJsonFile = GetOfflineTaskAnnotationsJsonFile(taskId);
+            if (!annotationsJsonFile.Exists)
+            {
+                return Array.Empty<CvatRectangleAnnotation>();
+            }
 
-        var content = await File.ReadAllTextAsync(annotationsJsonFile.FullName);
-        var state = configSerializer.Deserialize<OfflineTaskAnnotationsState>(content);
-        return state.Shapes.EmptyIfNull().ToArray();
+            var content = await ReadTextFileWithRetry(annotationsJsonFile);
+            var state = configSerializer.Deserialize<OfflineTaskAnnotationsState>(content);
+            return state.Shapes.EmptyIfNull().ToArray();
+        });
     }
 
     public async Task SaveTaskAnnotations(int taskId, IReadOnlyList<CvatRectangleAnnotation> labels, AnnotationTaskStatus status)
     {
         if (Mode != AnnotationBackendMode.Offline)
         {
-            throw new NotSupportedException("Manual task editing is available only for offline projects");
+            throw new NotSupportedException("Manual task editing is not available for CVAT-backed projects");
         }
 
-        await SaveOfflineTaskAnnotations(taskId, labels, status);
+        await RunProjectStorageWrite($"save task {taskId} annotations", () => SaveOfflineTaskAnnotations(taskId, labels, status));
         await Refresh();
     }
 
@@ -404,54 +444,57 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode != AnnotationBackendMode.Offline)
         {
-            throw new NotSupportedException("Removing images from a task is available only for offline projects");
+            throw new NotSupportedException("Removing images from a task is not available for CVAT-backed projects");
         }
 
-        var task = await ReadOfflineTask(taskId);
-        if (task == null)
+        await RunProjectStorageWrite($"remove frame {frameIndex} from task {taskId}", async () =>
         {
-            throw new InvalidOperationException($"Offline task {taskId} was not found");
-        }
-
-        if (frameIndex < 0 || frameIndex >= task.Files.Length)
-        {
-            throw new ArgumentOutOfRangeException(nameof(frameIndex), $"Frame {frameIndex} is outside task {taskId}");
-        }
-
-        var removedFileName = task.Files[frameIndex];
-        var annotations = (await RetrieveTaskAnnotations(taskId))
-            .Where(x => x.FrameIndex != frameIndex)
-            .Select(x => x.FrameIndex > frameIndex ? x with { FrameIndex = x.FrameIndex - 1 } : x)
-            .ToArray();
-
-        task.Files = task.Files
-            .Where((_, index) => index != frameIndex)
-            .ToArray();
-        task.Revision++;
-        task.UpdatedAt = DateTimeOffset.UtcNow;
-
-        if (task.Files.Length <= 0)
-        {
-            task.Status = AnnotationTaskStatus.New;
-            task.CompletedAt = null;
-        }
-
-        await SaveOfflineTask(task);
-        UpdateOfflineTaskCache(task);
-        await WriteOfflineTaskAnnotationsXml(task, annotations);
-
-        if (deleteImageFile)
-        {
-            var imageFile = ResolveOfflineTaskFile(removedFileName);
-            var isUsedByAnotherTask = (await ReadOfflineTasks(ProjectId))
-                .Where(x => x.TaskId != taskId)
-                .SelectMany(x => x.Files.EmptyIfNull())
-                .Any(x => x.Equals(removedFileName, StringComparison.OrdinalIgnoreCase));
-            if (!isUsedByAnotherTask && imageFile.Exists)
+            var task = await ReadOfflineTask(taskId);
+            if (task == null)
             {
-                imageFile.Delete();
+                throw new InvalidOperationException($"Task {taskId} was not found");
             }
-        }
+
+            if (frameIndex < 0 || frameIndex >= task.Files.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(frameIndex), $"Frame {frameIndex} is outside task {taskId}");
+            }
+
+            var removedFileName = task.Files[frameIndex];
+            var annotations = (await RetrieveTaskAnnotations(taskId))
+                .Where(x => x.FrameIndex != frameIndex)
+                .Select(x => x.FrameIndex > frameIndex ? x with { FrameIndex = x.FrameIndex - 1 } : x)
+                .ToArray();
+
+            task.Files = task.Files
+                .Where((_, index) => index != frameIndex)
+                .ToArray();
+            task.Revision++;
+            task.UpdatedAt = DateTimeOffset.UtcNow;
+
+            if (task.Files.Length <= 0)
+            {
+                task.Status = AnnotationTaskStatus.New;
+                task.CompletedAt = null;
+            }
+
+            await SaveOfflineTask(task);
+            UpdateOfflineTaskCache(task);
+            await WriteOfflineTaskAnnotationsXml(task, annotations);
+
+            if (deleteImageFile)
+            {
+                var imageFile = ResolveOfflineTaskFile(removedFileName);
+                var isUsedByAnotherTask = (await ReadOfflineTasks(ProjectId))
+                    .Where(x => x.TaskId != taskId)
+                    .SelectMany(x => x.Files.EmptyIfNull())
+                    .Any(x => x.Equals(removedFileName, StringComparison.OrdinalIgnoreCase));
+                if (!isUsedByAnotherTask && imageFile.Exists)
+                {
+                    await DeleteFileWithRetry(imageFile);
+                }
+            }
+        });
 
         await Refresh();
     }
@@ -460,7 +503,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode != AnnotationBackendMode.Offline)
         {
-            throw new NotSupportedException("Labels can be edited only for offline projects");
+            throw new NotSupportedException("Labels cannot be edited for CVAT-backed projects");
         }
 
         labelName = labelName?.Trim() ?? string.Empty;
@@ -469,23 +512,26 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             throw new ArgumentException("Label name must be specified");
         }
 
-        var state = ResolveOfflineProjectIdentity();
-        var labels = await ReadOfflineLabels(state.ProjectId);
-        if (labels.Any(x => x.Name.Equals(labelName, StringComparison.OrdinalIgnoreCase)))
+        await RunProjectStorageWrite($"add label {labelName}", async () =>
         {
-            throw new InvalidOperationException($"Label '{labelName}' already exists");
-        }
+            var state = ResolveOfflineProjectIdentity();
+            var labels = await ReadOfflineLabels(state.ProjectId);
+            if (labels.Any(x => x.Name.Equals(labelName, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException($"Label '{labelName}' already exists");
+            }
 
-        var nextLabelId = GetNextOfflineLabelId(labels);
-        var label = new OfflineLabelState
-        {
-            Id = nextLabelId,
-            Name = labelName,
-            Color = NormalizeLabelColor(color, nextLabelId),
-        };
+            var nextLabelId = GetNextOfflineLabelId(labels);
+            var label = new OfflineLabelState
+            {
+                Id = nextLabelId,
+                Name = labelName,
+                Color = NormalizeLabelColor(color, nextLabelId),
+            };
 
-        labels.Add(label);
-        await SaveOfflineLabels(state.ProjectId, labels);
+            labels.Add(label);
+            await SaveOfflineLabels(state.ProjectId, labels);
+        });
         await Refresh();
     }
 
@@ -493,23 +539,26 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode != AnnotationBackendMode.Offline)
         {
-            throw new NotSupportedException("Labels can be edited only for offline projects");
+            throw new NotSupportedException("Labels cannot be edited for CVAT-backed projects");
         }
 
-        var state = ResolveOfflineProjectIdentity();
-        var tasks = await ReadOfflineTasks(state.ProjectId);
-        foreach (var task in tasks)
+        await RunProjectStorageWrite($"delete label {labelId}", async () =>
         {
-            var annotations = await RetrieveTaskAnnotations(task.TaskId);
-            if (annotations.Any(x => x.LabelId == labelId))
+            var state = ResolveOfflineProjectIdentity();
+            var tasks = await ReadOfflineTasks(state.ProjectId);
+            foreach (var task in tasks)
             {
-                throw new InvalidOperationException("Cannot delete a label that is already used in task annotations");
+                var annotations = await RetrieveTaskAnnotations(task.TaskId);
+                if (annotations.Any(x => x.LabelId == labelId))
+                {
+                    throw new InvalidOperationException("Cannot delete a label that is already used in task annotations");
+                }
             }
-        }
 
-        var labels = await ReadOfflineLabels(state.ProjectId);
-        labels.RemoveAll(x => x.Id == labelId);
-        await SaveOfflineLabels(state.ProjectId, labels);
+            var labels = await ReadOfflineLabels(state.ProjectId);
+            labels.RemoveAll(x => x.Id == labelId);
+            await SaveOfflineLabels(state.ProjectId, labels);
+        });
         await Refresh();
     }
 
@@ -517,24 +566,27 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode != AnnotationBackendMode.Offline)
         {
-            throw new NotSupportedException("Labels can be edited only for offline projects");
+            throw new NotSupportedException("Labels cannot be edited for CVAT-backed projects");
         }
 
-        var state = ResolveOfflineProjectIdentity();
-        var labels = await ReadOfflineLabels(state.ProjectId);
-        var label = labels.FirstOrDefault(x => x.Id == labelId);
-        if (label == null)
+        await RunProjectStorageWrite($"update label {labelId} color", async () =>
         {
-            throw new InvalidOperationException($"Label #{labelId} was not found");
-        }
+            var state = ResolveOfflineProjectIdentity();
+            var labels = await ReadOfflineLabels(state.ProjectId);
+            var label = labels.FirstOrDefault(x => x.Id == labelId);
+            if (label == null)
+            {
+                throw new InvalidOperationException($"Label #{labelId} was not found");
+            }
 
-        var updatedLabel = label with
-        {
-            Color = NormalizeLabelColor(color, labelId),
-        };
+            var updatedLabel = label with
+            {
+                Color = NormalizeLabelColor(color, labelId),
+            };
 
-        labels[labels.IndexOf(label)] = updatedLabel;
-        await SaveOfflineLabels(state.ProjectId, labels);
+            labels[labels.IndexOf(label)] = updatedLabel;
+            await SaveOfflineLabels(state.ProjectId, labels);
+        });
         await Refresh();
     }
 
@@ -546,7 +598,11 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             return;
         }
 
-        EnsureOfflineProjectIdentity();
+        await RunProjectStorageWrite("update project name", () =>
+        {
+            EnsureOfflineProjectIdentity();
+            return Task.CompletedTask;
+        });
         await Refresh();
     }
 
@@ -554,8 +610,11 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode == AnnotationBackendMode.Offline)
         {
-            var annotations = await RetrieveTaskAnnotations(taskId);
-            await SaveOfflineTaskAnnotations(taskId, annotations, status);
+            await RunProjectStorageWrite($"update task {taskId} status", async () =>
+            {
+                var annotations = await RetrieveTaskAnnotations(taskId);
+                await SaveOfflineTaskAnnotations(taskId, annotations, status);
+            });
             await Refresh();
             return;
         }
@@ -568,11 +627,238 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (Mode == AnnotationBackendMode.Offline)
         {
-            await RefreshOffline();
+            await RunProjectStorageRead("refresh project", RefreshOffline);
         }
         else
         {
             await RefreshCvat();
+        }
+    }
+
+    private Task RunProjectStorageRead(string operationName, Func<Task> operation)
+    {
+        return projectStorageOperations.Run($"read:{operationName}", operation);
+    }
+
+    private Task<T> RunProjectStorageRead<T>(string operationName, Func<Task<T>> operation)
+    {
+        return projectStorageOperations.Run($"read:{operationName}", operation);
+    }
+
+    private Task RunProjectStorageWrite(string operationName, Func<Task> operation)
+    {
+        return projectStorageOperations.Run($"write:{operationName}", operation);
+    }
+
+    private Task<T> RunProjectStorageWrite<T>(string operationName, Func<Task<T>> operation)
+    {
+        return projectStorageOperations.Run($"write:{operationName}", operation);
+    }
+
+    private async Task<string> ReadTextFileWithRetry(FileInfo file)
+    {
+        return await RunFileOperationWithRetry($"read {file.FullName}", async () =>
+        {
+            await using var stream = new FileStream(
+                file.FullName,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                32 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using var reader = new StreamReader(stream, StorageEncoding, detectEncodingFromByteOrderMarks: true);
+            return await reader.ReadToEndAsync();
+        });
+    }
+
+    private async Task<XDocument> ReadXmlFileWithRetry(FileInfo file)
+    {
+        return await RunFileOperationWithRetry($"read XML {file.FullName}", () =>
+        {
+            using var stream = new FileStream(
+                file.FullName,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                32 * 1024,
+                FileOptions.SequentialScan);
+            return Task.FromResult(XDocument.Load(stream));
+        });
+    }
+
+    private async Task WriteTextFileAtomic(FileInfo file, string content)
+    {
+        await RunFileOperationWithRetry($"write {file.FullName}", async () =>
+        {
+            EnsureParentDirectory(file);
+            var tempFile = CreateSiblingTempFile(file);
+            try
+            {
+                var bytes = StorageEncoding.GetBytes(content);
+                await using (var stream = new FileStream(
+                                 tempFile.FullName,
+                                 FileMode.CreateNew,
+                                 FileAccess.Write,
+                                 FileShare.None,
+                                 32 * 1024,
+                                 FileOptions.Asynchronous | FileOptions.WriteThrough))
+                {
+                    await stream.WriteAsync(bytes);
+                    await stream.FlushAsync();
+                }
+
+                ReplaceFileWithTemp(tempFile, file);
+            }
+            catch
+            {
+                DeleteTempFile(tempFile);
+                throw;
+            }
+        });
+    }
+
+    private async Task WriteXmlFileAtomic(FileInfo file, XDocument document)
+    {
+        await RunFileOperationWithRetry($"write XML {file.FullName}", async () =>
+        {
+            EnsureParentDirectory(file);
+            var tempFile = CreateSiblingTempFile(file);
+            try
+            {
+                await using (var stream = new FileStream(
+                                 tempFile.FullName,
+                                 FileMode.CreateNew,
+                                 FileAccess.Write,
+                                 FileShare.None,
+                                 32 * 1024,
+                                 FileOptions.Asynchronous | FileOptions.WriteThrough))
+                {
+                    var settings = new XmlWriterSettings
+                    {
+                        Async = true,
+                        Encoding = StorageEncoding,
+                    };
+                    using (var writer = XmlWriter.Create(stream, settings))
+                    {
+                        await document.WriteToAsync(writer, CancellationToken.None);
+                        await writer.FlushAsync();
+                    }
+
+                    await stream.FlushAsync();
+                }
+
+                ReplaceFileWithTemp(tempFile, file);
+            }
+            catch
+            {
+                DeleteTempFile(tempFile);
+                throw;
+            }
+        });
+    }
+
+    private async Task DeleteFileWithRetry(FileInfo file)
+    {
+        await RunFileOperationWithRetry($"delete {file.FullName}", () =>
+        {
+            if (File.Exists(file.FullName))
+            {
+                File.Delete(file.FullName);
+            }
+
+            return Task.CompletedTask;
+        });
+    }
+
+    private async Task DeleteDirectoryWithRetry(DirectoryInfo directory)
+    {
+        await RunFileOperationWithRetry($"delete directory {directory.FullName}", () =>
+        {
+            directory.Refresh();
+            if (directory.Exists)
+            {
+                directory.Delete(recursive: true);
+            }
+
+            return Task.CompletedTask;
+        });
+    }
+
+    private async Task<T> RunFileOperationWithRetry<T>(string description, Func<Task<T>> operation)
+    {
+        for (var attempt = 1; attempt <= FileOperationRetryCount; attempt++)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (IOException) when (attempt < FileOperationRetryCount)
+            {
+                var retryDelay = GetFileRetryDelay(attempt);
+                if (Log.IsDebugEnabled)
+                {
+                    Log.Debug($"Retrying project file operation '{description}' after {retryDelay.TotalMilliseconds:F0} ms");
+                }
+
+                await Task.Delay(retryDelay);
+            }
+        }
+
+        return await operation();
+    }
+
+    private async Task RunFileOperationWithRetry(string description, Func<Task> operation)
+    {
+        await RunFileOperationWithRetry<object?>(description, async () =>
+        {
+            await operation();
+            return null;
+        });
+    }
+
+    private static TimeSpan GetFileRetryDelay(int attempt)
+    {
+        return TimeSpan.FromMilliseconds(Math.Min(250, 50 * attempt));
+    }
+
+    private static void EnsureParentDirectory(FileInfo file)
+    {
+        if (file.Directory is { Exists: false })
+        {
+            file.Directory.Create();
+        }
+    }
+
+    private static FileInfo CreateSiblingTempFile(FileInfo file)
+    {
+        var directory = file.DirectoryName ?? Path.GetTempPath();
+        return new FileInfo(Path.Combine(directory, $".{file.Name}.{Guid.NewGuid():N}.tmp"));
+    }
+
+    private static void ReplaceFileWithTemp(FileInfo tempFile, FileInfo targetFile)
+    {
+        if (File.Exists(targetFile.FullName))
+        {
+            File.Replace(tempFile.FullName, targetFile.FullName, destinationBackupFileName: null, ignoreMetadataErrors: true);
+        }
+        else
+        {
+            File.Move(tempFile.FullName, targetFile.FullName);
+        }
+    }
+
+    private static void DeleteTempFile(FileInfo tempFile)
+    {
+        try
+        {
+            if (File.Exists(tempFile.FullName))
+            {
+                File.Delete(tempFile.FullName);
+            }
+        }
+        catch
+        {
+            // Best effort cleanup only. The next write attempt uses a unique sibling temp file.
         }
     }
 
@@ -727,7 +1013,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                     ProjectId = state.ProjectId;
                     existingTasks = await ReadOfflineTasks(state.ProjectId);
                     selectedDescriptors = descriptors.Where(x => x.ProjectId == state.ProjectId).ToArray();
-                    Log.Info($"Recovered offline project id {state.ProjectId} from annotation XML files");
+                    Log.Info($"Recovered project id {state.ProjectId} from annotation XML files");
                 }
             }
 
@@ -789,12 +1075,12 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                 await SaveOfflineTask(task);
             }
 
-            Log.Info($"Recovered offline project metadata from annotation XML files: {new { AddedTasks = newTasks.Length, AddedLabels = addedLabels, ProjectId = state.ProjectId }}");
+            Log.Info($"Recovered project metadata from annotation XML files: {new { AddedTasks = newTasks.Length, AddedLabels = addedLabels, ProjectId = state.ProjectId }}");
             return new OfflineAnnotationImportSummary(newTasks.Length, addedLabels);
         }
         catch (Exception e)
         {
-            Log.Warn("Failed to recover offline project metadata from annotation XML files", e);
+            Log.Warn("Failed to recover project metadata from annotation XML files", e);
             return OfflineAnnotationImportSummary.Empty;
         }
     }
@@ -811,7 +1097,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
         catch (Exception e)
         {
-            Log.Warn($"Failed to inspect offline annotations directory {trainingDirectory.FullName}", e);
+            Log.Warn($"Failed to inspect annotation XML directory {trainingDirectory.FullName}", e);
             return Array.Empty<OfflineAnnotationFileInfo>();
         }
 
@@ -829,7 +1115,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
         catch (Exception e)
         {
-            Log.Warn($"Failed to enumerate offline annotation XML files under {trainingDirectory.FullName}", e);
+            Log.Warn($"Failed to enumerate annotation XML files under {trainingDirectory.FullName}", e);
             return Array.Empty<OfflineAnnotationFileInfo>();
         }
 
@@ -846,7 +1132,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             }
             catch (Exception e)
             {
-                Log.Warn($"Failed to parse offline annotation XML file {file.FullName}", e);
+                Log.Warn($"Failed to parse annotation XML file {file.FullName}", e);
             }
         }
 
@@ -855,7 +1141,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
 
     private OfflineAnnotationFileInfo? TryReadOfflineAnnotationFile(FileInfo file)
     {
-        var document = XDocument.Load(file.FullName);
+        var document = ReadXmlFileWithRetry(file).GetAwaiter().GetResult();
         var taskElement = document.Root?.Element("meta")?.Element("task");
         var fileNameMatch = OfflineAnnotationFileNameRegex.Match(file.Name);
         var projectId = fileNameMatch.Success
@@ -1025,7 +1311,6 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         await SaveOfflineTask(task);
         var taskInfo = MapTask(task);
         UpdateOfflineTaskCache(task);
-        await Refresh();
         return taskInfo;
     }
 
@@ -1034,7 +1319,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         var task = await ReadOfflineTask(taskId);
         if (task == null)
         {
-            throw new InvalidOperationException($"Offline task {taskId} was not found");
+            throw new InvalidOperationException($"Task {taskId} was not found");
         }
 
         var frames = task.Files
@@ -1073,7 +1358,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         var task = await ReadOfflineTask(taskId);
         if (task == null)
         {
-            throw new InvalidOperationException($"Offline task {taskId} was not found");
+            throw new InvalidOperationException($"Task {taskId} was not found");
         }
 
         var annotationsFile = GetOfflineTaskAnnotationsXmlFile(taskId);
@@ -1109,10 +1394,10 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         var task = await ReadOfflineTask(taskId);
         if (task == null)
         {
-            throw new InvalidOperationException($"Offline task {taskId} was not found");
+            throw new InvalidOperationException($"Task {taskId} was not found");
         }
 
-        var document = XDocument.Load(annotationsFile.FullName);
+        var document = await ReadXmlFileWithRetry(annotationsFile);
         var labelsByName = (await ReadOfflineLabels(ProjectId))
             .ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
         var frameIndexesByName = task.Files
@@ -1173,7 +1458,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
 
         var document = await CreateOfflineAnnotationsXml(task, annotations);
-        document.Save(outputFile.FullName);
+        await WriteXmlFileAtomic(outputFile, document);
     }
 
     private async Task ExportOfflineAnnotations(int taskId, FileInfo outputFile)
@@ -1181,7 +1466,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         var task = await ReadOfflineTask(taskId);
         if (task == null)
         {
-            throw new InvalidOperationException($"Offline task {taskId} was not found");
+            throw new InvalidOperationException($"Task {taskId} was not found");
         }
 
         if (outputFile.Directory is { Exists: false })
@@ -1190,12 +1475,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
 
         var xml = await CreateOfflineAnnotationsXml(task, await RetrieveTaskAnnotations(taskId));
-        if (outputFile.Exists)
-        {
-            outputFile.Delete();
-        }
-
-        xml.Save(outputFile.FullName);
+        await WriteXmlFileAtomic(outputFile, xml);
     }
 
     private async Task<XDocument> CreateOfflineAnnotationsXml(OfflineTaskState task, IReadOnlyList<CvatRectangleAnnotation> annotations)
@@ -1272,7 +1552,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                                 new XElement("id", task.TaskId),
                                 new XElement("start", 0),
                                 new XElement("stop", Math.Max(0, task.Files.Length - 1)),
-                                new XElement("url", $"offline://tasks/{task.TaskId}/jobs/{task.TaskId}"))),
+                                new XElement("url", $"yoloease://tasks/{task.TaskId}/jobs/{task.TaskId}"))),
                         new XElement("owner",
                             new XElement("username", CurrentUser?.Username ?? Environment.UserName),
                             new XElement("email", string.Empty)),
@@ -1334,7 +1614,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     {
         if (StorageDirectory == null)
         {
-            throw new InvalidOperationException("Storage directory must be initialized before using offline mode");
+            throw new InvalidOperationException("Storage directory must be initialized before using project storage");
         }
 
         var rootDirectory = GetOfflineRootDirectory();
@@ -1370,7 +1650,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         }
         catch (Exception e)
         {
-            Log.Warn("Failed to derive offline project id from annotation XML files", e);
+            Log.Warn("Failed to derive project id from annotation XML files", e);
             return 1;
         }
     }
@@ -1387,12 +1667,12 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                     return new List<OfflineLabelState>();
                 }
 
-                var content = File.ReadAllText(labelsFile.FullName);
+                var content = ReadTextFileWithRetry(labelsFile).GetAwaiter().GetResult();
                 return configSerializer.Deserialize<List<OfflineLabelState>>(content) ?? new List<OfflineLabelState>();
             }
             catch (Exception e)
             {
-                Log.Warn($"Failed to read offline labels from {labelsFile.FullName}", e);
+                Log.Warn($"Failed to read project labels from {labelsFile.FullName}", e);
                 return new List<OfflineLabelState>();
             }
         });
@@ -1406,7 +1686,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             labelsFile.Directory.Create();
         }
 
-        await File.WriteAllTextAsync(labelsFile.FullName, configSerializer.Serialize(labels));
+        await WriteTextFileAtomic(labelsFile, configSerializer.Serialize(labels));
     }
 
     private async Task<List<OfflineTaskState>> ReadOfflineTasks(int projectId)
@@ -1424,7 +1704,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             }
             catch (Exception e)
             {
-                Log.Warn($"Failed to inspect offline tasks directory {tasksDirectory.FullName}", e);
+                Log.Warn($"Failed to inspect project tasks directory {tasksDirectory.FullName}", e);
                 return new List<OfflineTaskState>();
             }
 
@@ -1435,7 +1715,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             }
             catch (Exception e)
             {
-                Log.Warn($"Failed to enumerate offline task files under {tasksDirectory.FullName}", e);
+                Log.Warn($"Failed to enumerate project task files under {tasksDirectory.FullName}", e);
                 return new List<OfflineTaskState>();
             }
 
@@ -1444,7 +1724,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             {
                 try
                 {
-                    var content = File.ReadAllText(taskFile.FullName);
+                    var content = ReadTextFileWithRetry(taskFile).GetAwaiter().GetResult();
                     var task = configSerializer.Deserialize<OfflineTaskState>(content);
                     if (task != null)
                     {
@@ -1453,7 +1733,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
                 }
                 catch (Exception e)
                 {
-                    Log.Warn($"Failed to read offline task file {taskFile.FullName}", e);
+                    Log.Warn($"Failed to read project task file {taskFile.FullName}", e);
                 }
             }
 
@@ -1469,7 +1749,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             return null;
         }
 
-        var content = await File.ReadAllTextAsync(taskFile.FullName);
+        var content = await ReadTextFileWithRetry(taskFile);
         return configSerializer.Deserialize<OfflineTaskState>(content);
     }
 
@@ -1481,7 +1761,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             taskFile.Directory.Create();
         }
 
-        await File.WriteAllTextAsync(taskFile.FullName, configSerializer.Serialize(task));
+        await WriteTextFileAtomic(taskFile, configSerializer.Serialize(task));
     }
 
     private void UpdateOfflineTaskCache(OfflineTaskState task)
@@ -1709,7 +1989,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
             return Path.GetFileNameWithoutExtension(ProjectFile.Name);
         }
 
-        return string.IsNullOrWhiteSpace(ProjectName) ? "Offline Project" : ProjectName.Trim();
+        return string.IsNullOrWhiteSpace(ProjectName) ? "YoloEase Project" : ProjectName.Trim();
     }
 
     private void ClearCachedState()
@@ -1749,17 +2029,17 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
         bool HasAnnotations);
 
     /// <summary>
-    /// Represents offline project identity derived from the project file and workspace contents.
+    /// Represents project identity derived from the project file and workspace contents.
     /// </summary>
     private sealed record OfflineProjectIdentity
     {
         public int ProjectId { get; set; }
 
-        public string ProjectName { get; set; } = "Offline Project";
+        public string ProjectName { get; set; } = "YoloEase Project";
     }
 
     /// <summary>
-    /// Persists one offline label with its stable id and display color.
+    /// Persists one project label with its stable id and display color.
     /// </summary>
     private sealed record OfflineLabelState
     {
@@ -1771,7 +2051,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     }
 
     /// <summary>
-    /// Persists one offline task and its metadata needed to rebuild task lists between sessions.
+    /// Persists one project task and its metadata needed to rebuild task lists between sessions.
     /// </summary>
     private sealed record OfflineTaskState
     {
@@ -1793,7 +2073,7 @@ public class AnnotationProjectAccessor : RefreshableReactiveObject
     }
 
     /// <summary>
-    /// Persists the per-task annotation XML payload and revision counter for offline tasks.
+    /// Persists the per-task annotation XML payload and revision counter for project tasks.
     /// </summary>
     private sealed record OfflineTaskAnnotationsState
     {
