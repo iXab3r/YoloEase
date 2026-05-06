@@ -3,7 +3,7 @@
 <aside class="task-editor-toolbar" aria-label="Annotation tools">
     <button type="button"
             class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.Select)"
-            title="Select / pan"
+            title="Select / pan (Esc)"
             @onclick="() => Context.SelectTool(TaskAnnotationWindow.EditorTool.Select)">
         <i class="fa fa-mouse-pointer"></i>
     </button>
@@ -21,7 +21,7 @@
     </button>
     <button type="button"
             class="@Context.GetToolClass(TaskAnnotationWindow.EditorTool.Pan)"
-            title="Pan"
+            title="Pan (Esc to select)"
             @onclick="() => Context.SelectTool(TaskAnnotationWindow.EditorTool.Pan)">
         <i class="fa fa-arrows"></i>
     </button>
@@ -104,7 +104,7 @@
     <div class="task-editor-tool-menu">
         <button type="button"
                 class="task-editor-tool"
-                title="Auto-annotate"
+                title="Auto-annotate current image (Alt+N), all images (Shift+Alt+N)"
                 disabled="@(!Context.CanRunAutoAnnotation)">
             <i class="fa fa-magic"></i>
         </button>
@@ -117,11 +117,11 @@
             {
                 <button type="button" @onclick="() => Context.RunFirstAutoAnnotation(false)">
                     <span>First model</span>
-                    <small>Current image</small>
+                    <small>Current image - Alt+N</small>
                 </button>
                 <button type="button" @onclick="() => Context.RunFirstAutoAnnotation(true)">
                     <span>First model</span>
-                    <small>All images</small>
+                    <small>All images - Shift+Alt+N</small>
                 </button>
                 <div class="task-editor-tool-menu-separator"></div>
                 @foreach (var modelInfo in Context.AutoAnnotationModels.Select((Model, Index) => new { Model, Index }))

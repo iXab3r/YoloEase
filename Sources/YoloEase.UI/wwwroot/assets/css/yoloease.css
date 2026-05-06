@@ -2609,6 +2609,7 @@ body,
 .ye-panel-meta,
 .task-editor-gl-count,
 .task-editor-shortcuts,
+.task-editor-label-count,
 .task-editor-label-shortcut {
     color: var(--yolo-muted);
     font-size: 0.72rem;
@@ -3053,7 +3054,7 @@ body,
 .task-editor-label-pill {
     min-width: 0;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 7px;
     min-height: 26px;
@@ -3066,6 +3067,20 @@ body,
     text-overflow: ellipsis;
     white-space: nowrap;
     text-align: left;
+}
+
+.task-editor-label-count {
+    min-width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    color: #d9fbff;
+    background: rgba(40, 196, 215, 0.16);
+    border: 1px solid rgba(40, 196, 215, 0.34);
+    border-radius: 999px;
+    line-height: 1;
 }
 
 .task-editor-label-shortcut:empty {

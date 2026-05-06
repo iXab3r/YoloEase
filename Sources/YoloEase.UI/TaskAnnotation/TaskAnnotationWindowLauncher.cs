@@ -30,8 +30,8 @@ public static class TaskAnnotationWindowLauncher
         taskWindow.TitleBarDisplayMode = TitleBarDisplayMode.System;
         taskWindow.WindowStartupLocation = WindowStartupLocation.CenterOwner;
         taskWindow.OwnerHandle = owner.GetWindowHandle();
-        taskWindow.Width = 1280;
-        taskWindow.Height = 760;
+        taskWindow.Width = 1380;
+        taskWindow.Height = 860;
         taskWindow.MinWidth = 960;
         taskWindow.MinHeight = 600;
         taskWindow.ResizeMode = ResizeMode.CanResize;

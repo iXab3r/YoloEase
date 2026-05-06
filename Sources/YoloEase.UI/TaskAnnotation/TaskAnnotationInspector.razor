@@ -5,6 +5,12 @@
     <section class="task-editor-gl-pane task-editor-inspector-pane task-editor-inspector-primary-pane">
         <header class="task-editor-gl-header task-editor-tab-header">
             <button type="button"
+                    class="@Context.GetInspectorTabClass(TaskAnnotationWindow.TaskEditorInspectorTab.Labels)"
+                    @onclick="() => Context.ActiveInspectorTab = TaskAnnotationWindow.TaskEditorInspectorTab.Labels">
+                Labels
+                <span>@Context.OrderedLabels.Count</span>
+            </button>
+            <button type="button"
                     class="@Context.GetInspectorTabClass(TaskAnnotationWindow.TaskEditorInspectorTab.Shapes)"
                     @onclick="() => Context.ActiveInspectorTab = TaskAnnotationWindow.TaskEditorInspectorTab.Shapes">
                 Shapes
@@ -14,15 +20,38 @@
                     <small>@($"{Context.CurrentFrameSuggestionCount} suggestions")</small>
                 }
             </button>
-            <button type="button"
-                    class="@Context.GetInspectorTabClass(TaskAnnotationWindow.TaskEditorInspectorTab.Labels)"
-                    @onclick="() => Context.ActiveInspectorTab = TaskAnnotationWindow.TaskEditorInspectorTab.Labels">
-                Labels
-                <span>@Context.OrderedLabels.Count</span>
-            </button>
         </header>
         <div class="task-editor-gl-body task-editor-tab-body">
-            @if (Context.ActiveInspectorTab != TaskAnnotationWindow.TaskEditorInspectorTab.Labels)
+            @if (Context.ActiveInspectorTab == TaskAnnotationWindow.TaskEditorInspectorTab.Labels)
+            {
+                @if (!Context.HasLabels)
+                {
+                    <div class="task-editor-empty">No labels configured.</div>
+                }
+                else
+                {
+                    var labelShapeCounts = Context.CurrentFrameShapes
+                        .GroupBy(x => x.LabelId)
+                        .ToDictionary(x => x.Key, x => x.Count());
+
+                    <div class="task-editor-label-list">
+                        @foreach (var labelInfo in Context.OrderedLabels.Select((Label, Index) => new { Label, Index }))
+                        {
+                            var label = labelInfo.Label;
+                            labelShapeCounts.TryGetValue(label.Id, out var labelShapeCount);
+                            <button type="button"
+                                    class="@Context.GetLabelPillClass(label)"
+                                    @onclick="() => Context.SelectLabel(label.Id)">
+                                <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
+                                <span class="text-truncate">@label.Name</span>
+                                <span class="task-editor-label-count">@labelShapeCount</span>
+                                <span class="task-editor-label-shortcut">@Context.GetLabelShortcutText(labelInfo.Index)</span>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+            else
             {
                 <div class="task-editor-source-filter">
                     <button type="button" class="@Context.GetSourceFilterClass(TaskAnnotationWindow.TaskEditorSourceFilter.All)" @onclick="() => Context.ShapeSourceFilter = TaskAnnotationWindow.TaskEditorSourceFilter.All">All</button>
@@ -48,29 +77,6 @@
                                 <span class="text-truncate">@label.Name</span>
                                 <span class="task-editor-object-meta">@Context.FormatRect(shape)</span>
                                 <span class="@Context.GetShapeSourceClass(shape)">@Context.FormatShapeSource(shape)</span>
-                            </button>
-                        }
-                    </div>
-                }
-            }
-            else if (Context.ActiveInspectorTab == TaskAnnotationWindow.TaskEditorInspectorTab.Labels)
-            {
-                @if (!Context.HasLabels)
-                {
-                    <div class="task-editor-empty">No labels configured.</div>
-                }
-                else
-                {
-                    <div class="task-editor-label-list">
-                        @foreach (var labelInfo in Context.OrderedLabels.Select((Label, Index) => new { Label, Index }))
-                        {
-                            var label = labelInfo.Label;
-                            <button type="button"
-                                    class="@Context.GetLabelPillClass(label)"
-                                    @onclick="() => Context.SelectLabel(label.Id)">
-                                <span class="annotation-label-swatch" style="@($"background:{label.Color};")"></span>
-                                <span class="text-truncate">@label.Name</span>
-                                <span class="task-editor-label-shortcut">@Context.GetLabelShortcutText(labelInfo.Index)</span>
                             </button>
                         }
                     </div>

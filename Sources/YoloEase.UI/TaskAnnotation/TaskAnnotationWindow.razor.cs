@@ -441,7 +441,7 @@ public partial class TaskAnnotationWindow
     private bool showSuggestions = true;
     private bool showAnnotations = true;
     private EditorTool activeTool = EditorTool.Select;
-    private TaskEditorInspectorTab activeInspectorTab = TaskEditorInspectorTab.Shapes;
+    private TaskEditorInspectorTab activeInspectorTab = TaskEditorInspectorTab.Labels;
     private TaskEditorSourceFilter shapeSourceFilter = TaskEditorSourceFilter.All;
     private string? hoveredShapeId;
     private string? hoveredSuggestionId;
@@ -1144,6 +1144,12 @@ public partial class TaskAnnotationWindow
 
         if (args.AltKey)
         {
+            if (GetShortcutKey(args) == "N")
+            {
+                RunFirstAutoAnnotation(args.ShiftKey).AndForget();
+                return;
+            }
+
             if (TryRunAutoAnnotationByShortcut(args.Key, args.Code, args.ShiftKey))
             {
                 return;

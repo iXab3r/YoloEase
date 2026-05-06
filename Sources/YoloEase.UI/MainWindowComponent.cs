@@ -270,17 +270,33 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
             return;
         }
 
+        var visibleTabs = DataContext.Tabs.Items
+            .Where(x => x.IsVisible && x.DataContext != null)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Title)
+            .ToArray();
+        var visibleTabIds = visibleTabs.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        var needsActiveTabSelection = string.IsNullOrEmpty(DataContext.ActiveTabId)
+            ? visibleTabs.Length > 0
+            : visibleTabs.All(x => x.Id != DataContext.ActiveTabId);
+        var needsTabSync =
+            needsActiveTabSelection ||
+            registeredTabContexts.Keys.Any(x => !visibleTabIds.Contains(x)) ||
+            visibleTabs.Any(tab =>
+                !registeredTabContexts.TryGetValue(tab.Id, out var registeredContext) ||
+                !registeredTabTitles.TryGetValue(tab.Id, out var registeredTitle) ||
+                !ReferenceEquals(registeredContext, tab.DataContext) ||
+                !string.Equals(registeredTitle, tab.Title, StringComparison.Ordinal));
+
+        if (!needsTabSync)
+        {
+            return;
+        }
+
         isSyncingLayout = true;
-        await SetLayoutLoading(true);
         try
         {
             var adapter = goldenLayoutBlazorAdapter;
-            var visibleTabs = DataContext.Tabs.Items
-                .Where(x => x.IsVisible && x.DataContext != null)
-                .OrderBy(x => x.SortOrder)
-                .ThenBy(x => x.Title)
-                .ToArray();
-            var visibleTabIds = visibleTabs.Select(x => x.Id).ToHashSet();
 
             isPreparingLayoutTabs = true;
             try
@@ -344,7 +360,6 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
         finally
         {
             isSyncingLayout = false;
-            await SetLayoutLoading(false);
         }
     }
 
