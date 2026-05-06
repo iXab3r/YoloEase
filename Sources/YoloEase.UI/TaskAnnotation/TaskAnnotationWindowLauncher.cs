@@ -1,6 +1,9 @@
+using System.Reactive.Disposables;
 using System.Windows;
 using System.Windows.Threading;
+using PoeShared.Common;
 using PoeShared.Blazor.Wpf;
+using PoeShared.Logging;
 using PoeShared.Services;
 using YoloEase.UI.Core;
 
@@ -11,6 +14,8 @@ namespace YoloEase.UI.TaskAnnotation;
 /// </summary>
 public static class TaskAnnotationWindowLauncher
 {
+    private static readonly IFluentLog Log = typeof(TaskAnnotationWindowLauncher).PrepareLogger();
+
     public static async Task Open(
         YoloEaseProject project,
         AnnotationTaskInfo task,
@@ -39,6 +44,36 @@ public static class TaskAnnotationWindowLauncher
         taskWindow.BorderThickness = new Thickness(1);
         taskWindow.AdditionalFiles = owner.AdditionalFiles;
         taskWindow.AdditionalFileProvider = owner.AdditionalFileProvider;
+        Disposable
+            .Create(() =>
+            {
+                try
+                {
+                    if (owner.Dispatcher.CheckAccess())
+                    {
+                        taskWindow.Close();
+                    }
+                    else
+                    {
+                        owner.Dispatcher.BeginInvoke((Action)(() =>
+                        {
+                            try
+                            {
+                                taskWindow.Close();
+                            }
+                            catch (Exception e)
+                            {
+                                Log.Warn("Failed to close task annotation window during project disposal", e);
+                            }
+                        }));
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Failed to queue task annotation window close during project disposal", e);
+                }
+            })
+            .AddTo(project.Anchors);
         taskWindow.Show();
     }
 }

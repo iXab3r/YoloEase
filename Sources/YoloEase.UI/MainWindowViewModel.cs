@@ -27,10 +27,8 @@ namespace YoloEase.UI;
 public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 {
     private static readonly Binder<MainWindowViewModel> Binder = new();
-    private static readonly TimeSpan ProjectDisposalInitialDelay = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ProjectDisposalRetryDelay = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan ProjectShellDetachTimeout = TimeSpan.FromSeconds(2);
-    private const int ProjectDisposalMaxBusyChecks = 12;
+    private static readonly TimeSpan RetiredProjectDisposalPollDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan RetiredProjectDisposalMaxDelay = TimeSpan.FromSeconds(30);
 
     private readonly IOpenFileDialog openFileDialog;
     private readonly ISaveFileDialog saveProjectFileDialog;
@@ -56,7 +54,6 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     private readonly TabItem batchTab;
     private readonly TabItem trainingTab;
     private readonly FileInfo databaseFile;
-    private TaskCompletionSource? projectShellDetachedCompletion;
     private bool prerequisitesActivationPending;
     
     static MainWindowViewModel()
@@ -68,20 +65,20 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
         Binder.Bind(x => GetProjectId(x)).To(x => x.ProjectId);
         Binder.Bind(x => x.ProjectId).To((x, v) => x.ApplyProjectId(v));
-        Binder.Bind(x => GetAttachedProject(x)).To((x, v) => x.AutomaticTrainer.Project = v);
+        Binder.Bind(x => x.YoloEaseProject).To((x, v) => x.AutomaticTrainer.Project = v);
         Binder.Bind(x => GetProjectAssets(x)).To((x,v) => x.localTab.DataContext = v);
         Binder.Bind(x => GetProjectRemoteProject(x)).To((x,v) => x.remoteTab.DataContext = v);
         Binder.Bind(x => GetProjectTrainingBatch(x)).To((x,v) => x.batchTab.DataContext = v);
         Binder.Bind(x => GetProjectAugmentations(x)).To((x,v) => x.augmentationsTab.DataContext = v);
-        Binder.Bind(x => GetAttachedProject(x)).To((x,v) => x.annotationsTab.DataContext = v);
-        Binder.Bind(x => GetAttachedProject(x)).To((x,v) => x.tasksTab.DataContext = v);
+        Binder.Bind(x => x.YoloEaseProject).To((x,v) => x.annotationsTab.DataContext = v);
+        Binder.Bind(x => x.YoloEaseProject).To((x,v) => x.tasksTab.DataContext = v);
         Binder.Bind(x => GetProjectTrainingDataset(x)).To((x,v) => x.trainingTab.DataContext = v);
 
         Binder.Bind(x => GetLoadedProjectShortPath(x)).To(x => x.LoadedProjectShortPath!);
 
         Binder
             .Bind(x =>
-                $"YoloEase {x.appArguments.Version}{(x.YoloEaseProject == null ? "" : $" | {x.YoloEaseProject.RemoteProject.ProjectName}")}{(string.IsNullOrEmpty(x.LoadedProjectShortPath) ? "" : $" | {x.LoadedProjectShortPath}")}")
+                $"YoloEase {x.appArguments.Version}{(x.YoloEaseProject.IsEmpty ? "" : $" | {x.YoloEaseProject.RemoteProject.ProjectName}")}{(string.IsNullOrEmpty(x.LoadedProjectShortPath) ? "" : $" | {x.LoadedProjectShortPath}")}")
             .To(x => x.Title);
     }
 
@@ -106,6 +103,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         this.applicationAccessor = applicationAccessor;
         this.projectFactory = projectFactory;
         this.uiScheduler = uiScheduler;
+        YoloEaseProject = CreateEmptyProject();
 
         this.databaseFile = new FileInfo(Path.Combine(appArguments.AppDataDirectory, "database.sqlite"));
 
@@ -188,7 +186,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
         this.WhenAnyValue(x => x.IsAdvancedMode)
             .CombineLatest(
-                this.WhenAnyValue(x => x.YoloEaseProject, x => x.IsProjectShellAttached, (project, attached) => project != null && attached),
+                this.WhenAnyValue(x => x.YoloEaseProject).Select(project => !project.IsEmpty),
                 (isAdvancedMode, isProjectLoaded) => new { isAdvancedMode, isProjectLoaded })
             .Subscribe(x =>
             {
@@ -203,14 +201,18 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                 remoteTab.IsVisible = false;
 
                 var activeTab = tabsSource.Items.FirstOrDefault(y => y.Id == ActiveTabId);
-                if (activeTab is { IsVisible: false })
+                if (!x.isProjectLoaded)
                 {
-                    ActiveTabId = x.isProjectLoaded ? settingsTab.Id : null;
+                    ActiveTabId = null;
+                    return;
+                }
+
+                if (activeTab == null || !activeTab.IsVisible)
+                {
+                    ActiveTabId = settingsTab.Id;
                 }
             })
             .AddTo(Anchors);
-
-        ApplyProjectShellState(null);
 
         Tabs = tabsSource.AsObservableList().AddTo(Anchors);
 
@@ -265,7 +267,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
                 ObserveProjectConfigChanges(),
                 AutomaticTrainer.WhenAnyValue(x => x.ModelStrategy).ToUnit(),
                 AutomaticTrainer.WhenAnyValue(x => x.PickStrategy).ToUnit())
-            .Where(_ => IsProjectShellAttached && YoloEaseProject != null)
+            .Where(_ => !YoloEaseProject.IsEmpty)
             .Sample(TimeSpan.FromSeconds(5))
             .Skip(1) //skip first one as it will be auto-generated
             .Select(x => PrepareProjectConfig());
@@ -284,8 +286,8 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             .AddTo(Anchors);
         AdditionalFiles = additionalFiles;
         
-        this.WhenAnyValue(x => x.YoloEaseProject, x => x.IsProjectShellAttached, (project, attached) => attached ? project : null)
-            .Where(x => x != null)
+        this.WhenAnyValue(x => x.YoloEaseProject)
+            .Where(x => !x.IsEmpty)
             .Subscribe(x =>
             {
                 TryActivatePendingPrerequisites();
@@ -327,15 +329,15 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             .AddTo(Anchors);
 
         this.WhenAnyValue(x => x.ProjectId)
-            .Select(_ => GetAttachedProject(this))
-            .Where(project => project != null &&
+            .Select(_ => YoloEaseProject)
+            .Where(project => !project.IsEmpty &&
                               (project.RemoteProject.Mode == AnnotationBackendMode.Offline ||
                                project.RemoteProject.CurrentUser != null))
             .SubscribeAsync(async project =>
             {
                 try
                 {
-                    await project!.RemoteProject.Refresh();
+                    await project.RemoteProject.Refresh();
                 }
                 catch (Exception e)
                 {
@@ -368,26 +370,13 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
         RecentProjects = LoadRecentProjects().ToSourceList();
 
-        this.WhenAnyValue(x => x.YoloEaseProject)
-            .DoWithPrevious(x =>
-            {
-                if (x == null)
-                {
-                    return;
-                }
-
-                ScheduleDetachedProjectDisposal(x);
-            })
-            .Subscribe()
-            .AddTo(Anchors);
-
         Binder.Attach(this).AddTo(Anchors);
     }
 
     private IObservable<Unit> ObserveProjectConfigChanges()
     {
-        return this.WhenAnyValue(x => x.YoloEaseProject, x => x.IsProjectShellAttached, (project, attached) => attached ? project : null)
-            .Select(project => project == null
+        return this.WhenAnyValue(x => x.YoloEaseProject)
+            .Select(project => project.IsEmpty
                 ? Observable.Empty<Unit>()
                 : Observable.Merge(
                     Observable.Return(Unit.Default),
@@ -414,47 +403,6 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             .Switch();
     }
 
-    private void ScheduleDetachedProjectDisposal(YoloEaseProject project)
-    {
-        Log.Info($"Scheduling detached project disposal: {project}");
-        Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(ProjectDisposalInitialDelay);
-
-                for (var i = 0; i < ProjectDisposalMaxBusyChecks && (project.IsBusy || AutomaticTrainer.IsBusy); i++)
-                {
-                    Log.Debug($"Detached project is still busy, delaying disposal: {project}");
-                    await Task.Delay(ProjectDisposalRetryDelay);
-                }
-
-                uiScheduler.Schedule(() =>
-                {
-                    try
-                    {
-                        if (ReferenceEquals(YoloEaseProject, project))
-                        {
-                            Log.Debug($"Skipping detached project disposal because it is current again: {project}");
-                            return;
-                        }
-
-                        Log.Info($"Disposing detached project instance: {project}");
-                        project.Dispose();
-                    }
-                    catch (Exception e)
-                    {
-                        Log.Warn($"Failed to dispose detached project instance: {project}", e);
-                    }
-                });
-            }
-            catch (Exception e)
-            {
-                Log.Warn($"Failed while scheduling detached project disposal: {project}", e);
-            }
-        }).AndForget();
-    }
-
     public string Title { get; [UsedImplicitly] private set; }
 
     public IAppArguments AppArguments { get; }
@@ -465,9 +413,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     public IObservableList<TabItem> Tabs { get; }
 
-    public YoloEaseProject? YoloEaseProject { get; private set; }
-
-    public bool IsProjectShellAttached { get; private set; }
+    public YoloEaseProject YoloEaseProject { get; private set; } = null!;
 
     public int ProjectId { get; set; }
 
@@ -514,6 +460,65 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     public FileInfo? LoadedProjectFile { get; private set; }
 
     public GeneralProperties? LoadedProject { get; private set; }
+
+    private YoloEaseProject CreateEmptyProject()
+    {
+        var project = projectFactory.Create();
+        project.IsEmpty = true;
+        project.RemoteProject.ProjectId = 0;
+        project.RemoteProject.ProjectName = string.Empty;
+        return project;
+    }
+
+    private void DisposeRetiredProject(YoloEaseProject? project)
+    {
+        if (project == null || ReferenceEquals(project, YoloEaseProject))
+        {
+            return;
+        }
+
+        Log.Info($"Scheduling retired project disposal: {project}");
+        Task.Run(async () =>
+        {
+            try
+            {
+                var startedAt = DateTime.UtcNow;
+                while (project.IsBusy || AutomaticTrainer.IsBusy)
+                {
+                    if (DateTime.UtcNow - startedAt >= RetiredProjectDisposalMaxDelay)
+                    {
+                        Log.Warn($"Retired project is still busy after {RetiredProjectDisposalMaxDelay}; leaving it undisposed: {project}");
+                        return;
+                    }
+
+                    await Task.Delay(RetiredProjectDisposalPollDelay);
+                }
+
+                uiScheduler.Schedule(() =>
+                {
+                    try
+                    {
+                        if (ReferenceEquals(project, YoloEaseProject))
+                        {
+                            Log.Debug($"Skipping retired project disposal because it is active again: {project}");
+                            return;
+                        }
+
+                        Log.Info($"Disposing retired project instance: {project}");
+                        project.Dispose();
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Warn($"Failed to dispose retired project instance: {project}", e);
+                    }
+                });
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"Failed while scheduling retired project disposal: {project}", e);
+            }
+        }).AndForget();
+    }
 
     private void AddRecentProject(RecentProjectInfo projectInfo)
     {
@@ -715,7 +720,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     private async Task CloseProjectCore()
     {
         var project = YoloEaseProject;
-        if (project == null)
+        if (project.IsEmpty)
         {
             return;
         }
@@ -739,106 +744,29 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         }
 
         Log.Info($"Closing project {LoadedProjectFile}");
-        await DetachProjectShell("closing project");
-        YoloEaseProject = null;
-        LoadedProjectFile = null;
-        LoadedProject = null;
-        LoadedProjectShortPath = null;
-        StorageProjectSubfolder = null;
-        PendingStorageProjectSubfolder = null;
-        StorageProjectSubfolderError = null;
-        ProjectId = 0;
-        ActiveTabId = null;
-        prerequisitesActivationPending = false;
-    }
-
-    private async Task DetachProjectShell(string reason)
-    {
-        if (!IsProjectShellAttached)
-        {
-            return;
-        }
-
-        Log.Info($"Detaching project shell before {reason}");
-        projectShellDetachedCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
             await AutomaticTrainer.Stop();
         }
         catch (Exception e)
         {
-            Log.Warn($"Failed to stop trainer while detaching project shell before {reason}", e);
+            Log.Warn($"Failed to stop trainer while closing project {LoadedProjectFile}", e);
         }
 
+        YoloEaseProject = CreateEmptyProject();
+        LoadedProjectFile = null;
+        LoadedProject = null;
+        LoadedProjectShortPath = null;
+        StorageDirectory = null;
+        ProjectDirectory = null;
+        ProjectOutputDirectory = null;
+        StorageProjectSubfolder = null;
+        PendingStorageProjectSubfolder = null;
+        StorageProjectSubfolderError = null;
+        ProjectId = 0;
         ActiveTabId = null;
-        IsProjectShellAttached = false;
-        ApplyProjectShellState(null);
-
-        try
-        {
-            await projectShellDetachedCompletion.Task.WaitAsync(ProjectShellDetachTimeout);
-        }
-        catch (TimeoutException e)
-        {
-            Log.Warn($"Timed out waiting for project shell detach before {reason}", e);
-        }
-        catch (Exception e)
-        {
-            Log.Warn($"Failed while waiting for project shell detach before {reason}", e);
-        }
-    }
-
-    private void AttachProjectShell(YoloEaseProject project)
-    {
-        Log.Info($"Attaching project shell: {project}");
-        projectShellDetachedCompletion = null;
-        IsProjectShellAttached = true;
-        ApplyProjectShellState(project);
-    }
-
-    private void ApplyProjectShellState(YoloEaseProject? project)
-    {
-        var attachedProject = IsProjectShellAttached ? project ?? YoloEaseProject : null;
-        settingsTab.DataContext = this;
-        prerequisitesTab.DataContext = Prerequisites;
-        trainerTab.DataContext = AutomaticTrainer;
-        AutomaticTrainer.Project = attachedProject;
-
-        annotationsTab.DataContext = attachedProject;
-        tasksTab.DataContext = attachedProject;
-        localTab.DataContext = attachedProject?.Assets;
-        remoteTab.DataContext = attachedProject?.RemoteProject;
-        batchTab.DataContext = attachedProject?.TrainingBatch;
-        augmentationsTab.DataContext = attachedProject?.Augmentations;
-        trainingTab.DataContext = attachedProject?.TrainingDataset;
-
-        var isProjectLoaded = attachedProject != null;
-        annotationsTab.Title = "Project";
-        settingsTab.IsVisible = isProjectLoaded;
-        annotationsTab.IsVisible = isProjectLoaded;
-        prerequisitesTab.IsVisible = isProjectLoaded;
-        tasksTab.IsVisible = isProjectLoaded;
-        trainerTab.IsVisible = isProjectLoaded;
-        augmentationsTab.IsVisible = isProjectLoaded;
-        localTab.IsVisible = batchTab.IsVisible = trainingTab.IsVisible = isProjectLoaded && IsAdvancedMode;
-        remoteTab.IsVisible = false;
-
-        var activeTab = tabsSource.Items.FirstOrDefault(x => x.Id == ActiveTabId);
-        if (!isProjectLoaded)
-        {
-            ActiveTabId = null;
-            return;
-        }
-
-        if (string.IsNullOrEmpty(ActiveTabId) || activeTab == null || !activeTab.IsVisible)
-        {
-            ActiveTabId = settingsTab.Id;
-        }
-    }
-
-    public void NotifyProjectShellDetached()
-    {
-        projectShellDetachedCompletion?.TrySetResult();
+        prerequisitesActivationPending = false;
+        DisposeRetiredProject(project);
     }
 
     private void ExitAppCommandExecuted()
@@ -860,7 +788,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     private void ActivatePrerequisitesOrDefer()
     {
-        if (YoloEaseProject == null)
+        if (YoloEaseProject.IsEmpty)
         {
             prerequisitesActivationPending = true;
             return;
@@ -871,7 +799,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     private void TryActivatePendingPrerequisites()
     {
-        if (!prerequisitesActivationPending || YoloEaseProject == null)
+        if (!prerequisitesActivationPending || YoloEaseProject.IsEmpty)
         {
             return;
         }
@@ -908,42 +836,37 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     private static int GetProjectId(MainWindowViewModel viewModel)
     {
-        return GetAttachedProject(viewModel)?.RemoteProject.ProjectId ?? 0;
+        return viewModel.YoloEaseProject.IsEmpty ? 0 : viewModel.YoloEaseProject.RemoteProject.ProjectId;
     }
 
-    private static YoloEaseProject? GetAttachedProject(MainWindowViewModel viewModel)
+    private static object GetProjectAssets(MainWindowViewModel viewModel)
     {
-        return viewModel.IsProjectShellAttached ? viewModel.YoloEaseProject : null;
+        return viewModel.YoloEaseProject.Assets;
     }
 
-    private static object? GetProjectAssets(MainWindowViewModel viewModel)
+    private static object GetProjectRemoteProject(MainWindowViewModel viewModel)
     {
-        return GetAttachedProject(viewModel)?.Assets;
+        return viewModel.YoloEaseProject.RemoteProject;
     }
 
-    private static object? GetProjectRemoteProject(MainWindowViewModel viewModel)
+    private static object GetProjectTrainingBatch(MainWindowViewModel viewModel)
     {
-        return GetAttachedProject(viewModel)?.RemoteProject;
+        return viewModel.YoloEaseProject.TrainingBatch;
     }
 
-    private static object? GetProjectTrainingBatch(MainWindowViewModel viewModel)
+    private static object GetProjectAugmentations(MainWindowViewModel viewModel)
     {
-        return GetAttachedProject(viewModel)?.TrainingBatch;
+        return viewModel.YoloEaseProject.Augmentations;
     }
 
-    private static object? GetProjectAugmentations(MainWindowViewModel viewModel)
+    private static object GetProjectTrainingDataset(MainWindowViewModel viewModel)
     {
-        return GetAttachedProject(viewModel)?.Augmentations;
-    }
-
-    private static object? GetProjectTrainingDataset(MainWindowViewModel viewModel)
-    {
-        return GetAttachedProject(viewModel)?.TrainingDataset;
+        return viewModel.YoloEaseProject.TrainingDataset;
     }
 
     private void ApplyProjectStorageDirectory(DirectoryInfo? projectOutputDirectory)
     {
-        if (YoloEaseProject == null || projectOutputDirectory == null)
+        if (YoloEaseProject.IsEmpty || projectOutputDirectory == null)
         {
             return;
         }
@@ -954,7 +877,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     private void ApplyProjectId(int projectId)
     {
         var project = YoloEaseProject;
-        if (project == null)
+        if (project.IsEmpty)
         {
             return;
         }
@@ -977,7 +900,12 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     {
         try
         {
-            var project = YoloEaseProject ?? throw new InvalidOperationException("No project is loaded");
+            var project = YoloEaseProject;
+            if (project.IsEmpty)
+            {
+                throw new InvalidOperationException("No project is loaded");
+            }
+
             await project.RemoteProject.NavigateToProject(project.RemoteProject.ProjectId);
         }
         catch (Exception e)
@@ -1044,7 +972,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             ApplyLoadedProjectFileContext();
 
             var project = YoloEaseProject;
-            if (project == null)
+            if (project.IsEmpty)
             {
                 return;
             }
@@ -1077,7 +1005,12 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         {
             try
             {
-                var project = YoloEaseProject ?? throw new InvalidOperationException("No project is loaded");
+                var project = YoloEaseProject;
+                if (project.IsEmpty)
+                {
+                    throw new InvalidOperationException("No project is loaded");
+                }
+
                 openFileDialog.InitialFileName = project.TrainingDataset.BaseModelPath;
                 if (openFileDialog.ShowDialog() != null)
                 {
@@ -1122,15 +1055,19 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
     }
 
    
-    private async Task<bool> LoadProjectConfig(FileInfo file)
+    private Task<bool> LoadProjectConfig(FileInfo file)
     {
         var previousLoadedProjectFile = LoadedProjectFile;
         var previousLoadedProject = LoadedProject;
         var previousProject = YoloEaseProject;
-        var previousProjectShellAttached = IsProjectShellAttached;
+        var previousActiveTabId = ActiveTabId;
+        var previousStorageDirectory = StorageDirectory;
+        var previousProjectDirectory = ProjectDirectory;
+        var previousProjectOutputDirectory = ProjectOutputDirectory;
         var previousStorageProjectSubfolder = StorageProjectSubfolder;
         var previousPendingStorageProjectSubfolder = PendingStorageProjectSubfolder;
         var previousStorageProjectSubfolderError = StorageProjectSubfolderError;
+        YoloEaseProject? replacementProject = null;
         try
         {
             if (!file.Exists)
@@ -1142,10 +1079,6 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             var config = configSerializer.Deserialize<GeneralProperties>(configJson);
             config = ProjectPathResolver.PrepareLoadedConfig(config, file);
             config = PrepareOfflineProjectConfig(config, file);
-            if (IsProjectShellAttached)
-            {
-                await DetachProjectShell($"loading project {file.FullName}");
-            }
 
             var storageDirectory = ProjectPathResolver.ResolveStorageDirectory(file, config.StorageProjectSubfolder);
             if (storageDirectory != null && Directory.Exists(storageDirectory.FullName) == false)
@@ -1164,43 +1097,44 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
             StorageProjectSubfolder = config.StorageProjectSubfolder;
             PendingStorageProjectSubfolder = config.StorageProjectSubfolder;
             StorageProjectSubfolderError = null;
-            LoadProjectConfig(config);
+            replacementProject = CreateProjectFromConfig(config);
+            LoadedProject = config;
+            YoloEaseProject = replacementProject;
             ApplyLoadedProjectFileContext();
+            ActiveTabId = settingsTab.Id;
             AddRecentProject(new RecentProjectInfo
             {
                 FilePath = file.FullName,
                 AccessTime = DateTime.Now
             });
-            return true;
+            DisposeRetiredProject(previousProject);
+            return Task.FromResult(true);
         }
         catch (Exception e)
         {
             YoloEaseProject = previousProject;
-            IsProjectShellAttached = previousProject != null && previousProjectShellAttached;
-            ApplyProjectShellState(previousProject);
+            DisposeRetiredProject(replacementProject);
             LoadedProjectFile = previousLoadedProjectFile;
             LoadedProject = previousLoadedProject;
+            ActiveTabId = previousActiveTabId;
+            StorageDirectory = previousStorageDirectory;
+            ProjectDirectory = previousProjectDirectory;
+            ProjectOutputDirectory = previousProjectOutputDirectory;
             StorageProjectSubfolder = previousStorageProjectSubfolder;
             PendingStorageProjectSubfolder = previousPendingStorageProjectSubfolder;
             StorageProjectSubfolderError = previousStorageProjectSubfolderError;
             ApplyLoadedProjectFileContext();
             HandleExternalOperationFailure($"Failed to load project {file.FullName}", e);
-            return false;
+            return Task.FromResult(false);
         }
     }
     
-    private void LoadProjectConfig(GeneralProperties config)
+    private YoloEaseProject CreateProjectFromConfig(GeneralProperties config)
     {
         config = PrepareOfflineProjectConfig(config, LoadedProjectFile);
-        if (IsProjectShellAttached)
-        {
-            Log.Warn("Project shell was still attached while loading a new project; forcing detached state before attaching replacement project");
-            ActiveTabId = null;
-            IsProjectShellAttached = false;
-            ApplyProjectShellState(null);
-        }
 
         var project = projectFactory.Create();
+        project.IsEmpty = false;
         project.RemoteProject.Mode = AnnotationBackendMode.Offline;
         project.RemoteProject.Username = config.Username;
         project.RemoteProject.Password = string.Empty;
@@ -1294,15 +1228,17 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
         project.Augmentations.Effects.EditDiff(effects);
 
         ApplyProjectFileContext(project, LoadedProjectFile);
-        YoloEaseProject = project;
-        ApplyLoadedProjectFileContext();
-        LoadedProject = config;
-        AttachProjectShell(project);
+        return project;
     }
 
     private GeneralProperties PrepareProjectConfig()
     {
-        var project = YoloEaseProject ?? throw new InvalidOperationException("No project is loaded");
+        var project = YoloEaseProject;
+        if (project.IsEmpty)
+        {
+            throw new InvalidOperationException("No project is loaded");
+        }
+
         var projectFile = LoadedProjectFile;
         var projectName = LoadedProjectFile != null
             ? Path.GetFileNameWithoutExtension(LoadedProjectFile.Name)
@@ -1437,7 +1373,7 @@ public class MainWindowViewModel : RefreshableReactiveObject, ICanBeSelected
 
     private void ApplyLoadedProjectFileContext()
     {
-        if (YoloEaseProject == null)
+        if (YoloEaseProject.IsEmpty)
         {
             return;
         }

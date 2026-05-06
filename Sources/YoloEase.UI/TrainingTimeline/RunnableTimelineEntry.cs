@@ -27,7 +27,7 @@ public abstract class RunnableTimelineEntryBase : TimelineEntry
     protected RunnableTimelineEntryBase()
     {
         isBusyLatch = new SharedResourceLatch().AddTo(Anchors);
-        cancellationTokenSource = new CancellationTokenSource().AddTo(Anchors);
+        cancellationTokenSource = new CancellationTokenSource();
 
         Binder.Attach(this).AddTo(Anchors);
     }

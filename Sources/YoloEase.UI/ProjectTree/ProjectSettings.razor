@@ -13,9 +13,8 @@
     <ChildContent>
     @{
         var project = Track(x => x.YoloEaseProject);
-        var isProjectShellAttached = Track(x => x.IsProjectShellAttached);
     }
-    @if (project == null || !isProjectShellAttached)
+    @if (project.IsEmpty)
     {
         <section class="ye-section">
             <div class="alert alert-secondary mb-0">No project loaded.</div>
@@ -264,7 +263,8 @@
 
     private YoloEaseProject? GetCurrentProject()
     {
-        return Track(x => x.IsProjectShellAttached) ? Track(x => x.YoloEaseProject) : null;
+        var project = Track(x => x.YoloEaseProject);
+        return project.IsEmpty ? null : project;
     }
 
 }

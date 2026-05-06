@@ -48,6 +48,12 @@ public class YoloEaseProject : RefreshableReactiveObject
         Binder.Attach(this).AddTo(Anchors);
     }
     
+    /// <summary>
+    /// Gets or sets whether this instance is the empty sentinel project used when the shell is showing the start page.
+    /// Empty projects are not backed by saved project state and must not refresh storage, annotations, training data, or remote state.
+    /// </summary>
+    public bool IsEmpty { get; set; }
+
     public DirectoryInfo StorageDirectory { get; set; }
     
     public AnnotationProjectAccessor RemoteProject { get; }
@@ -70,6 +76,12 @@ public class YoloEaseProject : RefreshableReactiveObject
 
     protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
+        if (IsEmpty)
+        {
+            Log.Debug("Ignoring project refresh because the active project is empty");
+            return;
+        }
+
         await Assets.Refresh();
         await RemoteProject.Refresh();
         await Annotations.Refresh();

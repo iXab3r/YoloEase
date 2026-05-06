@@ -28,7 +28,6 @@ public sealed class YoloEngineRepository : DisposableReactiveObjectWithLogger, I
             }
 
             engines.Dispose();
-            gate.Dispose();
         });
     }
 

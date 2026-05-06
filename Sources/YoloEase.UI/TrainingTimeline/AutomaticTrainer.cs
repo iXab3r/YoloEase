@@ -32,19 +32,19 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     static AutomaticTrainer()
     {
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.Assets.Files.Count).To(x => x.ProjectFileCount);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.UnannotatedFiles.Count).To(x => x.UnannotatedFileCount);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.Assets.Files.Count).To(x => x.ProjectFileCount);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.TrainingBatch.UnannotatedFiles.Count).To(x => x.UnannotatedFileCount);
         Binder.Bind(x => Math.Max(0, x.ProjectFileCount - x.UnannotatedFileCount)).To(x => x.AnnotatedFileCount);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.RemoteProject.Tasks.Count).To(x => x.ProjectTaskCount);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.UnannotatedTasks.Count).To(x => x.UnannotatedTaskCount);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.RemoteProject.Tasks.Count).To(x => x.ProjectTaskCount);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.TrainingBatch.UnannotatedTasks.Count).To(x => x.UnannotatedTaskCount);
         Binder.Bind(x => Math.Max(0, x.ProjectTaskCount - x.UnannotatedTaskCount)).To(x => x.AnnotatedTaskCount);
         Binder.Bind(x => x.UnannotatedFileCount > 0).To(x => x.HasUnannotatedFiles);
         Binder.Bind(x => x.UnannotatedTaskCount > 0).To(x => x.HasUnannotatedTasks);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.MinBatchPercentage).To(x => x.BatchMinPercentage);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.MaxBatchPercentage).To(x => x.BatchMaxPercentage);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.BatchPercentage).To(x => x.BatchPercentage);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingBatch.BatchSize).To(x => x.BatchSize);
-        Binder.Bind(x => x.Project == null ? 0 : x.Project.TrainingDataset.TrainValSplitPercentage).To(x => x.TrainValSplitPercentage);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.TrainingBatch.MinBatchPercentage).To(x => x.BatchMinPercentage);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.TrainingBatch.MaxBatchPercentage).To(x => x.BatchMaxPercentage);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.TrainingBatch.BatchPercentage).To(x => x.BatchPercentage);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.TrainingBatch.BatchSize).To(x => x.BatchSize);
+        Binder.Bind(x => x.Project == null || x.Project.IsEmpty ? 0 : x.Project.TrainingDataset.TrainValSplitPercentage).To(x => x.TrainValSplitPercentage);
         Binder.Bind(x => GetFilteredTasks(x)).To(x => x.FilteredTasks);
     }
 
@@ -69,26 +69,30 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
             .AddTo(Anchors);
 
         this.WhenAnyValue(x => x.Project)
-            .Where(x => x != null)
-            .Select(project => Observable.Merge(
-                Observable.Return(Unit.Default),
-                this.WhenAnyValue(x => x.IsSelected)
-                    .Where(isSelected => isSelected)
-                    .ToUnit(),
-                project.DataSources.InputDirectories.Connect()
-                    .Skip(1)
-                    .ToUnit(),
-                project.RemoteProject.WhenAnyValue(x => x.CurrentUser)
-                    .Where(_ => CanRefreshProject(project))
-                    .ToUnit())
-                .Throttle(TimeSpan.FromMilliseconds(500))
-                .Select(_ => project))
+            .Where(x => x is { IsEmpty: false })
+            .Select(project =>
+            {
+                var activeProject = project!;
+                return Observable.Merge(
+                        Observable.Return(Unit.Default),
+                        this.WhenAnyValue(x => x.IsSelected)
+                            .Where(isSelected => isSelected)
+                            .ToUnit(),
+                        activeProject.DataSources.InputDirectories.Connect()
+                            .Skip(1)
+                            .ToUnit(),
+                        activeProject.RemoteProject.WhenAnyValue(x => x.CurrentUser)
+                            .Where(_ => CanRefreshProject(activeProject))
+                            .ToUnit())
+                    .Throttle(TimeSpan.FromMilliseconds(500))
+                    .Select(_ => activeProject);
+            })
             .Switch()
             .SubscribeAsync(RefreshProjectForTrainer, Log.HandleUiException)
             .AddTo(Anchors);
 
         var predictionUiState = this.WhenAnyValue(x => x.Project)
-            .Select(project => project == null
+            .Select(project => project == null || project.IsEmpty
                 ? Observable.Return(new PredictionUiState(null, Array.Empty<string>()))
                 : Observable.CombineLatest(
                     project.Predictions.WhenAnyValue(x => x.LatestPredictions),
@@ -178,7 +182,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     public void UpdateBatchPercentage(int value)
     {
         var project = Project;
-        if (project == null)
+        if (project == null || project.IsEmpty)
         {
             return;
         }
@@ -189,7 +193,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     public void UpdateTrainValSplitPercentage(int value)
     {
         var project = Project;
-        if (project == null)
+        if (project == null || project.IsEmpty)
         {
             return;
         }
@@ -200,7 +204,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     private static IReadOnlyList<AnnotationTaskInfo> GetFilteredTasks(AutomaticTrainer trainer)
     {
         var project = trainer.Project;
-        if (project == null)
+        if (project == null || project.IsEmpty)
         {
             return Array.Empty<AnnotationTaskInfo>();
         }
@@ -303,7 +307,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     public async Task Start()
     {
         var project = Project;
-        if (project == null)
+        if (project == null || project.IsEmpty)
         {
             Log.Warn("Ignoring automatic trainer start request because no project is loaded");
             return;
@@ -312,7 +316,6 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
         using var isBusy = MarkAsBusy();
         using var cleanup = Disposable.Create(() =>
         {
-            activeTrainingCancellationTokenSource?.Dispose();
             activeTrainingCancellationTokenSource = null;
         });
         activeTrainingCancellationTokenSource = new CancellationTokenSource();
@@ -336,7 +339,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
     protected override async Task RefreshInternal(IProgressReporter? progressReporter = default)
     {
         var project = Project;
-        if (project == null)
+        if (project == null || project.IsEmpty)
         {
             Log.Debug("Ignoring trainer refresh because no project is loaded");
             return;
@@ -347,7 +350,7 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     private async Task RefreshProjectForTrainer(YoloEaseProject project)
     {
-        if (Project == null || !ReferenceEquals(Project, project) || IsBusy || !CanRefreshProject(project))
+        if (Project == null || Project.IsEmpty || !ReferenceEquals(Project, project) || IsBusy || !CanRefreshProject(project))
         {
             return;
         }
@@ -358,8 +361,9 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     private static bool CanRefreshProject(YoloEaseProject project)
     {
-        return project.RemoteProject.Mode == AnnotationBackendMode.Offline ||
-               project.RemoteProject.CurrentUser != null;
+        return !project.IsEmpty &&
+               (project.RemoteProject.Mode == AnnotationBackendMode.Offline ||
+                project.RemoteProject.CurrentUser != null);
     }
 
     private async Task HandleTraining(YoloEaseProject project, CancellationToken cancellationToken)
@@ -635,6 +639,8 @@ public class AutomaticTrainer : RefreshableReactiveObject, ICanBeSelected
 
     private YoloEaseProject GetRequiredProject()
     {
-        return Project ?? throw new InvalidOperationException("No project is loaded");
+        return Project is { IsEmpty: false } project
+            ? project
+            : throw new InvalidOperationException("No project is loaded");
     }
 }

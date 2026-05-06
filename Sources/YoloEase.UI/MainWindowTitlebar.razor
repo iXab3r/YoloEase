@@ -16,7 +16,7 @@
             </span>
         </span>
 
-        @if (DataContext.YoloEaseProject != null)
+        @if (!DataContext.YoloEaseProject.IsEmpty)
         {
             <ReactiveButton Class="btn btn-eye-link btn-primary btn-sm px-2 text-nowrap"
                             CommandEx="@DataContext.NewProjectCommand">

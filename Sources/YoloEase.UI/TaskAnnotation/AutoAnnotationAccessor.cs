@@ -34,7 +34,6 @@ public sealed class AutoAnnotationAccessor : DisposableReactiveObjectWithLogger,
 
         errorsProvider = new ErrorsProvider<AutoAnnotationAccessor>(this, capacity: 20).AddTo(Anchors);
         errorsProvider.Report(engineRepository.ErrorProvider).AddTo(Anchors);
-        Anchors.Add(runLock.Dispose);
     }
 
     public DirectoryInfo? StorageDirectory { get; [UsedImplicitly] set; }

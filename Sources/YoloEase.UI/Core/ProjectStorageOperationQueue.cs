@@ -63,6 +63,8 @@ internal sealed class ProjectStorageOperationQueue : IDisposable
 
     public void Dispose()
     {
-        gate.Dispose();
+        // Intentionally do not dispose the gate. Project disposal can race with an in-flight storage
+        // operation unwinding through finally; disposing SemaphoreSlim can turn a harmless close into
+        // ObjectDisposedException during Release().
     }
 }

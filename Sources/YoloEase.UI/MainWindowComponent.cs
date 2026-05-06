@@ -63,7 +63,6 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
     public MainWindowComponent()
     {
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.YoloEaseProject));
-        ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsProjectShellAttached));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.IsAdvancedMode));
         ChangeTrackers.Add(this.WhenAnyValue(x => x.DataContext.Tabs).Select(x => x.Connect()).Select(x => x.WhenValueChanged(x => x.IsVisible)));
     }
@@ -92,10 +91,9 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
             await RegisterProjectDropTarget();
         }
 
-        if (DataContext?.YoloEaseProject == null || !DataContext.IsProjectShellAttached)
+        if (DataContext?.YoloEaseProject.IsEmpty != false)
         {
             await DisposeGoldenLayout();
-            DataContext?.NotifyProjectShellDetached();
             return;
         }
 

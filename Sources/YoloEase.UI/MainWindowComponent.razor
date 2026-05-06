@@ -11,8 +11,8 @@
 </HeadContent>
 
 
-<div id="appContainer" @ref="appContainerElement">
-    @if (DataContext.YoloEaseProject == null || !DataContext.IsProjectShellAttached)
+<div id="appContainer" @ref="appContainerElement" @key="DataContext.YoloEaseProject">
+    @if (DataContext.YoloEaseProject.IsEmpty)
     {
         <StartingPage DataContext="@DataContext"/>
     }

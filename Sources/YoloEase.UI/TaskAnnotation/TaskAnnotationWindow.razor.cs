@@ -650,13 +650,10 @@ public partial class TaskAnnotationWindow
     public override async ValueTask DisposeAsync()
     {
         autoSaveCancellationTokenSource?.Cancel();
-        autoSaveCancellationTokenSource?.Dispose();
         autoSaveCancellationTokenSource = null;
         autoAnnotationCancellationTokenSource?.Cancel();
-        autoAnnotationCancellationTokenSource?.Dispose();
         autoAnnotationCancellationTokenSource = null;
         imagePreloadCancellationTokenSource?.Cancel();
-        imagePreloadCancellationTokenSource?.Dispose();
         imagePreloadCancellationTokenSource = null;
 
         if (resizeObserver != null)
@@ -671,7 +668,6 @@ public partial class TaskAnnotationWindow
         }
 
         dotNetRef?.DisposeJsSafe();
-        saveLock.Dispose();
         await base.DisposeAsync();
     }
 
@@ -787,7 +783,6 @@ public partial class TaskAnnotationWindow
     private void StartAutoSaveLoop()
     {
         autoSaveCancellationTokenSource?.Cancel();
-        autoSaveCancellationTokenSource?.Dispose();
         autoSaveCancellationTokenSource = new CancellationTokenSource();
         AutoSaveLoop(autoSaveCancellationTokenSource.Token).AndForget();
     }
@@ -983,7 +978,6 @@ public partial class TaskAnnotationWindow
     private void StartImagePreload(int centerFrameIndex)
     {
         imagePreloadCancellationTokenSource?.Cancel();
-        imagePreloadCancellationTokenSource?.Dispose();
         imagePreloadCancellationTokenSource = new CancellationTokenSource();
         PreloadAdjacentFrameImages(centerFrameIndex, imagePreloadCancellationTokenSource.Token).AndForget();
     }
@@ -2935,7 +2929,6 @@ public partial class TaskAnnotationWindow
         CancelActiveOperation(clearSelection: false);
         selectedShapeIds.Clear();
         autoAnnotationCancellationTokenSource?.Cancel();
-        autoAnnotationCancellationTokenSource?.Dispose();
         autoAnnotationCancellationTokenSource = new CancellationTokenSource();
         var cancellationToken = autoAnnotationCancellationTokenSource.Token;
         isAutoAnnotating = true;
@@ -3039,7 +3032,6 @@ public partial class TaskAnnotationWindow
             activeModelOperationId = null;
             modelOperationProgressPercent = null;
             modelOperationStatusText = null;
-            autoAnnotationCancellationTokenSource?.Dispose();
             autoAnnotationCancellationTokenSource = null;
             await InvokeAsync(StateHasChanged);
         }
