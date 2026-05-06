@@ -69,6 +69,7 @@ Repository-specific instructions for coding agents working in this repo.
 
 - Treat filesystem, dialogs, process launching, network calls, clipboard, drag/drop, browser/webview interop, and other OS or external-system interactions as unsafe by default.
 - External boundary failures must not crash or tear down the app. Wrap these operations at the UI/service boundary, log enough context, and report a clear retryable error to the user.
+- When disposing Blazor/WebView/JS interop objects, use `DisposeJsSafeAsync` or `DisposeJsSafe` instead of direct `DisposeAsync`/`Dispose` so natural window-close races do not surface as teardown failures.
 - Never let scheduled callbacks, reactive subscriptions, dispatcher work items, or background tasks execute IO/network/process/dialog operations without a local `try/catch` around the operation body.
 - Validate paths and existence before reading, writing, deleting, moving, or opening files/directories. Missing, moved, locked, malformed, or permission-denied resources are normal user states, not fatal exceptions.
 

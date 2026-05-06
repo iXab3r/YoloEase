@@ -1,4 +1,5 @@
 @namespace YoloEase.UI
+@using PoeShared.Blazor.Scaffolding
 @using PoeShared.Blazor.Services
 @inherits PoeShared.Blazor.BlazorReactiveComponent
 
@@ -34,7 +35,7 @@
         {
             try
             {
-                await registration.DisposeAsync();
+                await registration.DisposeJsSafeAsync();
             }
             catch (Exception e)
             {

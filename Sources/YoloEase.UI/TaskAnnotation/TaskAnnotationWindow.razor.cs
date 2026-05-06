@@ -661,16 +661,16 @@ public partial class TaskAnnotationWindow
 
         if (resizeObserver != null)
         {
-            await resizeObserver.InvokeVoidAsync("dispose");
-            await resizeObserver.DisposeAsync();
+            await resizeObserver.InvokeVoidSafeAsync("dispose");
+            await resizeObserver.DisposeJsSafeAsync();
         }
 
         if (jsModule != null)
         {
-            await jsModule.DisposeAsync();
+            await jsModule.DisposeJsSafeAsync();
         }
 
-        dotNetRef?.Dispose();
+        dotNetRef?.DisposeJsSafe();
         saveLock.Dispose();
         await base.DisposeAsync();
     }

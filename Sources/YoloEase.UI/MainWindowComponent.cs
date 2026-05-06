@@ -4,6 +4,7 @@ using AntDesign;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Web.WebView2.Core;
+using PoeShared.Blazor.Scaffolding;
 using PoeShared.Blazor.Services;
 using PoeShared.Blazor.Controls.GoldenLayout;
 using PoeShared.Blazor.Wpf;
@@ -438,12 +439,12 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
 
     private async ValueTask DisposeGoldenLayout()
     {
-        layoutSubscriptions?.Dispose();
+        layoutSubscriptions?.DisposeJsSafe();
         layoutSubscriptions = null;
 
         registeredTabContexts.Clear();
         registeredTabTitles.Clear();
-        goldenLayoutBlazorAdapter?.Dispose();
+        goldenLayoutBlazorAdapter?.DisposeJsSafe();
         goldenLayoutBlazorAdapter = null;
 
         if (goldenLayout == null)
@@ -458,7 +459,7 @@ public partial class MainWindowComponent : YoloEaseComponent<MainWindowViewModel
         try
         {
             Log.Debug("Disposing GoldenLayout workspace");
-            await WithLayoutTimeout(layoutToDispose.DisposeAsync().AsTask(), "dispose GoldenLayout");
+            await WithLayoutTimeout(layoutToDispose.DisposeJsSafeAsync().AsTask(), "dispose GoldenLayout");
         }
         catch (Exception e)
         {
