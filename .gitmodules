@@ -19,3 +19,7 @@
 [submodule "Submodules/ControlzEx"]
 	path = Submodules/ControlzEx
 	url = https://github.com/iXab3r/ControlzEx.git
+[submodule "Submodules/EyeAuras.Wiki"]
+	path = Submodules/EyeAuras.Wiki
+	url = https://github.com/iXab3r/EyeAuras.Wiki.git
+	branch = main
