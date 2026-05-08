@@ -1,40 +1,50 @@
 # YoloEase
-is a tool that automates Yolo 8+ training process. It can leverage annotation capabilities of [CVAT](https://www.cvat.ai/) (any server will work, by default it uses [unofficial](https://cvat.eyeauras.net/) instance but you can change it at any time).
-Wiki is located here - https://wiki.eyeauras.net/en/YoloEase/getting-started
 
-> The tool is currently in early alpha stage. Any [feedback](https://wiki.eyeauras.net/en/contacts) is highly appreciated
-{.is-warning}
+YoloEase is a desktop tool for iterative YOLO model training.
 
-## Let's Get Started
-1. Install the necessary [prerequisites](https://wiki.eyeauras.net/en/YoloEase/prerequisites).
-2. Download latest version [here](https://github.com/iXab3r/YoloEase/releases/)
-3. [Setup](https://wiki.eyeauras.net/en/YoloEase/how-to-setup-project) CVAT and YoloEase projects. These will be used together for different parts of the process.
-4. Dive into [training](https://wiki.eyeauras.net/en/YoloEase/how-to-use-automatic-trainer) using the automatic trainer.
-5. Deploy and utilize your trained model!
+It helps you turn images or screen recordings into a model that can be used by EyeAuras `ML Search`: collect frames, create annotation tasks, train a model, run predictions, improve the next batch, and export ONNX weights.
 
-First you setup CVAT/Dataset/model settings
-![Main window](https://i.imgur.com/Mm7J8nc.png)
+The current app is project-based and includes its own annotation workspace, managed prerequisites, video frame extraction, training timeline, prediction-assisted annotation, and dataset augmentations.
 
-Then you can start creating annotation tasks. When new task is created you can pick an option to pre-annotate the batch and/or pick only those images which will benefit model the most
-![Task Settings](https://s3.eyeauras.net/media/2024/08/3wrHqj5DqgvkmzX3.png)
- 
-As soon as the program will detect that something has changed - settings, annotations, images - it will re-train the model right away. As soon as the model will be ready you can use it to pre-annotate next batch
-![Training process](https://i.imgur.com/gunKrAJ.png)
+## Quick Links
 
-# Two operation modes - Local Training and Google Collab
-## Local Training
-With Local Training you're training the model using your own hardware. Positive side - you're paying only for electricity, negative - you have to have everything [setup and ready to go](https://wiki.eyeauras.net/en/YoloEase/prerequisites)
-![Local](https://s3.eyeauras.net/media/2024/12/YoloEase_iWvKxn0lfEKOJC2e.png)
+- [Download latest release](https://github.com/iXab3r/YoloEase/releases/)
+- [Russian getting started guide](https://wiki.eyeauras.net/ru/YoloEase/getting-started)
+- [Prerequisites guide](https://wiki.eyeauras.net/ru/YoloEase/prerequisites)
+- [Data sources guide](https://wiki.eyeauras.net/ru/YoloEase/features/data-sources)
+- [Recorded demo session](https://youtu.be/MdLETBZPeec)
+- [Ready-to-use EyeAuras pack](https://eyeauras.net/share/S20260507232328uRAOxLRumL6o)
 
-## Google Collab
-With Google Collab you're using cloud infrastructure to do the training, meaning that the actual training code runs elsewhere. You can either use a free tier or a paid one, your choice.
-![Collab](https://s3.eyeauras.net/media/2024/12/YoloEase_rt5H9OWKDnFJjrSb.png)
+## Demo Assets
 
+- [ONNX weights](https://s3.eyeauras.net/media/2026/05/Qwe_yolo11s_202605072245262GXYDdJshE3b.onnx)
+- [PyTorch weights](https://s3.eyeauras.net/media/2026/05/Qwe_yolo11s_202605072245262GXYDdJshE3b.pt)
+- [Full YoloEase project with training history](https://s3.eyeauras.net/media/2026/05/AimTrainerDemo.zip)
 
-## How it streamlines the process
-- **Datasets**: Select your unannotated images for training. YoloEase treats these as read-only. Images/videos are supported. 
-- **Image Management**: YoloEase automatically categorizes your images (e.g., annotated, unannotated, "broken", "outliers"), ensuring efficient use of resources and no redundant work. All you have to do is throw in more images whenever needed.
-- **Configuration**: Define your base model, training settings, and other preferences. This setup is utilized once your data is prepped and ready.
-- **Annotation Cycle**: Annotate a set of images using CVAT and YoloEase automaticaly will re-train the model for you as soon as it will detect that new annotations are available.
+## Workflow
 
+1. Create a `.yeproj` project.
+2. Add images, folders, or video files.
+3. Extract frames from video when needed.
+4. Define labels and annotate the first task manually.
+5. Train locally or prepare a Google Colab run.
+6. Use the latest model to predict and auto-annotate the next tasks.
+7. Export the trained ONNX model and use it in EyeAuras.
 
+## Training Modes
+
+**Local Training** runs on your own machine. YoloEase manages a portable Python environment, required Python packages, PyTorch runtime, Ultralytics, and ONNX tooling from the `Prerequisites` tab.
+
+**Google Colab** is available when you want to run training outside your local machine.
+
+## What YoloEase Automates
+
+- Project-owned copies of training assets.
+- Annotation task creation and status tracking.
+- Dataset generation for YOLO training.
+- Optional image augmentations.
+- Training timeline and progress reporting.
+- Prediction previews for the latest model.
+- ONNX output for EyeAuras automation.
+
+YoloEase is still evolving quickly. Please report problems or suggestions through the app or the repository issues.
