@@ -17,13 +17,30 @@ Start with a handful of manually annotated frames, get the first model quickly, 
 
 The result is a normal YOLO model: `.pt` weights for further training and `.onnx` weights for runtime use. EyeAuras `ML Search` is the main integration shown here, but the exported ONNX model is not EyeAuras-specific.
 
-![YoloEase start screen](https://s3.eyeauras.net/media/2026/05/YoloEase_egOi46KQfu.png)
+![YoloEase prerequisites](https://s3.eyeauras.net/media/2026/05/YoloEase_wfJdcyvdZj.png)
+
+## Managed Training Setup
+
+YoloEase v2 removes most of the old environment setup chores. You do not have to start by installing Python, PyTorch, Ultralytics, CUDA packages, or ONNX export tools by hand.
+
+Open the `Prerequisites` tab, run `Check all`, then press `Install missing`. YoloEase manages:
+
+- portable Python for local training;
+- the project Python environment;
+- package installation tools;
+- PyTorch CPU or CUDA runtime;
+- Ultralytics YOLO CLI;
+- ONNX export and runtime tooling;
+- NVIDIA GPU detection and acceleration checks.
+
+If something goes wrong, the same page shows per-component diagnostics and copyable logs.
 
 ## Why It Exists
 
 Training a useful detector is rarely a one-shot process. You collect real frames, label a small part, train, inspect mistakes, add the frames where the model failed, and repeat. YoloEase keeps that loop inside one project:
 
 - create `.yeproj` projects with project-owned training assets;
+- prepare the local training environment from the `Prerequisites` tab;
 - import images, folders, or videos;
 - extract frames from screen recordings;
 - define labels and annotate tasks in the built-in editor;
@@ -34,9 +51,13 @@ Training a useful detector is rarely a one-shot process. You collect real frames
 
 ## Screenshots
 
-| Prepare data | Annotate | Train |
+| Prerequisites | Prepare data | Annotate |
 | --- | --- | --- |
-| ![Project labels and sources](https://s3.eyeauras.net/media/2026/05/YoloEase_CeXbLsliGW.png) | ![Annotation editor](https://s3.eyeauras.net/media/2026/05/YoloEase_AT0n2plVpV.png) | ![Training running](https://s3.eyeauras.net/media/2026/05/YoloEase_pNV4AW3F2r.png) |
+| ![All prerequisites installed](https://s3.eyeauras.net/media/2026/05/YoloEase_OuA9BUthjc.png) | ![Project labels and sources](https://s3.eyeauras.net/media/2026/05/YoloEase_CeXbLsliGW.png) | ![Annotation editor](https://s3.eyeauras.net/media/2026/05/YoloEase_AT0n2plVpV.png) |
+
+| Extract frames | Train | Inspect metrics |
+| --- | --- | --- |
+| ![Extract frames](https://s3.eyeauras.net/media/2026/05/YoloEase_sFCEGiqTnK.png) | ![Training running](https://s3.eyeauras.net/media/2026/05/YoloEase_pNV4AW3F2r.png) | ![Training metrics](https://s3.eyeauras.net/media/2026/05/YoloEase_UQNGLfMszk.png) |
 
 | Inspect predictions | Improve with auto-annotation | Use the model |
 | --- | --- | --- |
