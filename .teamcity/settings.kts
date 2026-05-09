@@ -95,13 +95,17 @@ object Publish : BuildType({
     description = "Creates portable and non-portable release packages from Compile output and creates a draft GitHub release."
     buildNumberPattern = Compile.depParamRefs["build.number"].ref
 
+    artifactRules = """
+        out/yoloease-release/*.zip => release-packages
+    """.trimIndent()
+
     params {
         text("GitHubRepository", "iXab3r/YoloEase", allowEmpty = false)
         param("ReleaseTag", "v%AppVersion%")
         param("ReleaseName", "YoloEase %AppVersion%")
-        param("ReleaseInputDir", "%teamcity.build.tempDir%/yoloease-publish/input")
-        param("ReleaseWorkDir", "%teamcity.build.tempDir%/yoloease-publish/work")
-        param("ReleaseOutputDir", "%teamcity.build.tempDir%/yoloease-publish/output")
+        param("ReleaseInputDir", "out/yoloease-publish/input")
+        param("ReleaseWorkDir", "out/yoloease-publish/work")
+        param("ReleaseOutputDir", "out/yoloease-release")
     }
 
     vcs {

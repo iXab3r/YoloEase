@@ -44,7 +44,25 @@ function Get-NormalizedPath {
     return [IO.Path]::GetFullPath((Join-Path -Path (Get-Location).ProviderPath -ChildPath $expandedPath))
 }
 
-function Assert-PathOutsideCheckout {
+function Test-PathInside {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Path,
+
+        [Parameter(Mandatory = $true)]
+        [string] $ParentPath
+    )
+
+    $trimChars = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $candidatePath = [IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
+    $containerPath = [IO.Path]::GetFullPath($ParentPath).TrimEnd($trimChars)
+
+    return $candidatePath.Equals($containerPath, [StringComparison]::OrdinalIgnoreCase) -or
+        $candidatePath.StartsWith($containerPath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+        $candidatePath.StartsWith($containerPath + [IO.Path]::AltDirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Assert-ReleasePathAllowed {
     param(
         [Parameter(Mandatory = $true)]
         [string] $Path,
@@ -56,26 +74,23 @@ function Assert-PathOutsideCheckout {
     $trimChars = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
     $checkoutPath = [IO.Path]::GetFullPath((Get-Location).ProviderPath).TrimEnd($trimChars)
     $candidatePath = [IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
+    $sourcesPath = [IO.Path]::GetFullPath((Join-Path -Path $checkoutPath -ChildPath "Sources")).TrimEnd($trimChars)
+    $outPath = [IO.Path]::GetFullPath((Join-Path -Path $checkoutPath -ChildPath "out")).TrimEnd($trimChars)
 
-    if ($candidatePath.Equals($checkoutPath, [StringComparison]::OrdinalIgnoreCase) -or
-        $candidatePath.StartsWith($checkoutPath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
-        $candidatePath.StartsWith($checkoutPath + [IO.Path]::AltDirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "$Name must be outside the checkout directory. Current value: $candidatePath"
+    if ($candidatePath.Equals($checkoutPath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Name must not point at the checkout root. Current value: $candidatePath"
     }
-}
 
-function ConvertTo-TeamCityEscapedValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string] $Value
-    )
+    if (Test-PathInside -Path $candidatePath -ParentPath $sourcesPath) {
+        throw "$Name must not point inside Sources. Current value: $candidatePath"
+    }
 
-    return $Value.Replace("|", "||").
-        Replace("'", "|'").
-        Replace("`n", "|n").
-        Replace("`r", "|r").
-        Replace("[", "|[").
-        Replace("]", "|]")
+    if (Test-PathInside -Path $candidatePath -ParentPath $checkoutPath) {
+        if (-not (Test-PathInside -Path $candidatePath -ParentPath $outPath) -or
+            $candidatePath.Equals($outPath, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "$Name must point under out/ when it is inside the checkout. Current value: $candidatePath"
+        }
+    }
 }
 
 function Resolve-InputZip {
@@ -322,9 +337,9 @@ $InputDir = Get-NormalizedPath -Path $InputDir
 $WorkDir = Get-NormalizedPath -Path $WorkDir
 $OutputDir = Get-NormalizedPath -Path $OutputDir
 
-Assert-PathOutsideCheckout -Path $InputDir -Name "InputDir"
-Assert-PathOutsideCheckout -Path $WorkDir -Name "WorkDir"
-Assert-PathOutsideCheckout -Path $OutputDir -Name "OutputDir"
+Assert-ReleasePathAllowed -Path $InputDir -Name "InputDir"
+Assert-ReleasePathAllowed -Path $WorkDir -Name "WorkDir"
+Assert-ReleasePathAllowed -Path $OutputDir -Name "OutputDir"
 
 if (-not (Test-Path -LiteralPath $InputDir -PathType Container)) {
     throw "Input directory does not exist: $InputDir"
@@ -377,9 +392,6 @@ if (Test-Path -LiteralPath $nonPortableDataDirectory) {
 New-ZipFromDirectory -SourceDirectory $portableDirectory -ZipPath $portableZip
 Ensure-ZipDirectoryEntry -ZipPath $portableZip -EntryName "data/"
 New-ZipFromDirectory -SourceDirectory $nonPortableDirectory -ZipPath $nonPortableZip
-
-$artifactRule = "$(ConvertTo-TeamCityEscapedValue -Value "$OutputDir/*.zip => release-packages")"
-Write-Host "##teamcity[publishArtifacts '$artifactRule']"
 
 if ($SkipGitHubPublish) {
     Write-Host "Skipping GitHub release publishing."
