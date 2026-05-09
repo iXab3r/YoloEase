@@ -30,6 +30,7 @@ version = "2025.07"
 project {
 
     buildType(Compile)
+    buildType(Publish)
 
     params {
         param("AppVersion", "2.0.%build.number%")
@@ -87,4 +88,66 @@ object Compile : BuildType({
     }
     
     disableSettings("RUNNER_15", "RUNNER_2")
+})
+
+object Publish : BuildType({
+    name = "Publish"
+    description = "Creates portable and non-portable release packages from Compile output and creates a draft GitHub release."
+    buildNumberPattern = Compile.depParamRefs["build.number"].ref
+
+    params {
+        text("GitHubRepository", "iXab3r/YoloEase", allowEmpty = false)
+        param("ReleaseTag", "v%AppVersion%")
+        param("ReleaseName", "YoloEase %AppVersion%")
+        param("ReleaseInputDir", "%teamcity.build.tempDir%/yoloease-publish/input")
+        param("ReleaseWorkDir", "%teamcity.build.tempDir%/yoloease-publish/work")
+        param("ReleaseOutputDir", "%teamcity.build.tempDir%/yoloease-publish/output")
+    }
+
+    vcs {
+        root(DslContext.settingsRoot)
+
+        cleanCheckout = false
+    }
+
+    steps {
+        powerShell {
+            name = "Create draft GitHub release"
+            id = "RUNNER_PUBLISH_RELEASE"
+            noProfile = true
+            scriptMode = file {
+                path = ".teamcity/publish-release.ps1"
+            }
+            scriptArgs = """
+                -InputDir "%ReleaseInputDir%"
+                -WorkDir "%ReleaseWorkDir%"
+                -OutputDir "%ReleaseOutputDir%"
+                -AppVersion "%AppVersion%"
+                -Repository "%GitHubRepository%"
+                -TagName "%ReleaseTag%"
+                -ReleaseName "%ReleaseName%"
+                -TargetCommitish "%build.vcs.number%"
+            """.trimIndent()
+        }
+    }
+
+    dependencies {
+        dependency(Compile) {
+            snapshot {
+                reuseBuilds = ReuseBuilds.SUCCESSFUL
+                synchronizeRevisions = true
+                onDependencyFailure = FailureAction.FAIL_TO_START
+                onDependencyCancel = FailureAction.CANCEL
+            }
+            artifacts {
+                buildRule = sameChainOrLastFinished()
+                artifactRules = "YoloEase.%AppVersion%.zip => %ReleaseInputDir%"
+                cleanDestination = true
+            }
+        }
+    }
+
+    requirements {
+        equals("env.OS", "Windows_NT", "RQ_PUBLISH_WINDOWS")
+    }
 })

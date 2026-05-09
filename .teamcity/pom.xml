@@ -22,7 +22,7 @@
     </repository>
     <repository>
       <id>teamcity-server</id>
-      <url>http://185.137.234.147:8080/app/dsl-plugins-repository</url>
+      <url>https://build.eyeauras.net/app/dsl-plugins-repository</url>
       <snapshots>
         <enabled>true</enabled>
       </snapshots>
