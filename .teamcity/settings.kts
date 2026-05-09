@@ -101,6 +101,13 @@ object Publish : BuildType({
 
     params {
         text("GitHubRepository", "iXab3r/YoloEase", allowEmpty = false)
+        text(
+            "YOLOEASE_DRY_RUN",
+            "true",
+            label = "Dry run",
+            description = "Use true to prepare release packages without creating or uploading a GitHub draft release.",
+            display = ParameterDisplay.PROMPT,
+            allowEmpty = false)
         param("ReleaseTag", "v%AppVersion%")
         param("ReleaseName", "YoloEase %AppVersion%")
         param("ReleaseInputDir", "out/yoloease-publish/input")
@@ -131,6 +138,7 @@ object Publish : BuildType({
                 -TagName "%ReleaseTag%"
                 -ReleaseName "%ReleaseName%"
                 -TargetCommitish "%build.vcs.number%"
+                -DryRun "%YOLOEASE_DRY_RUN%"
             """.trimIndent()
         }
     }

@@ -24,6 +24,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $TargetCommitish,
 
+    [string] $DryRun = "false",
+
     [switch] $SkipGitHubPublish
 )
 
@@ -114,6 +116,26 @@ function Resolve-InputZip {
 
     $found = ($candidateZips | ForEach-Object { $_.Name }) -join ", "
     throw "Expected YoloEase.$Version.zip or a single zip in $SourceDirectory. Found: $found"
+}
+
+function ConvertTo-Boolean {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Value,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Name
+    )
+
+    if ($Value.Equals("true", [StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+
+    if ($Value.Equals("false", [StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+
+    throw "$Name must be true or false. Current value: $Value"
 }
 
 function Expand-ZipToDirectory {
@@ -336,6 +358,7 @@ function Upload-ReleaseAsset {
 $InputDir = Get-NormalizedPath -Path $InputDir
 $WorkDir = Get-NormalizedPath -Path $WorkDir
 $OutputDir = Get-NormalizedPath -Path $OutputDir
+$isDryRun = ConvertTo-Boolean -Value $DryRun -Name "DryRun"
 
 Assert-ReleasePathAllowed -Path $InputDir -Name "InputDir"
 Assert-ReleasePathAllowed -Path $WorkDir -Name "WorkDir"
@@ -393,8 +416,8 @@ New-ZipFromDirectory -SourceDirectory $portableDirectory -ZipPath $portableZip
 Ensure-ZipDirectoryEntry -ZipPath $portableZip -EntryName "data/"
 New-ZipFromDirectory -SourceDirectory $nonPortableDirectory -ZipPath $nonPortableZip
 
-if ($SkipGitHubPublish) {
-    Write-Host "Skipping GitHub release publishing."
+if ($isDryRun -or $SkipGitHubPublish) {
+    Write-Host "Dry run requested; skipping GitHub draft release creation."
     exit 0
 }
 
