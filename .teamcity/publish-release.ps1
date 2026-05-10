@@ -424,15 +424,12 @@ function Upload-ReleaseAsset {
         [object] $Release,
 
         [Parameter(Mandatory = $true)]
-        [string] $Path,
-
-        [Parameter(Mandatory = $true)]
-        [string] $Label
+        [string] $Path
     )
 
     $uploadBase = [string]$Release.upload_url -replace "\{\?name,label\}$", ""
     $fileName = [IO.Path]::GetFileName($Path)
-    $uploadUri = "{0}?name={1}&label={2}" -f $uploadBase, [Uri]::EscapeDataString($fileName), [Uri]::EscapeDataString($Label)
+    $uploadUri = "{0}?name={1}" -f $uploadBase, [Uri]::EscapeDataString($fileName)
 
     try {
         Invoke-RestMethod `
@@ -544,7 +541,7 @@ $release = Invoke-GitHubJson -Method "Post" -Uri "$apiBase/releases" -Body @{
     generate_release_notes = $false
 }
 
-Upload-ReleaseAsset -Release $release -Path $portableZip -Label "Portable"
-Upload-ReleaseAsset -Release $release -Path $nonPortableZip -Label "Non-portable"
+Upload-ReleaseAsset -Release $release -Path $portableZip
+Upload-ReleaseAsset -Release $release -Path $nonPortableZip
 
 Write-Host "Created draft release $ReleaseName at $($release.html_url)"
