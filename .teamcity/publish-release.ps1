@@ -281,6 +281,98 @@ function Invoke-GitHubJson {
     }
 }
 
+function Get-RedactedTokenDescription {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Token
+    )
+
+    $tokenKind = "unknown"
+    if ($Token.StartsWith("github_pat_", [StringComparison]::Ordinal)) {
+        $tokenKind = "fine-grained PAT"
+    }
+    elseif ($Token.StartsWith("ghp_", [StringComparison]::Ordinal)) {
+        $tokenKind = "classic PAT"
+    }
+    elseif ($Token.StartsWith("gho_", [StringComparison]::Ordinal)) {
+        $tokenKind = "OAuth token"
+    }
+    elseif ($Token.StartsWith("ghs_", [StringComparison]::Ordinal)) {
+        $tokenKind = "GitHub App installation token"
+    }
+
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash([Text.Encoding]::UTF8.GetBytes($Token))
+        $fingerprint = ([BitConverter]::ToString($hashBytes) -replace "-", "").Substring(0, 12).ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+    }
+
+    return "$tokenKind, length $($Token.Length), sha256:$fingerprint"
+}
+
+function Get-GitHubToken {
+    $candidates = @(
+        @{ Name = "GITHUB_TOKEN"; Value = $env:GITHUB_TOKEN },
+        @{ Name = "GH_TOKEN"; Value = $env:GH_TOKEN }
+    )
+
+    foreach ($candidate in $candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate.Value)) {
+            continue
+        }
+
+        $token = $candidate.Value.Trim()
+        if (($token.StartsWith('"') -and $token.EndsWith('"')) -or
+            ($token.StartsWith("'") -and $token.EndsWith("'"))) {
+            $token = $token.Substring(1, $token.Length - 2).Trim()
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($token)) {
+            return [pscustomobject]@{
+                Name = $candidate.Name
+                Value = $token
+            }
+        }
+    }
+
+    return $null
+}
+
+function Test-GitHubAuthentication {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $TokenSource,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Token
+    )
+
+    $description = Get-RedactedTokenDescription -Token $Token
+    Write-Host "Using GitHub token from env.$TokenSource ($description)."
+
+    try {
+        $response = Invoke-WebRequest `
+            -Method Get `
+            -Uri "https://api.github.com/user" `
+            -Headers $script:GitHubHeaders `
+            -UseBasicParsing
+
+        $user = $response.Content | ConvertFrom-Json
+        $scopes = $response.Headers["X-OAuth-Scopes"]
+        if ([string]::IsNullOrWhiteSpace($scopes)) {
+            $scopes = "<not reported for this token type>"
+        }
+
+        Write-Host "Authenticated to GitHub as $($user.login). Token scopes: $scopes"
+    }
+    catch {
+        throw "GitHub token from env.$TokenSource was rejected by https://api.github.com/user ($description). $($_.Exception.Message)"
+    }
+}
+
 function Get-ReleaseNotes {
     param(
         [Parameter(Mandatory = $true)]
@@ -421,17 +513,19 @@ if ($isDryRun -or $SkipGitHubPublish) {
     exit 0
 }
 
-$githubToken = $env:GITHUB_TOKEN
-if ([string]::IsNullOrWhiteSpace($githubToken)) {
-    throw "Set a TeamCity secure environment parameter named env.GITHUB_TOKEN with GitHub Contents: write permission for $Repository."
+$githubToken = Get-GitHubToken
+if ($null -eq $githubToken) {
+    throw "Set a TeamCity secure environment parameter named env.GITHUB_TOKEN or env.GH_TOKEN with GitHub Contents: write permission for $Repository."
 }
 
 $script:GitHubHeaders = @{
     Accept = "application/vnd.github+json"
-    Authorization = "Bearer $githubToken"
-    "X-GitHub-Api-Version" = "2026-03-10"
+    Authorization = "Bearer $($githubToken.Value)"
+    "X-GitHub-Api-Version" = "2022-11-28"
     "User-Agent" = "YoloEase-TeamCity-Publish"
 }
+
+Test-GitHubAuthentication -TokenSource $githubToken.Name -Token $githubToken.Value
 
 $encodedTagName = [Uri]::EscapeDataString($TagName)
 $existingRelease = Invoke-GitHubJson -Method "Get" -Uri "$apiBase/releases/tags/$encodedTagName" -AllowNotFound
