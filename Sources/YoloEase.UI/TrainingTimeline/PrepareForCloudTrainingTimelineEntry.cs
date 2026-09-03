@@ -1,9 +1,7 @@
 using System.IO.Compression;
 using System.Reactive.Disposables;
 using System.Threading;
-using PoeShared.IO;
 using PoeShared.Logging;
-using PoeShared.Services;
 using PoeShared.UI;
 using YoloEase.UI.Dto;
 
@@ -15,14 +13,18 @@ namespace YoloEase.UI.TrainingTimeline;
 public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileInfo>
 {
     private static readonly IFluentLog Log = typeof(PrepareForCloudTrainingTimelineEntry).PrepareLogger();
-    private readonly ISevenZipWrapper sevenZipWrapper;
+    private static readonly HashSet<string> ImageFileExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".bmp",
+        ".jpeg",
+        ".jpg",
+        ".png",
+    };
 
     public PrepareForCloudTrainingTimelineEntry(
         TimelineController timelineController,
-        DatasetInfo datasetInfo,
-        ISevenZipWrapper sevenZipWrapper)
+        DatasetInfo datasetInfo)
     {
-        this.sevenZipWrapper = sevenZipWrapper;
         DatasetInfo = datasetInfo;
     }
 
@@ -43,6 +45,7 @@ public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileIn
         Text = $"Zipping revision {changesetName}...";
             
         using var progressTracker = new ComplexProgressTracker();
+        var zipProgress = progressTracker.GetOrAdd("ZIP");
         using var progressUpdater = progressTracker.WhenAnyValue(x => x.ProgressPercent)
             .Sample(UiConstants.UiThrottlingDelay)
             .Subscribe(x =>
@@ -51,7 +54,7 @@ public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileIn
             ProgressPercent = x;
         });
 
-        sevenZipWrapper.CreateFromDirectory(DataArchiveDirectory, new FileInfo(outputZipPath), CompressionLevel.NoCompression);
+        ZipDirectory(DataArchiveDirectory.FullName, outputZipPath, zipProgress);
         
         var outputZip = new FileInfo(outputZipPath);
         DataArchiveFile = outputZip;
@@ -59,7 +62,7 @@ public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileIn
         return outputZip;
     }
 
-    private static void ZipDirectory(string sourceDirectory, string destinationZipFilePath, IProgressReporter progressReporter)
+    internal static void ZipDirectory(string sourceDirectory, string destinationZipFilePath, IProgressReporter? progressReporter)
     {
         if (!Directory.Exists(sourceDirectory))
         {
@@ -72,14 +75,55 @@ public class PrepareForCloudTrainingTimelineEntry : RunnableTimelineEntry<FileIn
             Directory.CreateDirectory(destinationDirectory!);
         }
 
-        if (File.Exists(destinationZipFilePath))
-        {
-            File.Delete(destinationZipFilePath);
-        }
-        
-        
+        var files = Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories);
+        var temporaryZipPath = Path.Combine(
+            destinationDirectory!,
+            $".{Path.GetFileName(destinationZipFilePath)}.{Guid.NewGuid():N}.tmp");
 
-        ZipFileUtils.CreateFromDirectory(new DirectoryInfo(sourceDirectory), new OSPath(destinationZipFilePath), CompressionLevel.NoCompression, progressReporter);
+        try
+        {
+            using (var outputStream = new FileStream(temporaryZipPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var archive = new ZipArchive(outputStream, ZipArchiveMode.Create))
+            {
+                for (var index = 0; index < files.Length; index++)
+                {
+                    var filePath = files[index];
+                    var entryName = Path.GetRelativePath(sourceDirectory, filePath)
+                        .Replace(Path.DirectorySeparatorChar, '/')
+                        .Replace(Path.AltDirectorySeparatorChar, '/');
+                    var entry = archive.CreateEntry(entryName, CompressionLevel.NoCompression);
+
+                    using var entryStream = entry.Open();
+                    using var fileStream = File.OpenRead(filePath);
+                    if (ImageFileExtensions.Contains(Path.GetExtension(filePath)) && fileStream.Length == 0)
+                    {
+                        throw new InvalidDataException($"Image file is empty and cannot be exported: {filePath}");
+                    }
+
+                    fileStream.CopyTo(entryStream);
+                    progressReporter?.Update(index + 1, files.Length);
+                }
+            }
+
+            using (var validationArchive = ZipFile.OpenRead(temporaryZipPath))
+            {
+                if (validationArchive.Entries.Count != files.Length)
+                {
+                    throw new InvalidDataException(
+                        $"ZIP validation failed: expected {files.Length} entries, found {validationArchive.Entries.Count}.");
+                }
+            }
+
+            File.Move(temporaryZipPath, destinationZipFilePath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryZipPath))
+            {
+                File.Delete(temporaryZipPath);
+            }
+        }
+
         if (!File.Exists(destinationZipFilePath))
         {
             throw new FileNotFoundException($"Failed to zip {sourceDirectory} to {destinationZipFilePath}", destinationZipFilePath);
