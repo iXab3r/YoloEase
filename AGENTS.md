@@ -8,15 +8,21 @@ Repository-specific instructions for coding agents working in this repo.
 - Do not use `Sources/**/artifacts` as a custom output path, intermediate path, restore path, publish path, or scratch directory.
 - This repository can break compilation when extra `artifacts` folders appear inside `Sources/`.
 - If you need isolated build output, temporary restore state, or experimental compile output, use a temp directory outside the source tree.
-- Good options are the OS temp directory, `/tmp/...`, or another folder outside `/mnt/d/Work/YoloEase/Sources`.
+- Good options are the OS temp directory, `/tmp/...`, or another folder outside the current checkout.
 - Existing `bin/` and `obj/` folders created by the normal toolchain are expected. The restriction is specifically about agent-created `artifacts` folders under `Sources/`.
 
 ## Agent Scratch And Temp Files
 
 - Do not put agent scratch files, temporary scripts, downloaded probes, extracted archives, throwaway build outputs, restore caches, screenshots, diagnostics, or generated experiments anywhere inside the repository unless the user explicitly asks for a persistent repo file.
-- Use an external temp root for all disposable work, such as `%TEMP%\YoloEaseCodex\...`, `$env:TEMP\YoloEaseCodex\...`, `/tmp/yoloease-codex/...`, or another directory outside `D:\Work\YoloEase`.
+- Use an external temp root for all disposable work, such as `%TEMP%\YoloEaseCodex\...`, `$env:TEMP\YoloEaseCodex\...`, `/tmp/yoloease-codex/...`, or another directory outside the resolved current checkout.
 - Before running tools with configurable output paths, make sure every temp/output/cache path points outside the repo. This includes `dotnet` output overrides, package caches, Playwright screenshots/traces, script-generated files, archives, model probes, and one-off diagnostics.
 - If a command accidentally creates disposable files under the repo, verify the resolved paths and remove only those disposable files before finishing. Never remove user/project source files or unrelated dirty work.
+
+## Independent Architecture And Review
+
+Start each delegated architect, advisor, and reviewer with empty conversation context (`fork_turns="none"` with `spawn_agent`, or the host's equivalent). Give only the concrete question, repository path and relevant revisions, scope, constraints, and raw evidence locations. Keep the assignment focused on the actual topic; do not pass the author's reasoning, preferred verdict, or prior agents' conclusions.
+
+Each agent must inspect the applicable guides and relevant implementation independently, gather evidence, and state its own conclusions and uncertainty. The final reviewer must be separate from the implementer and design advisor, remain read-only, and inspect the final diff at the named revision. Disclose unavailable independent review rather than presenting self-review as independent.
 
 ## Project Orientation
 
