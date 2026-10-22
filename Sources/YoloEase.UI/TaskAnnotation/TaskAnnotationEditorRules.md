@@ -68,13 +68,13 @@ The window shell should stay small: render chrome is split into `TaskAnnotationT
 - The editor layout must keep the main canvas and bottom bar in separate CSS grid rows; only inspector label and shape lists should scroll.
 - The bottom bar shows image size plus cursor and active selection coordinates.
 - The bottom bar should stay slim enough that it does not visually compete with the canvas.
-- Task editor layout follows a GoldenLayout-style split: left main editor pane, right tabbed inspector with Shapes, Labels, and Models tabs. Do not reintroduce the Issues tab.
+- Task editor layout follows a GoldenLayout-style split: left main editor pane, with a Labels/Shapes tabbed pane above a separate Models pane on the right. Do not reintroduce the Issues tab.
 - The Shapes tab may filter the list by all/manual/model-generated sources, and model-generated shapes should remain visibly tagged by source.
 
 ## Auto-Annotation
 
-- Auto-annotation runs are launched from the editor Models tab, toolbar menu, or `Alt+1..9` shortcuts.
-- ONNX/YoloDotNet engine initialization touches native runtime libraries and is unsafe by default. Never auto-load, pre-load, validate, warm up, or run models when the app starts, a project loads, the task window opens, the Models tab renders, settings change, autosave runs, or background refresh executes.
+- Auto-annotation runs are launched from the editor Models pane, toolbar menu, or `Alt+1..9` shortcuts.
+- ONNX/YoloDotNet engine initialization touches native runtime libraries and is unsafe by default. Never auto-load, pre-load, validate, warm up, or run models when the app starts, a project loads, the task window opens, the Models pane renders, settings change, autosave runs, or background refresh executes.
 - Model validation and inference require explicit user action: `Check model`, `Run current`, `Run all`, toolbar/menu commands, or the documented auto-annotation shortcuts.
 - Broken or incompatible models must stay visible with clear status/error text and must not prevent the editor or project from opening.
 - V1 runs one explicit model entry at a time. Do not add a run-all-enabled pipeline command without a product decision.

@@ -13,7 +13,7 @@ YoloEase.UI-specific guidance for coding agents.
 ## Agent Scratch And Temp Files
 
 - Do not place disposable agent files inside `Sources/YoloEase.UI` or elsewhere in the repository. Temporary scripts, screenshots, traces, extracted archives, diagnostic outputs, package caches, model probes, and experimental build outputs must go under an external temp directory such as `$env:TEMP\YoloEaseCodex\...`.
-- Before running UI diagnostics, Playwright, model probes, restore/build commands with custom paths, or any script that writes files, explicitly choose an output/cache directory outside `D:\Work\YoloEase`.
+- Before running UI diagnostics, Playwright, model probes, restore/build commands with custom paths, or any script that writes files, explicitly choose an output/cache directory outside the resolved current checkout.
 - If a tool recreates repo-local disposable output anyway, verify the absolute path and remove only that disposable output before finishing.
 
 ## UI Architecture Notes
@@ -33,7 +33,7 @@ YoloEase.UI-specific guidance for coding agents.
 
 ## Task Annotation Editor
 
-- Read and update `TaskAnnotationEditorRules.md` whenever editor behavior changes.
+- Read and update [TaskAnnotationEditorRules.md](TaskAnnotation/TaskAnnotationEditorRules.md) whenever editor behavior changes.
 - Task annotation services should rely on Fody/reactive properties plus `SourceList`/`SourceCache` change streams for change notification. Do not add manual `Touch`/settings-changed subjects for persistence triggers when reactive properties or reactive collections can represent the same state.
 - Any operation launched through `Task.Run`, scheduler callbacks, background loops, or other separate-thread execution must catch and log/report non-cancellation exceptions at the async boundary. Cancellation may flow normally, but unexpected failures must not disappear into background tasks.
 - ML model loading/inference uses native runtime libraries and is unsafe by default. Never pre-load, validate, warm up, or run ONNX/YoloDotNet engines on app startup, project load, window open, tab render, refresh, autosave, or reactive settings changes; require an explicit user action such as `Check model`, `Run current`, `Run all`, or the auto-annotation shortcuts.
@@ -44,7 +44,7 @@ YoloEase.UI-specific guidance for coding agents.
 - Offline editor edits should autosave periodically to CVAT XML and save before close or frame removal.
 - Removing an image from the task/dataset is not an editor undo operation; use a full-size two-step remove/cancel control and route through `AnnotationProjectAccessor.RemoveTaskFrame`.
 - Keep editor interactions compact and CVAT-like: toolbar left, canvas center, inspector right, bottom action bar fixed.
-- Keep the task editor in a GoldenLayout-style split: main editor pane on the left, right side as a vertical Shapes/Labels stack. Do not add an Issues tab until it has real content.
+- Keep the task editor in a GoldenLayout-style split: main editor pane on the left, with a Labels/Shapes tabbed pane above a separate Models pane on the right. Do not add an Issues tab until it has real content.
 - Keep only inspector shape/label lists scrollable; do not reintroduce main-window scrolling in task editor windows.
 - Keep bottom-bar telemetry useful but terse: image size, cursor position, and active shape position/size.
 - Selection flash should change only fill/background, never geometry, scale, outline offset, or layout.

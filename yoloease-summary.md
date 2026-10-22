@@ -145,7 +145,7 @@ Project disk access is serialized by `AnnotationProjectAccessor` through an in-m
 
 - The app uses project-local annotation storage and no longer exposes a CVAT backend selection mechanism.
 - The rest of the pipeline still benefits from CVAT-compatible exports.
-- Annotation editing is not feature-complete yet; task-state flow exists first.
+- The built-in editor supports rectangle annotation, group operations, clipboard and undoable edits. Rectangle remains the implemented shape kind; see [editor behavior](Sources/YoloEase.UI/TaskAnnotation/TaskAnnotationEditorRules.md) for the current contract.
 - Sync currently copies source files into project storage, and that behavior is intentionally preserved for now.
 - The project is optimized for iterative improvement of a dataset and model over time, not for one-off import/export only.
 
